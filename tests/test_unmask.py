@@ -1,7 +1,10 @@
+import itertools
+
 import pytest
 
+from cryptocustode.core.entities import prossimo_placeholder
 from cryptocustode.core.errors import MalformedPlaceholder, UnknownPlaceholder
-from cryptocustode.core.models import Category, Entity
+from cryptocustode.core.models import Category, Entity, fascicolo_vuoto
 from cryptocustode.core.unmask import ripristina
 
 
@@ -50,14 +53,15 @@ def test_indice_a_due_cifre_viene_sostituito_per_intero():
     assert ripristina("[PERSONA_10] firma.", dizionario()) == "Luisa Bianchi firma."
 
 
-def test_nessun_segnaposto_e_sottostringa_di_un_altro():
-    # La parentesi chiusa è ciò che ci protegge davvero: "[PERSONA_1]" non è
-    # contenuto in "[PERSONA_10]" perché dopo l'1 viene uno 0, non la chiusura.
-    # È per questo che l'ordinamento per lunghezza decrescente in `ripristina`
-    # è una difesa in profondità e non un requisito attivo. Se un domani il
-    # formato perdesse il terminatore, questo test fallisce e indica dove
-    # l'ordinamento diventa indispensabile.
-    assert "[PERSONA_1]" not in "[PERSONA_10]"
+def test_nessun_segnaposto_generato_e_sottostringa_di_un_altro():
+    # La proprietà che rende l'ordinamento superfluo oggi. I segnaposto li
+    # genera la produzione, non li scriviamo a mano: è l'unico modo perché il
+    # test fallisca davvero se il formato cambiasse. Senza la parentesi chiusa
+    # "PERSONA_1" tornerebbe a essere contenuto in "PERSONA_10".
+    fascicolo = fascicolo_vuoto("f1")
+    generati = [prossimo_placeholder(fascicolo, Category.PERSONA) for _ in range(12)]
+    for uno, altro in itertools.permutations(generati, 2):
+        assert uno not in altro, f"{uno} è contenuto in {altro}"
 
 
 def test_testo_senza_segnaposto_torna_identico():
