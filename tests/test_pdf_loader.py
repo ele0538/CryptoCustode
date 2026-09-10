@@ -32,7 +32,7 @@ def test_pagina_immagine_senza_testo_viene_respinta():
 
 def test_il_rifiuto_indica_il_numero_di_pagina():
     # Quattro pagine di testo e una scansione in quinta posizione (TC-01).
-    with pytest.raises(ScannedDocumentRejected, match="5"):
+    with pytest.raises(ScannedDocumentRejected, match=r"pagina 5\b"):
         carica_pdf(pdf_di_prova(["testo", "testo", "testo", "testo", "immagine"]))
 
 
@@ -54,6 +54,21 @@ def test_pagina_raster_con_testo_residuo_viene_respinta():
         carica_pdf(pdf_di_prova(["raster"]))
 
 
+def test_pagina_di_copertina_con_poco_testo_e_un_logo_e_accettata():
+    # Il caso per cui esiste FRAZIONE_IMMAGINE_MASSIMA: una copertina o pagina
+    # di firme con poco testo e un logo piccolo (copertura ≈ 0.09) non è una
+    # scansione, ed è l'unico test della suite che verifica il lato "accettato"
+    # della soglia sull'area coperta da immagini.
+    testo, offsets = carica_pdf(pdf_di_prova(["logo"]))
+    assert len(offsets) == 1
+    assert "Pag. 1" in testo
+
+
+def test_pagina_di_testo_con_una_grande_immagine_e_accettata():
+    testo, _ = carica_pdf(pdf_di_prova(["testo_immagine"]))
+    assert "Contratto di locazione" in testo
+
+
 def test_pdf_illeggibile_viene_respinto():
     with pytest.raises(ScannedDocumentRejected):
         carica_pdf(b"questi non sono i byte di un PDF")
@@ -64,5 +79,5 @@ def test_pdf_cifrato_viene_respinto():
     # `fitz.open()` riesce, quindi l'`except` non scatta e l'unico controllo
     # che li intercetta è `needs_pass`. Senza questo test quel ramo non è
     # verificato da nulla.
-    with pytest.raises(ScannedDocumentRejected, match="password"):
+    with pytest.raises(ScannedDocumentRejected, match=r"il PDF è protetto da password"):
         carica_pdf(pdf_cifrato())

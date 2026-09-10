@@ -32,6 +32,15 @@ def test_l_estensione_e_insensibile_alle_maiuscole():
     assert doc.text == "Torino"
 
 
+def test_l_estensione_pdf_maiuscola_viene_riconosciuta():
+    # A differenza del caso .TXT sopra, questo può passare solo se il
+    # confronto sull'estensione è insensibile alle maiuscole: senza `.lower()`
+    # ".PDF" non farebbe match con ".pdf" e il file cadrebbe nel ramo TXT,
+    # dove tentare di decodificare byte PDF come UTF-8 fallisce.
+    doc = costruisci_documento("CONTRATTO.PDF", pdf_di_prova(["testo"]))
+    assert "Contratto di locazione" in doc.text
+
+
 def test_estensione_sconosciuta_viene_trattata_come_txt():
     # Un file senza estensione nota è tentato come testo: se non è UTF-8
     # l'errore arriva dal caricatore TXT, che è il comportamento voluto.

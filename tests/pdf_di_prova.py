@@ -44,11 +44,31 @@ def _pagina_raster_con_testo_residuo(documento: fitz.Document) -> None:
     pagina.insert_textbox(fitz.Rect(50, 700, 545, 780), "Pag. 1", fontsize=9)
 
 
+def _pagina_logo(documento: fitz.Document) -> None:
+    """Poco testo e un logo piccolo: il caso limite che l'euristica deve
+    accettare, quarta riga della tabella (copertura ≈ 0.09, 6 caratteri)."""
+    _pagina_immagine(documento, copertura=0.3)
+    documento[-1].insert_textbox(fitz.Rect(50, 700, 545, 780), "Pag. 1", fontsize=9)
+
+
+def _pagina_testo_con_immagine_grande(documento: fitz.Document) -> None:
+    """Testo abbondante più un'immagine che copre quasi tutta la pagina: la
+    presenza di un'immagine grande da sola non deve bloccare una pagina con
+    testo vero."""
+    pagina = documento.new_page()
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 200, 200), False)
+    pixmap.clear_with(128)
+    pagina.insert_image(pagina.rect, pixmap=pixmap)
+    pagina.insert_textbox(fitz.Rect(50, 50, 545, 400), TESTO_DI_PAGINA, fontsize=11)
+
+
 COSTRUTTORI = {
     "testo": _pagina_di_testo,
     "immagine": _pagina_immagine,
     "bianca": _pagina_bianca,
     "raster": _pagina_raster_con_testo_residuo,
+    "logo": _pagina_logo,
+    "testo_immagine": _pagina_testo_con_immagine_grande,
 }
 
 

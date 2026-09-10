@@ -5,7 +5,7 @@ import pytest
 from cryptocustode.core.entities import prossimo_placeholder
 from cryptocustode.core.errors import MalformedPlaceholder, UnknownPlaceholder
 from cryptocustode.core.models import Category, Entity, fascicolo_vuoto
-from cryptocustode.core.unmask import ripristina
+from cryptocustode.core.unmask import SEGNAPOSTO, ripristina
 
 
 def dizionario():
@@ -60,6 +60,11 @@ def test_nessun_segnaposto_generato_e_sottostringa_di_un_altro():
     # "PERSONA_1" tornerebbe a essere contenuto in "PERSONA_10".
     fascicolo = fascicolo_vuoto("f1")
     generati = [prossimo_placeholder(fascicolo, Category.PERSONA) for _ in range(12)]
+    for p in generati:
+        # Lega il generatore al matcher: se il formato del generatore
+        # divergesse da questa regex, ogni ripristino in produzione morirebbe
+        # con MalformedPlaceholder senza che nessun test se ne accorga.
+        assert SEGNAPOSTO.fullmatch(p)
     for uno, altro in itertools.permutations(generati, 2):
         assert uno not in altro, f"{uno} è contenuto in {altro}"
 

@@ -77,6 +77,16 @@ def test_un_fascicolo_nuovo_e_in_draft():
     assert fascicolo_vuoto("f1").state is State.DRAFT
 
 
+def test_approvare_un_fascicolo_in_draft_e_rifiutato():
+    # Senza questo controllo un DRAFT mai analizzato firmerebbe l'hash del
+    # testo non ancora mascherato, e l'export lo restituirebbe verbatim.
+    fascicolo = fascicolo_vuoto("f1")
+    with pytest.raises(ValueError):
+        approva(fascicolo)
+    assert fascicolo.state is State.DRAFT
+    assert fascicolo.approval_hash is None
+
+
 def test_l_analisi_porta_in_pending_review():
     fascicolo = fascicolo_vuoto("f1")
     analisi_completata(fascicolo)

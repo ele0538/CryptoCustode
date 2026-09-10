@@ -1,4 +1,8 @@
+import json
+import os
+
 import pytest
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from cryptocustode.core import vault
 from cryptocustode.core.errors import VaultUnreadable
@@ -109,10 +113,14 @@ def test_l_intestazione_ha_la_forma_della_spec():
 
 
 def test_due_salvataggi_usano_salt_e_nonce_diversi():
+    # Due asserzioni separate, non una sola su tutto il segmento [8:36]: un
+    # salt costante con un nonce casuale farebbe comunque passare il
+    # confronto unico, perché la differenza del nonce basterebbe da sola.
     fascicolo = fascicolo_popolato()
     primo = vault.salva(fascicolo, PASSWORD)
     secondo = vault.salva(fascicolo, PASSWORD)
-    assert primo[8:36] != secondo[8:36]
+    assert primo[8:24] != secondo[8:24]  # salt
+    assert primo[24:36] != secondo[24:36]  # nonce
     assert primo != secondo
 
 
@@ -141,6 +149,26 @@ def test_abbassare_le_iterazioni_nell_intestazione_non_apre_il_vault():
     blob[4:8] = (1000).to_bytes(4, "big")
     with pytest.raises(VaultUnreadable):
         vault.carica(bytes(blob), PASSWORD)
+
+
+def test_intestazione_non_autenticata_come_associated_data_non_apre_il_vault():
+    # Se l'intestazione non fosse passata come AAD a AESGCM, un blob riassemblato
+    # con la stessa chiave/nonce ma un'intestazione diversa da quella usata in
+    # cifratura aprirebbe comunque: il tag verificherebbe solo il ciphertext.
+    # Costruiamo qui, a mano, esattamente quel blob: stesso salt e nonce di un
+    # salvataggio vero, ma cifrato con AAD vuoto anziché con l'intestazione.
+    fascicolo = fascicolo_popolato()
+    salt = os.urandom(16)
+    nonce = os.urandom(12)
+    chiave = vault._deriva_chiave(PASSWORD, salt, vault.ITERAZIONI_KDF)
+    testo_in_chiaro = json.dumps(
+        vault._a_dizionario(fascicolo), ensure_ascii=False
+    ).encode("utf-8")
+    cifrato = AESGCM(chiave).encrypt(nonce, testo_in_chiaro, b"")
+    intestazione = vault.MAGIC + vault.ITERAZIONI_KDF.to_bytes(4, "big") + salt
+    blob = intestazione + nonce + cifrato
+    with pytest.raises(VaultUnreadable):
+        vault.carica(blob, PASSWORD)
 
 
 def test_magic_sbagliato_viene_respinto():

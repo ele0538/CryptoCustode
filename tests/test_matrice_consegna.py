@@ -84,7 +84,7 @@ def test_anti_fuga_nessun_valore_del_dizionario_compare_nell_esportato():
 
 def test_TC_01_pdf_con_una_pagina_scansionata_su_cinque_viene_rifiutato():
     contenuto = pdf_di_prova(["testo", "testo", "testo", "testo", "immagine"])
-    with pytest.raises(ScannedDocumentRejected, match="5"):
+    with pytest.raises(ScannedDocumentRejected, match=r"pagina 5\b"):
         costruisci_documento("scansione.pdf", contenuto)
 
 
@@ -110,6 +110,18 @@ def test_TC_03_due_documenti_con_lo_stesso_nome_e_nessun_cf_bloccano_l_approvazi
         analizza_documento(fascicolo, documento, usa_ner=True)
     analisi_completata(fascicolo)
     assert any(a.blocca_approvazione for a in fascicolo.ambiguities)
+
+
+def test_il_segnaposto_generato_si_ripristina_con_il_valore_canonico():
+    # Chiude il cerchio generatore -> matcher -> dizionario: se un giorno
+    # `prossimo_placeholder` cambiasse formato, questo test lo direbbe
+    # (il ripristino solleverebbe MalformedPlaceholder o UnknownPlaceholder),
+    # e oggi nessun test in tutta la suite lo farebbe.
+    fascicolo = fascicolo_con(TESTO_RICCO)
+    entita = next(iter(fascicolo.entities.values()))
+    frase = f"Confermo {entita.placeholder} per conoscenza."
+    atteso = f"Confermo {entita.canonical_value} per conoscenza."
+    assert ripristina(frase, fascicolo.entities) == atteso
 
 
 def test_TC_04_export_in_stato_draft_e_negato():

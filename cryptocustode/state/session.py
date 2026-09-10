@@ -31,10 +31,21 @@ def analisi_completata(fascicolo: Fascicolo) -> None:
 def approva(fascicolo: Fascicolo) -> None:
     """PENDING_REVIEW -> APPROVED, calcolando l'hash del testo mascherato.
 
-    Rifiutata se restano ambiguità bloccanti non risolte: sono le omonimie
-    reali, quelle in cui approvare significherebbe fondere o separare due
-    persone senza che nessuno abbia deciso quale delle due (spec §7).
+    Rifiutata se lo stato non è PENDING_REVIEW: la macchina a stati della
+    spec §8 autorizza solo questa transizione. Un DRAFT non ha ancora
+    attraversato `analisi_completata`, quindi approvarlo firmerebbe
+    l'hash del testo non ancora mascherato.
+
+    Rifiutata anche se restano ambiguità bloccanti non risolte: sono le
+    omonimie reali, quelle in cui approvare significherebbe fondere o
+    separare due persone senza che nessuno abbia deciso quale delle due
+    (spec §7).
     """
+    if fascicolo.state is not State.PENDING_REVIEW:
+        raise ValueError(
+            f"impossibile approvare un fascicolo nello stato {fascicolo.state.value!r}: "
+            "serve PENDING_REVIEW"
+        )
     bloccanti = [a for a in fascicolo.ambiguities if a.blocca_approvazione]
     if bloccanti:
         elenco = ", ".join(a.ambiguity_id for a in bloccanti)
