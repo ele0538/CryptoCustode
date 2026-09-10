@@ -133,6 +133,91 @@ class TestAggregazione:
             assert span.entity_id in f.entities
 
 
+class TestAggiungiSpanManuale:
+    """`aggiungi_span_manuale` è il punto d'ingresso pubblico per il tagging
+    manuale del piano 2: qui arrivano interi scelti a mano da una persona,
+    quindi vanno convalidati prima di fidarsene (spec §7)."""
+
+    def _fascicolo_con_doc(self, testo="Mario Rossi vive a Torino."):
+        f = fascicolo_vuoto("f1")
+        doc = documento("d1", testo)
+        f.documents.append(doc)
+        return f, doc
+
+    def test_range_invertito_solleva_errore(self):
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f, doc = self._fascicolo_con_doc()
+        with pytest.raises(ValueError) as errore:
+            aggiungi_span_manuale(f, doc, 10, 5, Category.PERSONA)
+        assert "10" in str(errore.value)
+        assert "5" in str(errore.value)
+
+    def test_range_a_lunghezza_zero_solleva_errore(self):
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f, doc = self._fascicolo_con_doc()
+        with pytest.raises(ValueError):
+            aggiungi_span_manuale(f, doc, 5, 5, Category.PERSONA)
+
+    def test_fine_oltre_la_fine_del_testo_solleva_errore(self):
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f, doc = self._fascicolo_con_doc()
+        fine_richiesta = len(doc.text) + 5
+        with pytest.raises(ValueError) as errore:
+            aggiungi_span_manuale(f, doc, 0, fine_richiesta, Category.PERSONA)
+        assert str(fine_richiesta) in str(errore.value)
+
+    def test_inizio_negativo_solleva_errore(self):
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f, doc = self._fascicolo_con_doc()
+        with pytest.raises(ValueError) as errore:
+            aggiungi_span_manuale(f, doc, -1, 5, Category.PERSONA)
+        assert "-1" in str(errore.value)
+
+    def test_documento_non_del_fascicolo_solleva_errore(self):
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f = fascicolo_vuoto("f1")  # nessun documento caricato
+        estraneo = documento("estraneo", "Testo di un documento mai caricato.")
+        with pytest.raises(ValueError) as errore:
+            aggiungi_span_manuale(f, estraneo, 0, 5, Category.PERSONA)
+        assert "estraneo" in str(errore.value)
+
+    def test_sovrapposizione_con_span_esistente_solleva_errore(self):
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f, doc = self._fascicolo_con_doc("CF RSSMRA85M01H501Q per il cliente.")
+        analizza_documento(f, doc, usa_ner=False)
+        cf = next(s for s in f.spans if s.category is Category.CF)
+        with pytest.raises(ValueError) as errore:
+            aggiungi_span_manuale(f, doc, cf.start, cf.end, Category.PERSONA)
+        assert cf.span_id in str(errore.value)
+
+    def test_range_non_valido_non_brucia_segnaposto_ne_crea_span(self):
+        """Un rifiuto non deve lasciare tracce: niente entità, niente span,
+        niente indice bruciato sul contatore (spec §5)."""
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f, doc = self._fascicolo_con_doc()
+        with pytest.raises(ValueError):
+            aggiungi_span_manuale(f, doc, 10, 5, Category.PERSONA)
+        assert f.counters[Category.PERSONA] == 0
+        assert f.entities == {}
+        assert f.spans == []
+
+    def test_percorso_felice_crea_entita_e_segnaposto(self):
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f, doc = self._fascicolo_con_doc(
+            "Contratto con Giulia Neri, libera professionista."
+        )
+        inizio = doc.text.index("Giulia Neri")
+        fine = inizio + len("Giulia Neri")
+        span = aggiungi_span_manuale(f, doc, inizio, fine, Category.PERSONA)
+        assert span in f.spans
+        assert span.doc_id == doc.doc_id
+        assert span.category is Category.PERSONA
+        entita = f.entities[span.entity_id]
+        assert entita.category is Category.PERSONA
+        assert entita.canonical_value == "Giulia Neri"
+        assert entita.placeholder == "[PERSONA_1]"
+
+
 class TestOmonimi:
     def _fascicolo_con_omonimo(self):
         f = fascicolo_vuoto("f1")
@@ -151,6 +236,19 @@ class TestOmonimi:
         bloccanti = [a for a in f.ambiguities if a.blocca_approvazione]
         assert len(bloccanti) == 1
         assert bloccanti[0].kind is AmbiguityKind.SAME_NAME_NO_CF
+
+    def test_omonimia_registra_gli_span_delle_occorrenze(self):
+        """`occurrence_span_ids` è il campo che la coda di revisione userà per
+        mostrare all'utente *dove* compare l'omonimia: deve contenere
+        esattamente gli span dell'entità ambigua, non una lista vuota."""
+        from cryptocustode.core.entities import risolvi_ambiguita_omonimia
+        f = self._fascicolo_con_omonimo()
+        risolvi_ambiguita_omonimia(f)
+        bloccanti = [a for a in f.ambiguities if a.blocca_approvazione]
+        entity_id = bloccanti[0].candidate_entity_ids[0]
+        attesi = [s.span_id for s in f.spans if s.entity_id == entity_id]
+        assert len(attesi) == 2
+        assert bloccanti[0].occurrence_span_ids == attesi
 
 
 class TestSuggerimentiDiFusione:
@@ -197,6 +295,7 @@ class TestSuggerimentiDiFusione:
             "d1", "Il socio Rossi Mario conferisce alla ditta Mario Rossi "
                   "il ramo d'azienda.",
         )
+        f.documents.append(doc)
         for nome, categoria in (
             ("Rossi Mario", Category.PERSONA),
             ("Mario Rossi", Category.AZIENDA),
@@ -213,6 +312,20 @@ class TestSuggerimentiDiFusione:
         suggerisci_fusioni(f)
         suggerisci_fusioni(f)
         assert len(f.ambiguities) == 1
+
+    def test_suggerimento_registra_gli_span_delle_occorrenze(self):
+        """Come per l'omonimia: la coda di revisione ha bisogno di sapere dove
+        compaiono le due varianti, non solo che sono candidate alla fusione."""
+        from cryptocustode.core.entities import suggerisci_fusioni
+        f = self._fascicolo_con("M. Rossi", "Mario Rossi")
+        suggerisci_fusioni(f)
+        suggerimento = f.ambiguities[0]
+        attesi = [
+            s.span_id for s in f.spans
+            if s.entity_id in suggerimento.candidate_entity_ids
+        ]
+        assert len(attesi) == 2
+        assert sorted(suggerimento.occurrence_span_ids) == sorted(attesi)
 
     def test_le_due_code_convivono(self):
         """Omonimie e suggerimenti scrivono nella stessa lista: nessuno dei due
@@ -239,4 +352,6 @@ class TestSuggerimentiDiFusione:
 def _registra_manuale(fascicolo, documento, inizio, fine):
     """Aggiunge uno span PERSONA come se l'utente lo avesse selezionato a mano."""
     from cryptocustode.core.entities import aggiungi_span_manuale
+    if documento not in fascicolo.documents:
+        fascicolo.documents.append(documento)
     aggiungi_span_manuale(fascicolo, documento, inizio, fine, Category.PERSONA)

@@ -24,7 +24,7 @@ from cryptocustode.core.models import (
     Source,
     Span,
 )
-from cryptocustode.core.spans import risolvi
+from cryptocustode.core.spans import risolvi, si_sovrappongono
 
 _TITOLI = (
     "sig.ra", "sig.", "sig", "signora", "signor", "dott.ssa", "dott.", "dottore",
@@ -145,7 +145,36 @@ def aggiungi_span_manuale(
     fascicolo: Fascicolo, documento: Document, inizio: int, fine: int,
     categoria: Category,
 ) -> Span:
-    """Tagging manuale dell'utente sul testo selezionato (punto 5 della consegna)."""
+    """Tagging manuale dell'utente sul testo selezionato (punto 5 della consegna).
+
+    È il punto d'ingresso pubblico per il tagging del piano 2: qui arrivano
+    interi scelti a mano da una persona, quindi si convalidano prima di
+    fidarsene. Un rifiuto non deve lasciare tracce: niente entità, niente
+    span, nessun indice di segnaposto bruciato (spec §5).
+    """
+    if documento not in fascicolo.documents:
+        raise ValueError(
+            f"il documento {documento.doc_id!r} non appartiene al fascicolo "
+            f"{fascicolo.fascicolo_id!r}"
+        )
+    if not (0 <= inizio < fine <= len(documento.text)):
+        raise ValueError(
+            f"span manuale non valido per il documento {documento.doc_id!r}: "
+            f"inizio={inizio!r} e fine={fine!r} devono soddisfare "
+            f"0 <= inizio < fine <= {len(documento.text)!r}"
+        )
+    candidato = Span(
+        span_id="", doc_id=documento.doc_id, start=inizio, end=fine,
+        category=categoria, source=Source.MANUAL, entity_id="",
+    )
+    for esistente in fascicolo.spans:
+        if esistente.doc_id == documento.doc_id and si_sovrappongono(candidato, esistente):
+            raise ValueError(
+                f"lo span manuale [{inizio}:{fine}] nel documento "
+                f"{documento.doc_id!r} si sovrappone allo span "
+                f"{esistente.span_id!r} [{esistente.start}:{esistente.end}] "
+                "già presente sullo stesso documento"
+            )
     grezzo = Span(
         span_id=f"{documento.doc_id}:{inizio}-{fine}:{categoria.value}:manuale",
         doc_id=documento.doc_id, start=inizio, end=fine, category=categoria,
