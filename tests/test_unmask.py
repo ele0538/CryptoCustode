@@ -46,10 +46,18 @@ def test_lo_stesso_segnaposto_ripetuto_viene_sostituito_ovunque():
     assert ripristina(testo, dizionario()) == "Mario Rossi e ancora Mario Rossi"
 
 
-def test_indice_a_due_cifre_non_lascia_uno_zero_orfano():
-    # Il caso che impone l'ordinamento per lunghezza decrescente: sostituendo
-    # prima [PERSONA_1] resterebbe "Mario Rossi0".
+def test_indice_a_due_cifre_viene_sostituito_per_intero():
     assert ripristina("[PERSONA_10] firma.", dizionario()) == "Luisa Bianchi firma."
+
+
+def test_nessun_segnaposto_e_sottostringa_di_un_altro():
+    # La parentesi chiusa è ciò che ci protegge davvero: "[PERSONA_1]" non è
+    # contenuto in "[PERSONA_10]" perché dopo l'1 viene uno 0, non la chiusura.
+    # È per questo che l'ordinamento per lunghezza decrescente in `ripristina`
+    # è una difesa in profondità e non un requisito attivo. Se un domani il
+    # formato perdesse il terminatore, questo test fallisce e indica dove
+    # l'ordinamento diventa indispensabile.
+    assert "[PERSONA_1]" not in "[PERSONA_10]"
 
 
 def test_testo_senza_segnaposto_torna_identico():

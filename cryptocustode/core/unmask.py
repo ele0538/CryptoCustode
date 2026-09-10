@@ -57,8 +57,12 @@ def ripristina(risposta: str, entities: dict[str, Entity]) -> str:
         )
 
     ripristinato = risposta
-    # Lunghezza decrescente: [PERSONA_10] prima di [PERSONA_1], altrimenti
-    # resterebbe uno 0 orfano.
+    # Lunghezza decrescente, come richiede la spec §11 passo 5. Con la forma
+    # attuale dei segnaposto è difesa in profondità e non un requisito attivo:
+    # la parentesi di chiusura fa già sì che nessun segnaposto sia sottostringa
+    # di un altro ("[PERSONA_1]" non compare in "[PERSONA_10]"). Resta qui
+    # perché se un domani il formato perdesse il terminatore, è l'ordinamento
+    # a evitare che resti uno 0 orfano.
     for segnaposto in sorted(dizionario, key=len, reverse=True):
         ripristinato = ripristinato.replace(segnaposto, dizionario[segnaposto])
     return ripristinato
