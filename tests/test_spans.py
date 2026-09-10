@@ -56,5 +56,14 @@ def test_risoluzione_deterministica():
     assert [s.span_id for s in risolvi(dati)] == [s.span_id for s in risolvi(list(reversed(dati)))]
 
 
+def test_a_parita_di_priorita_e_lunghezza_vince_quello_che_inizia_prima():
+    # INDIRIZZO e AZIENDA sono entrambe P4, stessa lunghezza (10 caratteri)
+    # ma diverso inizio: INDIRIZZO parte da 0, AZIENDA parte da 5.
+    # Con id_suffisso, span_id di AZIENDA sarebbe "migliore" alfabeticamente
+    # senza il termine start, quindi il test fallirebbe se start fosse rimosso da _forza.
+    vincitori = risolvi([span(0, 10, Category.INDIRIZZO, "z"), span(5, 15, Category.AZIENDA, "a")])
+    assert [s.category for s in vincitori] == [Category.INDIRIZZO]
+
+
 def test_lista_vuota():
     assert risolvi([]) == []
