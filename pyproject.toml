@@ -17,3 +17,14 @@ markers = [
     "lento: test che caricano il modello spaCy",
     "rete: test che richiedono connettività o una API key",
 ]
+# Due deprecazioni a monte, emesse all'import di `fastapi.testclient` e non da
+# codice nostro: starlette 1.6 preferisce `httpx2` a `httpx` (che la spec §3
+# pinna, e che il TestClient usa comunque senza problemi), e usa un alias di
+# anyio già deprecato. Nessuna delle due è azionabile qui, ed entrambe
+# comparirebbero a ogni esecuzione della suite: l'output pulito dei test è un
+# criterio di revisione, quindi il rumore andrebbe segnalato a ogni task.
+# Il filtro è ristretto ai due messaggi: qualunque altro warning resta visibile.
+filterwarnings = [
+    "ignore:Using .httpx. with .starlette.testclient. is deprecated",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated",
+]

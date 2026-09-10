@@ -1,0 +1,72 @@
+/* UI vanilla, senza framework (spec §2 decisione 1). */
+
+:root {
+  --inchiostro: #1b1f24;
+  --tenue: #5b6673;
+  --sfondo: #f6f7f9;
+  --carta: #ffffff;
+  --bordo: #dde1e6;
+  --accento: #1f5f8b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.5rem;
+  background: var(--sfondo);
+  color: var(--inchiostro);
+  font: 16px/1.55 system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+header,
+main,
+footer {
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.9rem;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+  color: var(--accento);
+}
+
+.sottotitolo {
+  margin: 0.4rem 0 2rem;
+  color: var(--tenue);
+  max-width: 40rem;
+}
+
+.riquadro {
+  background: var(--carta);
+  border: 1px solid var(--bordo);
+  border-radius: 8px;
+  padding: 1.25rem 1.4rem;
+}
+
+.riquadro p:last-child {
+  margin-bottom: 0;
+}
+
+code {
+  background: var(--sfondo);
+  border: 1px solid var(--bordo);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  font-size: 0.9em;
+}
+
+footer p {
+  margin-top: 2rem;
+  color: var(--tenue);
+  font-size: 0.85rem;
+}
