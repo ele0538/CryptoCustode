@@ -276,7 +276,10 @@ def test_byte_non_utf8_solleva_invalid_encoding():
 
 def test_il_messaggio_cita_l_offset_del_byte():
     # "abc" occupa gli offset 0,1,2; il byte invalido sta all'offset 3.
-    with pytest.raises(InvalidEncoding, match="3"):
+    # L'ancora è `offset 3` e non il solo "3": `match` è una ricerca regex su
+    # tutto il messaggio, quindi una cifra qualunque da qualunque parte
+    # soddisferebbe l'asserzione senza provare nulla sull'offset.
+    with pytest.raises(InvalidEncoding, match=r"offset 3\b"):
         carica_txt(b"abc\xe8def")
 
 
