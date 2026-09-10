@@ -57,11 +57,13 @@ def test_risoluzione_deterministica():
 
 
 def test_a_parita_di_priorita_e_lunghezza_vince_quello_che_inizia_prima():
-    # INDIRIZZO e AZIENDA sono entrambe P4, stessa lunghezza (10 caratteri)
-    # ma diverso inizio: INDIRIZZO parte da 0, AZIENDA parte da 5.
-    # Con id_suffisso, span_id di AZIENDA sarebbe "migliore" alfabeticamente
-    # senza il termine start, quindi il test fallirebbe se start fosse rimosso da _forza.
-    vincitori = risolvi([span(0, 10, Category.INDIRIZZO, "z"), span(5, 15, Category.AZIENDA, "a")])
+    # INDIRIZZO e AZIENDA sono entrambe P4, stessa lunghezza (10 caratteri),
+    # diverso inizio: INDIRIZZO parte da 9, AZIENDA parte da 10.
+    # Senza il termine span.start in _forza, l'ordinamento dei span_id ("s10-20" < "s9-19")
+    # metterebbe AZIENDA prima, facendola vincere erroneamente.
+    # Il test fallisce se start è negato o rimosso, provando che il tiebreaker
+    # per inizio è effettivamente rispettato.
+    vincitori = risolvi([span(9, 19, Category.INDIRIZZO), span(10, 20, Category.AZIENDA)])
     assert [s.category for s in vincitori] == [Category.INDIRIZZO]
 
 
