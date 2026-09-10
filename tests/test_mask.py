@@ -1,6 +1,8 @@
 import dataclasses
 import re
 
+import pytest
+
 from cryptocustode.core.mask import (
     hash_approvazione,
     maschera,
@@ -105,6 +107,19 @@ class TestMascheratura:
         f = fascicolo_vuoto("f1")
         assert maschera(doc.text, [], {}) == doc.text
 
+    def test_span_con_entita_assente_solleva_errore(self):
+        # uno span che punta a un entity_id non presente nel fascicolo non va
+        # ignorato in silenzio: il testo originale non deve mai sopravvivere
+        # senza che qualcuno se ne accorga (finding 1)
+        f, doc = scenario()
+        f.spans.append(Span(span_id="s_fantasma", doc_id="d1", start=35, end=39,
+                            category=Category.PERSONA, source=Source.NER,
+                            entity_id="e_fantasma"))
+        with pytest.raises(ValueError) as errore:
+            maschera_documento(f, doc)
+        assert "s_fantasma" in str(errore.value)
+        assert "e_fantasma" in str(errore.value)
+
 
 class TestHashDiApprovazione:
     def test_deterministico(self):
@@ -142,3 +157,19 @@ class TestHashDiApprovazione:
         prima = hash_approvazione(f)
         f.state = State.APPROVED
         assert hash_approvazione(f) == prima
+
+    def test_indipendente_dall_ordine_a_parita_di_nome_file(self):
+        # due documenti con lo stesso filename ma doc_id diverso: il nome
+        # file da solo non è un ordine totale, serve il doc_id come
+        # spareggio, altrimenti l'ordine di inserimento nel fascicolo
+        # cambierebbe l'hash (finding 2)
+        f, _ = scenario()
+        duplicato_a = Document(doc_id="da", filename="scan.pdf", text="Contenuto A.",
+                               page_offsets=[0], sha256="a")
+        duplicato_b = Document(doc_id="db", filename="scan.pdf", text="Contenuto B.",
+                               page_offsets=[0], sha256="b")
+        f.documents.append(duplicato_a)
+        f.documents.append(duplicato_b)
+        atteso = hash_approvazione(f)
+        f.documents[-2], f.documents[-1] = f.documents[-1], f.documents[-2]
+        assert hash_approvazione(f) == atteso

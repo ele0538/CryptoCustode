@@ -28,7 +28,11 @@ def maschera(testo: str, spans: list[Span], entities: dict[str, Entity]) -> str:
     for span in sorted(spans, key=lambda s: s.start, reverse=True):
         entita = entities.get(span.entity_id)
         if entita is None:
-            continue
+            raise ValueError(
+                f"span {span.span_id!r} fa riferimento all'entità "
+                f"{span.entity_id!r}, assente dal fascicolo: mascheratura "
+                "impossibile, dati personali a rischio di fuga"
+            )
         risultato = risultato[:span.start] + entita.placeholder + risultato[span.end:]
     return risultato
 
@@ -50,7 +54,7 @@ def hash_approvazione(fascicolo: Fascicolo) -> str:
     produrre lo stesso digest (spec §8).
     """
     digest = hashlib.sha256()
-    for documento in sorted(fascicolo.documents, key=lambda d: d.filename):
+    for documento in sorted(fascicolo.documents, key=lambda d: (d.filename, d.doc_id)):
         mascherato = maschera_documento(fascicolo, documento)
         blocco = f"{documento.filename}\n{len(mascherato)}\n{mascherato}"
         digest.update(blocco.encode("utf-8"))
