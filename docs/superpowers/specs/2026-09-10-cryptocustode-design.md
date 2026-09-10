@@ -268,7 +268,12 @@ lo SHA-256 si calcola sulla concatenazione UTF-8 del risultato. La lunghezza esp
 rende la concatenazione non ambigua, così due fascicoli diversi non possono produrre lo
 stesso digest.
 
-**Contratto:** `export_sanitized_text(fascicolo_id: str) -> dict[str, str]`
+**Contratto:** `export_sanitized_text(fascicolo_id: str, store: SessionStore) -> dict[str, str]`
+
+Lo `store` è un parametro esplicito e non un singleton implicito: la funzione non
+possiede lo stato dei fascicoli e resta verificabile con uno store costruito nel test.
+Scostamento dichiarato dal piano 2 e giudicato giustificato dalla revisione finale — chi
+rivede il piano 3 non deve riaprirlo.
 
 Controlli, in ordine:
 
@@ -315,8 +320,15 @@ esistenti.
 
 **Contenuto cifrato** (JSON, UTF-8): `vault_version`, `fascicolo_id`, `created_at`,
 `documents`, `spans`, `entities`, `category_enabled`, `ambiguities`, `state`,
-`approval_hash`. Cioè l'intero fascicolo, così riaprirlo consente sia di riprendere la
-revisione sia di ripristinare una risposta dell'IA.
+`approval_hash`, `counters`. Cioè l'intero fascicolo, così riaprirlo consente sia di
+riprendere la revisione sia di ripristinare una risposta dell'IA.
+
+`counters` è nell'elenco perché senza di esso `prossimo_placeholder` riparte da 1 alla
+riapertura, mentre le entità già salvate tengono i segnaposto che avevano: due entità
+finiscono con `[PERSONA_1]` e il dizionario del ripristino ne perde una in silenzio,
+**restituendo il nome della persona sbagliata**. La §5 lo elenca già fra i campi di
+`Fascicolo` e la §7 pretende indici mai riciclati: la sua assenza qui era un errore di
+stesura, non una scelta.
 
 Fuori dal vault, il fascicolo vive **solo** nella RAM del processo.
 
@@ -327,14 +339,22 @@ Fuori dal vault, il fascicolo vive **solo** nella RAM del processo.
 2. **Estrazione.** Tutti i token che corrispondono a `\[[A-Z]+_\d+\]`.
 3. **Rilevamento delle alterazioni.** Una seconda regex più permissiva,
    `\[[A-Za-z]+[_\-\s]?\d*\]?`, individua i quasi-segnaposto che non hanno superato la
-   prima: `[PERSONA_1` senza chiusura, `[PERSON_1]` con un tipo inesistente,
-   `[persona_1]` in minuscolo. Ognuno viene segnalato letteralmente all'utente.
+   prima: `[PERSONA_1` senza chiusura, `[persona_1]` in minuscolo. Ognuno viene
+   segnalato letteralmente all'utente. `[PERSON_1]` **non** appartiene a questo passo:
+   supera la regex severa perché è ben formato, e il fatto che `PERSON` non sia un tipo
+   esistente è una questione di dizionario, non di forma. Viene classificato al passo 4
+   come `UnknownPlaceholder`. Per l'utente non cambia niente — il ripristino si
+   interrompe comunque e la §13 mappa entrambi i casi a 422.
 4. **Validazione.** Un segnaposto ben formato ma assente dal dizionario del fascicolo
    attivo produce l'errore "segnaposto non riconosciuto o appartenente a un'altra
    sessione" (TC-05).
 5. **Sostituzione.** Solo se i passi 3 e 4 non hanno prodotto errori. Chiavi ordinate
-   per lunghezza decrescente, così `[PERSONA_10]` viene sostituito prima di
-   `[PERSONA_1]` e non resta uno `0` orfano.
+   per lunghezza decrescente. L'ordinamento **non** serve a evitare uno `0` orfano: con
+   un formato terminato da `]`, `[PERSONA_1]` non compare mai dentro `[PERSONA_10]`, e
+   quel guasto non è riproducibile finché il formato è questo — chi leggeva la vecchia
+   motivazione credeva di poter verificare una cosa non verificabile. L'ordinamento
+   resta come difesa in profondità per il giorno in cui il formato cambiasse: un
+   segnaposto senza terminatore riaprirebbe subito il problema del prefisso.
 
 **Nessun ripristino parziale, in nessun caso.** Un testo in cui l'utente non sa quali
 segnaposto siano stati risolti e quali no è peggio di un errore.

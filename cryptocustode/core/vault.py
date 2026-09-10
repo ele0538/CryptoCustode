@@ -29,7 +29,10 @@ from cryptocustode.core.models import (
 
 MAGIC = b"CCV1"
 ITERAZIONI_KDF = 600_000
-VAULT_VERSION = 1
+# Versione 2: le entità non portano più il campo `cf` (spec §7, issue #12). Un
+# blob di versione 1 resta leggibile — la chiave `cf` in più viene ignorata —
+# ma la politica sulle versioni diverse dalla corrente la fissa la issue #17.
+VAULT_VERSION = 2
 
 _LUNGHEZZA_SALT = 16
 _LUNGHEZZA_NONCE = 12
@@ -90,7 +93,6 @@ def _a_dizionario(fascicolo: Fascicolo) -> dict:
                 # I set non sono serializzabili in JSON: ordinati per rendere il
                 # blob riproducibile a parità di contenuto.
                 "variants": sorted(e.variants),
-                "cf": e.cf,
             }
             for chiave, e in fascicolo.entities.items()
         },
@@ -110,7 +112,7 @@ def _a_dizionario(fascicolo: Fascicolo) -> dict:
         ],
         "state": fascicolo.state.value,
         "approval_hash": fascicolo.approval_hash,
-        # Fuori dall'elenco della spec §10: senza i contatori gli indici dei
+        # Nell'elenco della spec §10: senza i contatori gli indici dei
         # segnaposto verrebbero riciclati dopo una riapertura (spec §7).
         "counters": {
             categoria.value: valore for categoria, valore in fascicolo.counters.items()
@@ -151,7 +153,6 @@ def _da_dizionario(dati: dict) -> Fascicolo:
                 placeholder=e["placeholder"],
                 canonical_value=e["canonical_value"],
                 variants=set(e["variants"]),
-                cf=e["cf"],
             )
             for chiave, e in dati["entities"].items()
         },
