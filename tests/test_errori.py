@@ -11,6 +11,7 @@ NOMI_ATTESI = {
     "InvalidEncoding",
     "ScannedDocumentRejected",
     "FascicoloFull",
+    "DuplicateFilename",
     "ExportNotAllowed",
     "IntegrityError",
     "UnresolvedAmbiguities",

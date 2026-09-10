@@ -2,7 +2,11 @@ import hashlib
 
 import pytest
 
-from cryptocustode.core.errors import FascicoloFull, InvalidEncoding
+from cryptocustode.core.errors import (
+    DuplicateFilename,
+    FascicoloFull,
+    InvalidEncoding,
+)
 from cryptocustode.core.ingest.loader import (
     aggiungi_documento,
     costruisci_documento,
@@ -102,6 +106,28 @@ def test_il_rifiuto_non_lascia_il_fascicolo_alterato():
     with pytest.raises(FascicoloFull):
         aggiungi_documento(fascicolo, documento(99))
     assert len(fascicolo.documents) == 10
+
+
+def test_un_secondo_file_con_lo_stesso_nome_viene_rifiutato():
+    # Issue #19: il payload dell'export è indicizzato per nome file (spec §8),
+    # quindi due omonimi presi da cartelle diverse collasserebbero in una sola
+    # chiave e l'utente riceverebbe un documento in meno senza alcun errore.
+    # Il nome finisce nel messaggio: è l'unico modo per sapere quale rinominare.
+    fascicolo = fascicolo_vuoto("f1")
+    aggiungi_documento(fascicolo, costruisci_documento("contratto.txt", b"Primo"))
+    with pytest.raises(DuplicateFilename, match="contratto.txt"):
+        aggiungi_documento(fascicolo, costruisci_documento("contratto.txt", b"Secondo"))
+
+
+def test_il_rifiuto_dell_omonimo_lascia_intatto_il_primo():
+    # Il controllo precede la mutazione, come per FascicoloFull: il documento
+    # già caricato resta quello di prima, non viene sovrascritto dal secondo.
+    fascicolo = fascicolo_vuoto("f1")
+    aggiungi_documento(fascicolo, costruisci_documento("contratto.txt", b"Primo"))
+    with pytest.raises(DuplicateFilename):
+        aggiungi_documento(fascicolo, costruisci_documento("contratto.txt", b"Secondo"))
+    assert [doc.filename for doc in fascicolo.documents] == ["contratto.txt"]
+    assert fascicolo.documents[0].text == "Primo"
 
 
 def test_nessun_segnaposto_preesistente_in_un_testo_normale():

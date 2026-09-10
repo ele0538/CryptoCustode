@@ -1,6 +1,11 @@
 import pytest
 
-from cryptocustode.core.errors import ExportNotAllowed, IntegrityError
+from cryptocustode.core.errors import (
+    DuplicateFilename,
+    ExportNotAllowed,
+    IntegrityError,
+)
+from cryptocustode.core.ingest.loader import aggiungi_documento, costruisci_documento
 from cryptocustode.core.models import (
     Category,
     Document,
@@ -113,3 +118,22 @@ def test_lo_stato_resta_approved_dopo_un_export():
     fascicolo = fascicolo_approvato()
     export_sanitized_text("f1", store_con(fascicolo))
     assert fascicolo.state is State.APPROVED
+
+
+def test_due_file_omonimi_non_collassano_in_silenzio_nell_export():
+    # Issue #19, verificato dove il danno si vedrebbe. Il payload della spec §8
+    # ha una chiave per nome file, quindi la difesa può stare solo all'ingresso:
+    # o il secondo omonimo viene rifiutato a voce alta, o l'export consegna un
+    # documento in meno senza dirlo a nessuno. Questo test chiude quella scelta.
+    fascicolo = fascicolo_vuoto("f1")
+    aggiungi_documento(
+        fascicolo, costruisci_documento("contratto.txt", b"Mario Rossi abita a Torino.")
+    )
+    with pytest.raises(DuplicateFilename):
+        aggiungi_documento(
+            fascicolo, costruisci_documento("contratto.txt", b"Testo del secondo file.")
+        )
+    analisi_completata(fascicolo)
+    approva(fascicolo)
+    payload = export_sanitized_text("f1", store_con(fascicolo))
+    assert len(payload) == len(fascicolo.documents)

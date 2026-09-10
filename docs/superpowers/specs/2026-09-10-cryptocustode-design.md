@@ -313,6 +313,18 @@ Controlli, in ordine:
 **Payload:** esclusivamente `{nome_file: testo_mascherato}`. Nessun testo originale,
 nessun dizionario, nessun metadato sensibile, nessuno span.
 
+**Perché le chiavi sono univoche.** Indicizzare per nome file regge solo se nel fascicolo
+i nomi non si ripetono, e questa forma del payload resta com'è: la garanzia sta a monte,
+in `aggiungi_documento`, che rifiuta un nome già presente con `DuplicateFilename`. Senza
+quella guardia due omonimi — lo stesso file caricato due volte, o due file diversi presi
+da cartelle diverse — collasserebbero in una sola chiave: l'hash di approvazione li
+conterebbe entrambi, quindi il controllo d'integrità passerebbe, e l'utente riceverebbe
+nove documenti credendo di averne ricevuti dieci. Non è una fuga di dati, è una perdita
+silenziosa nell'unico output per cui il prodotto esiste (issue #19, decisa il 2026-09-10:
+rifiutare il duplicato invece di disambiguare le chiavi, così il contratto qui sopra
+resta letteralmente vero). Il costo per l'utente è rinominare un file, e lo scopre subito
+con un messaggio; l'alternativa lo lasciava senza saperlo.
+
 ## 9. Masking
 
 Le sostituzioni vengono applicate in ordine di `start` **decrescente**, così ogni
@@ -433,6 +445,7 @@ un segnaposto e sostituita con dati veri, corrompendo il testo.
 | TXT non UTF-8 | `InvalidEncoding` | 422 | codifica non valida, con l'offset del byte |
 | PDF scansionato | `ScannedDocumentRejected` | 422 | documento bloccato, con il numero di pagina |
 | Undicesimo documento | `FascicoloFull` | 422 | massimo 10 documenti per fascicolo |
+| Due file con lo stesso nome | `DuplicateFilename` | 422 | attento: hai caricato due file uguali o con lo stesso nome, col nome del file |
 | Export con stato diverso da `APPROVED` | `ExportNotAllowed` | **409** | il fascicolo non è approvato |
 | Hash di approvazione non corrispondente | `IntegrityError` | 409 | il testo è cambiato dopo l'approvazione |
 | Approvazione con ambiguità aperte | `UnresolvedAmbiguities` | 409 | elenco delle ambiguità da risolvere |

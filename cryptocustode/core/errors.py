@@ -22,6 +22,16 @@ class FascicoloFull(CryptoCustodeError):
     """Undicesimo documento in un fascicolo."""
 
 
+class DuplicateFilename(CryptoCustodeError):
+    """Secondo documento con un nome file già presente nel fascicolo.
+
+    Non è un capriccio: il payload dell'export è indicizzato per nome file
+    (spec §8), quindi due omonimi collasserebbero in una sola chiave e l'utente
+    riceverebbe un documento in meno senza alcun errore (issue #19). Il rifiuto
+    all'ingresso è ciò che rende quel payload onesto.
+    """
+
+
 class ExportNotAllowed(CryptoCustodeError):
     """Esportazione richiesta con il fascicolo in uno stato diverso da APPROVED."""
 

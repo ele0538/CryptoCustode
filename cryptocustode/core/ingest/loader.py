@@ -6,7 +6,7 @@ import hashlib
 import re
 import uuid
 
-from cryptocustode.core.errors import FascicoloFull
+from cryptocustode.core.errors import DuplicateFilename, FascicoloFull
 from cryptocustode.core.ingest.pdf_loader import carica_pdf
 from cryptocustode.core.ingest.txt_loader import carica_txt
 from cryptocustode.core.models import Document, Fascicolo
@@ -49,13 +49,25 @@ def costruisci_documento(filename: str, contenuto: bytes) -> Document:
 
 
 def aggiungi_documento(fascicolo: Fascicolo, documento: Document) -> None:
-    """Aggiunge il documento al fascicolo, se c'è posto.
+    """Aggiunge il documento al fascicolo, se c'è posto e il nome è libero.
 
-    Il controllo precede la mutazione: un rifiuto lascia il fascicolo esattamente
+    I controlli precedono la mutazione: un rifiuto lascia il fascicolo esattamente
     com'era.
+
+    Il nome deve essere libero perché il payload dell'export è indicizzato per
+    nome file (spec §8): due omonimi — lo stesso file caricato due volte, o due
+    file diversi con lo stesso nome presi da cartelle diverse — collasserebbero
+    in una sola chiave e l'utente riceverebbe un documento in meno senza alcun
+    errore (issue #19). Il rifiuto rende quel silenzio impossibile.
     """
     if len(fascicolo.documents) >= Fascicolo.MAX_DOCUMENTI:
         raise FascicoloFull(
             f"massimo {Fascicolo.MAX_DOCUMENTI} documenti per fascicolo"
+        )
+    if any(presente.filename == documento.filename for presente in fascicolo.documents):
+        raise DuplicateFilename(
+            "attento: hai caricato due file uguali o con lo stesso nome "
+            f"({documento.filename}), il secondo non è stato caricato: "
+            "rinominalo e riprova"
         )
     fascicolo.documents.append(documento)
