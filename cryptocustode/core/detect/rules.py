@@ -36,13 +36,21 @@ _REGEX_CONTESTO: dict[Category, re.Pattern[str]] = {
 # (spec §6: si applica solo a una sequenza nuda o senza prefisso internazionale).
 _PREFISSI_AUTOSUFFICIENTI: dict[Category, tuple[str, ...]] = {
     Category.PIVA: ("IT",),
-    Category.TELEFONO: ("+39", "0039"),
+    Category.TELEFONO: ("+39",),
 }
+
+# `0039` non è inequivocabile come `+39`: coincide con le prime quattro cifre di
+# un numero qualunque. Vale come prefisso internazionale solo se lo seguono le
+# 9-10 cifre di un numero nazionale; "00391234567" sono undici cifre nude, che
+# senza parola chiave vicina la spec §6 vuole scartare.
+_PREFISSO_0039 = re.compile(r"\A0039\D*(?:\d\D*){9,10}\Z")
 
 
 def _ha_contesto(testo: str, inizio: int, valore: str, categoria: Category) -> bool:
     prefissi = _PREFISSI_AUTOSUFFICIENTI.get(categoria, ())
     if valore.startswith(prefissi):
+        return True
+    if categoria is Category.TELEFONO and _PREFISSO_0039.match(valore):
         return True
     pattern = _REGEX_CONTESTO.get(categoria)
     if pattern is None:
@@ -74,17 +82,56 @@ def _data_esiste(valore: str) -> bool:
     return True
 
 
+def _telefono_plausibile(valore: str) -> bool:
+    """Spec §6: lunghezza complessiva 9-11 cifre.
+
+    Il prefisso internazionale non entra nel conteggio: `+39 340 1234567` è lo
+    stesso numero di `340 1234567`, e contare anche il `39` respingerebbe come
+    troppo lungo qualunque cellulare con prefisso.
+    """
+    nazionale = re.sub(r"\A(?:\+39|0039)", "", valore.strip())
+    return 9 <= len(re.sub(r"\D", "", nazionale)) <= 11
+
+
 _VALIDATORI = {
     Category.CF: validators.cf_valido,
     Category.PIVA: validators.piva_valida,
     Category.IBAN: validators.iban_valido,
+    Category.TELEFONO: _telefono_plausibile,
     Category.DATA: _data_esiste,
 }
 
+# Lunghezza minima di un IBAN: due lettere di paese, due cifre di controllo e
+# undici caratteri di corpo (spec §6). Sotto questa soglia il ritaglio si ferma.
+_LUNGHEZZA_MINIMA_RITAGLIO = 15
 
-def _accettato(categoria: Category, valore: str) -> bool:
+
+def _accettato(categoria: Category, valore: str) -> str | None:
+    """Il candidato più lungo che supera il validatore della categoria, oppure
+    `None` se nessuno lo supera.
+
+    Un match può inglobare testo che non appartiene al valore. Quando il
+    validatore lo boccia, riprovo con candidati via via più corti, tagliati
+    all'ultimo gruppo separato da spazi, e mi fermo al primo che passa: è il
+    checksum a disambiguare dove finisce il valore. Oggi l'unico consumatore è
+    l'IBAN — la sua regex tollera gli spazi interni e la coda vorace arriva a
+    mangiare la parola maiuscola successiva ("IT60... PRESSO") — mentre CF e
+    PIVA hanno lunghezza fissa e nessuno spazio interno.
+    """
     validatore = _VALIDATORI.get(categoria)
-    return True if validatore is None else validatore(valore)
+    if validatore is None:
+        return valore
+    candidato = valore
+    while True:
+        if validatore(candidato):
+            return candidato
+        taglio = max(
+            (indice for indice, carattere in enumerate(candidato) if carattere.isspace()),
+            default=-1,
+        )
+        if taglio < 0 or len(candidato) < _LUNGHEZZA_MINIMA_RITAGLIO:
+            return None
+        candidato = candidato[:taglio]
 
 
 def trova_per_regole(testo: str, doc_id: str) -> list[Span]:
@@ -101,11 +148,16 @@ def trova_per_regole(testo: str, doc_id: str) -> list[Span]:
                 c.isdigit() for c in corrispondenza.group(1)
             ):
                 continue
-            if not _accettato(categoria, valore):
+            accettato = _accettato(categoria, valore)
+            if accettato is None:
                 continue
-            if not _ha_contesto(testo, corrispondenza.start(), valore, categoria):
+            if not _ha_contesto(testo, corrispondenza.start(), accettato, categoria):
                 continue
-            inizio, fine = corrispondenza.start(), corrispondenza.end()
+            # `fine` si ricava dal candidato accettato, non dal match: se la coda
+            # è stata ritagliata, `testo[inizio:fine]` deve essere esattamente il
+            # valore riconosciuto.
+            inizio = corrispondenza.start()
+            fine = inizio + len(accettato)
             trovati.append(
                 Span(
                     span_id=f"{doc_id}:{inizio}-{fine}:{categoria.value}",

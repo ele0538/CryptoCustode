@@ -1,5 +1,3 @@
-import pytest
-
 from cryptocustode.core.detect.rules import trova_per_regole
 from cryptocustode.core.models import Category, Source
 
@@ -27,6 +25,20 @@ class TestChecksum:
     def test_iban_con_cifra_alterata_ignorato(self):
         assert Category.IBAN not in categorie("Bonifico su IT60X0542811101000000123457.")
 
+    def test_iban_seguito_da_parola_maiuscola_riconosciuto(self):
+        # la coda vorace ingloba " PRESSO": il ritaglio guidato dal checksum
+        # deve restituire il solo IBAN, non scartare tutto il match
+        testo = "IBAN IT60X0542811101000000123456 PRESSO BANCA ESEMPIO"
+        assert valori(testo, Category.IBAN) == ["IT60X0542811101000000123456"]
+
+    def test_iban_a_gruppi_di_quattro_riconosciuto(self):
+        testo = "IBAN IT60 X054 2811 1010 0000 0123 456 come da mandato"
+        assert valori(testo, Category.IBAN) == ["IT60 X054 2811 1010 0000 0123 456"]
+
+    def test_iban_a_gruppi_seguito_da_parola_maiuscola_riconosciuto(self):
+        testo = "IBAN IT60 X054 2811 1010 0000 0123 456 PRESSO BANCA"
+        assert valori(testo, Category.IBAN) == ["IT60 X054 2811 1010 0000 0123 456"]
+
 
 class TestRequisitoDiContesto:
     def test_piva_con_parola_chiave_riconosciuta(self):
@@ -47,6 +59,54 @@ class TestRequisitoDiContesto:
 
     def test_numero_nudo_senza_contesto_ignorato(self):
         assert Category.TELEFONO not in categorie("La particella misura 3401234567 centimetri.")
+
+    def test_piva_con_parola_chiave_abbreviata_riconosciuta(self):
+        assert valori("Fornitore con p.i. 12345678903 registrato", Category.PIVA) == [
+            "12345678903"
+        ]
+
+    def test_numero_con_prefisso_0039_riconosciuto(self):
+        assert valori("Chiamare 0039 340 1234567 subito", Category.TELEFONO) == [
+            "0039 340 1234567"
+        ]
+
+    def test_0039_senza_numero_nazionale_non_e_un_prefisso(self):
+        # undici cifre nude che iniziano per 0039 non si certificano da sole
+        assert Category.TELEFONO not in categorie("Ordine 00391234567 spedito")
+
+
+class TestLunghezzaTelefono:
+    """Spec §6: lunghezza complessiva 9-11 cifre."""
+
+    def test_telefono_troppo_corto_ignorato(self):
+        assert Category.TELEFONO not in categorie("Tel. 01123456")
+
+    def test_telefono_troppo_lungo_ignorato(self):
+        assert Category.TELEFONO not in categorie("Tel. 012312345678")
+
+    def test_fisso_di_lunghezza_valida_riconosciuto(self):
+        assert valori("Tel. 011 1234567 interno 4", Category.TELEFONO) == ["011 1234567"]
+
+
+class TestMaiuscoleObbligatorie:
+    """`re.IGNORECASE` serve ai testi tutti in maiuscolo, ma le iniziali della
+    sequenza di nomi devono restare maiuscole davvero."""
+
+    def test_indirizzo_tutto_maiuscolo_riconosciuto(self):
+        assert valori("Residente in VIA GARIBALDI 42 Torino", Category.INDIRIZZO) == [
+            "VIA GARIBALDI 42"
+        ]
+
+    def test_via_email_non_e_un_indirizzo(self):
+        assert Category.INDIRIZZO not in categorie("Contattato via email dal cliente")
+
+    def test_azienda_con_suffisso_societario(self):
+        # il \b finale esclude il punto di chiusura della sigla
+        testo = "Fattura emessa da Alfa Costruzioni S.r.l. per il servizio"
+        assert valori(testo, Category.AZIENDA) == ["Alfa Costruzioni S.r.l"]
+
+    def test_parola_comune_spa_non_e_un_azienda(self):
+        assert Category.AZIENDA not in categorie("Il nuovo centro benessere spa apre domani")
 
 
 class TestAltreCategorie:
@@ -87,6 +147,22 @@ class TestAltreCategorie:
 
     def test_cap_da_solo_non_e_un_indirizzo(self):
         assert Category.INDIRIZZO not in categorie("Il codice 10121 non basta.")
+
+    def test_importo_non_aggancia_la_coda_di_un_numero_piu_lungo(self):
+        # spec §6: o l'importo è preso per intero o non è preso, mai a metà
+        trovati = valori("Totale 12345 EUR da versare", Category.IMPORTO)
+        assert trovati in ([], ["12345 EUR"])
+
+    def test_dati_catastali_con_foglio_abbreviato(self):
+        trovati = valori("Immobile al fg 12 mappale 345", Category.CATASTO)
+        assert trovati == ["fg 12 mappale 345"]
+
+    def test_indirizzo_con_cap_e_comune(self):
+        testo = "Residente in Via Giuseppe Garibaldi 42, 10121 Torino."
+        assert valori(testo, Category.INDIRIZZO) == ["Via Giuseppe Garibaldi 42, 10121 Torino"]
+
+    def test_numero_pratica_senza_punto_finale(self):
+        assert valori("Pratica 2024/ABC-77.", Category.PRATICA) == ["Pratica 2024/ABC-77"]
 
 
 class TestFormaDegliSpan:
