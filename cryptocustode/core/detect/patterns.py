@@ -24,9 +24,18 @@ SUFFISSI_SOCIETARI = (
 # ("Via dei Mille", "Banca di Roma S.p.A."): sono minuscoli, quindi la guardia
 # sulle maiuscole li scarterebbe troncando il nome. Sono ammessi solo insieme
 # ad almeno una parola con l'iniziale maiuscola, che resta obbligatoria.
-# Alternanza dalla forma più lunga alla più corta, per leggibilità.
+# Ogni forma precede i propri prefissi (`dello` prima di `del`, `allo` prima di
+# `al`, `de` per ultimo della sua famiglia): l'alternanza di `re` è ordinata e
+# una forma corta messa davanti a una lunga la nasconderebbe. Le famiglie
+# `dello`/`de'`/`de` e `al`/`ai`/`agli`/`alla`/`allo` sono indispensabili: senza
+# di loro odonimi comunissimi ("Via dello Sport", "Via de' Tornabuoni",
+# "Via ai Prati") non producevano alcuno span e finivano in chiaro. `del` non
+# può coprire `dello`, perché al connettivo deve seguire `\s+` e dopo `del`
+# viene una `l`; `dei` e `d'` non coprono `de'`.
 CONNETTIVI = (
-    r"dell'|della|delle|degli|dei|del|dall'|dalla|dalle|dagli|dal|"
+    r"dell'|della|delle|dello|degli|dei|del|de'|de|"
+    r"dall'|dalla|dalle|dagli|dal|"
+    r"allo|alla|agli|ai|al|"
     r"di|da|d'|gli|il|lo|la|le|l'"
 )
 
@@ -35,9 +44,14 @@ CONNETTIVI = (
 _CONNETTIVO = rf"(?:{CONNETTIVI})(?:\s+|(?<=')\s*)"
 
 # L'iniziale deve essere davvero maiuscola: il gruppo a flag locale
-# `(?-i:[A-Z])` disattiva `re.IGNORECASE` solo su quel carattere.
-_PAROLA_INDIRIZZO = r"(?-i:[A-Z])[\w'À-ÿ]*"
-_PAROLA_AZIENDA = r"(?-i:[A-Z])[\w'À-ÿ&.]*"
+# `(?-i:...)` disattiva `re.IGNORECASE` solo su quel carattere.
+# L'intervallo comprende anche le maiuscole accentate, perché il corpo della
+# parola le ammetteva già e un'iniziale sola ASCII lasciava senza span odonimi
+# come "Via Élia" o "Località Èboli". `Ø-Þ` è staccato da `À-Ö` di proposito:
+# U+00D7 è il segno di moltiplicazione, non una lettera, e `À-Þ` lo includerebbe.
+_INIZIALE_MAIUSCOLA = r"(?-i:[A-ZÀ-ÖØ-Þ])"
+_PAROLA_INDIRIZZO = rf"{_INIZIALE_MAIUSCOLA}[\w'À-ÿ]*"
+_PAROLA_AZIENDA = rf"{_INIZIALE_MAIUSCOLA}[\w'À-ÿ&.]*"
 
 PATTERN: dict[Category, Pattern[str]] = {
     Category.CF: re.compile(

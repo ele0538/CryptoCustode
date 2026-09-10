@@ -160,6 +160,57 @@ class TestCivicoECap:
         assert valori(testo, Category.INDIRIZZO) == ["Via Giuseppe Garibaldi, 10121 Torino"]
 
 
+class TestConnettiviAggiuntiEInizialeAccentata:
+    """Rulings 17 e 18: le famiglie di connettivi che mancavano ("dello", "de'",
+    "de", "allo", "alla", "agli", "ai", "al") e l'iniziale maiuscola accentata.
+    Senza di esse odonimi italiani comunissimi non producevano alcuno span, e
+    l'indirizzo finiva in chiaro all'AI esterna."""
+
+    def test_indirizzo_con_dello_include_civico_e_cap(self):
+        testo = "Residente in Via dello Sport 5, 10121 Torino."
+        assert valori(testo, Category.INDIRIZZO) == ["Via dello Sport 5, 10121 Torino"]
+
+    def test_indirizzo_con_dello_dopo_toponimo_composto(self):
+        testo = "Residente in Viale dello Stadio 3"
+        assert valori(testo, Category.INDIRIZZO) == ["Viale dello Stadio 3"]
+
+    def test_indirizzo_con_de_apostrofato(self):
+        # né `dei` né `d'` coprono `de'`
+        testo = "Residente in Via de' Tornabuoni 5, 50123 Firenze."
+        assert valori(testo, Category.INDIRIZZO) == ["Via de' Tornabuoni 5, 50123 Firenze"]
+
+    def test_indirizzo_con_preposizione_articolata_ai(self):
+        assert valori("Residente in Via ai Prati 7", Category.INDIRIZZO) == ["Via ai Prati 7"]
+
+    def test_indirizzo_con_preposizione_articolata_al(self):
+        testo = "Residente in Via al Castello 9"
+        assert valori(testo, Category.INDIRIZZO) == ["Via al Castello 9"]
+
+    def test_indirizzo_con_de_dentro_il_nome_arriva_al_civico(self):
+        # la troncatura da correggere si fermava a "Via Giovanni Battista" e
+        # lasciava "de Rossi 10" in chiaro, civico compreso
+        testo = "Residente in Via Giovanni Battista de Rossi 10"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Giovanni Battista de Rossi 10"]
+
+    def test_indirizzo_con_iniziale_maiuscola_accentata(self):
+        assert valori("Residente in Via Élia 4", Category.INDIRIZZO) == ["Via Élia 4"]
+
+    def test_indirizzo_con_toponimo_e_nome_accentati(self):
+        testo = "Abita in Località Èboli 2"
+        assert valori(testo, Category.INDIRIZZO) == ["Località Èboli 2"]
+
+    def test_i_soli_connettivi_non_producono_indirizzo(self):
+        # invariante del giro 1: almeno una parola con l'iniziale maiuscola
+        # resta obbligatoria, anche col vocabolario dei connettivi allargato
+        assert Category.INDIRIZZO not in categorie("Contattato via email dal cliente")
+        assert trova_per_regole("via dei del della di da il lo la le", "d1") == []
+        assert trova_per_regole("via dello de' de allo alla agli ai al", "d1") == []
+
+    def test_iniziale_minuscola_dopo_apostrofo_resta_rifiutata(self):
+        # l'intervallo allargato resta case-sensitive grazie a `(?-i:...)`
+        assert trova_per_regole("Residente in Via d'azeglio 5", "d1") == []
+
+
 class TestAltreCategorie:
     def test_email(self):
         assert valori("Scrivere a mario.rossi@esempio.it subito.", Category.EMAIL) == [
