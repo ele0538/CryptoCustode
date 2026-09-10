@@ -1,4 +1,5 @@
-"""Fa rispettare l'invariante 1 della spec: core/ non conosce HTTP né lo stato."""
+"""Fa rispettare gli invarianti 1 e 2 della spec §4: core/ non conosce HTTP né
+lo stato, e `core/mask.py` non tocca filesystem, orologio né random."""
 import ast
 from pathlib import Path
 
@@ -12,10 +13,26 @@ VIETATI = {
     "cryptocustode.state",
 }
 
+# Invariante 2 della spec §4: `mask.py` deve essere deterministica, perché
+# `approval_hash` va ricalcolato identico in fase di esportazione. Un import di
+# orologio, random o filesystem farebbe fallire quel confronto a caso e il
+# controllo di integrità diventerebbe rumore invece di una difesa. L'invariante
+# era vera di fatto ma non sorvegliata da nessun test.
+VIETATI_IN_MASK = {
+    "os",
+    "pathlib",
+    "random",
+    "secrets",
+    "time",
+    "datetime",
+    "uuid",
+    "io",
+}
 
-def _e_vietato(nome: str) -> bool:
+
+def _e_vietato(nome: str, vietati: set[str]) -> bool:
     """Vero se `nome` è un modulo vietato, o un suo sotto-modulo."""
-    return any(nome == vietato or nome.startswith(vietato + ".") for vietato in VIETATI)
+    return any(nome == vietato or nome.startswith(vietato + ".") for vietato in vietati)
 
 
 def _base_import_relativo(livello: int, pacchetto: list[str]) -> str:
@@ -28,15 +45,24 @@ def _base_import_relativo(livello: int, pacchetto: list[str]) -> str:
     return ".".join(segmenti)
 
 
-def nomi_vietati_in(sorgente: str, pacchetto: list[str]) -> set[str]:
+def nomi_vietati_in(
+    sorgente: str, pacchetto: list[str], vietati: set[str] | None = None
+) -> set[str]:
     """Restituisce i nomi importati da `sorgente` che violano l'invariante di
     purezza.
 
     `pacchetto` è la lista dei segmenti del pacchetto che contiene il file
     sorgente (per esempio ["cryptocustode", "core"]): serve a risolvere gli
     import relativi (`from .` / `from ..`) in nomi assoluti prima del
-    confronto con `VIETATI`.
+    confronto con l'insieme dei vietati.
+
+    `vietati` permette di stringere l'insieme su un singolo modulo — è così che
+    `mask.py` ottiene il suo divieto aggiuntivo su filesystem, orologio e
+    random — riusando questo unico rilevatore invece di un secondo visitatore
+    dell'albero sintattico.
     """
+    if vietati is None:
+        vietati = VIETATI
     albero = ast.parse(sorgente)
     importati: set[str] = set()
     for nodo in ast.walk(albero):
@@ -53,7 +79,7 @@ def nomi_vietati_in(sorgente: str, pacchetto: list[str]) -> set[str]:
                 importati.add(modulo)
                 for alias in nodo.names:
                     importati.add(f"{modulo}.{alias.name}")
-    return {nome for nome in importati if _e_vietato(nome)}
+    return {nome for nome in importati if _e_vietato(nome, vietati)}
 
 
 def pacchetto_del_file(percorso: Path) -> list[str]:
@@ -69,6 +95,38 @@ def test_core_non_importa_http_ne_stato():
         for nome in sorted(nomi_vietati_in(sorgente, pacchetto)):
             violazioni.append(f"{percorso.relative_to(RADICE)} importa {nome}")
     assert violazioni == [], "core/ deve restare puro:\n" + "\n".join(violazioni)
+
+
+def test_mask_non_importa_filesystem_orologio_ne_random():
+    """Invariante 2 della spec §4. Il gate di integrità dell'esportazione
+    ricalcola l'hash sul testo mascherato e lo confronta con `approval_hash`:
+    se la mascheratura non fosse deterministica, quel confronto fallirebbe a
+    caso e l'unica difesa contro una mutazione dopo l'approvazione cadrebbe."""
+    percorso = CORE / "mask.py"
+    trovati = nomi_vietati_in(
+        percorso.read_text(encoding="utf-8"),
+        pacchetto_del_file(percorso),
+        VIETATI | VIETATI_IN_MASK,
+    )
+    assert trovati == set(), (
+        "core/mask.py deve restare deterministica, ma importa: "
+        + ", ".join(sorted(trovati))
+    )
+
+
+def test_il_divieto_su_mask_rileva_un_import_di_orologio():
+    """Controllo del controllo: senza questo, un divieto scritto male
+    passerebbe per un invariante rispettato."""
+    trovati = nomi_vietati_in(
+        "from datetime import datetime\n", PACCHETTO_DI_PROVA, VIETATI | VIETATI_IN_MASK
+    )
+    assert trovati == {"datetime", "datetime.datetime"}
+
+
+def test_il_divieto_su_mask_non_riguarda_gli_altri_moduli_di_core():
+    """`entities.py` usa `uuid` per gli identificativi e resta legittimo: il
+    divieto aggiuntivo è di `mask.py`, non di tutto `core/`."""
+    assert nomi_vietati_in("import uuid\n", PACCHETTO_DI_PROVA) == set()
 
 
 # --- Test della funzione pura nomi_vietati_in --------------------------------
