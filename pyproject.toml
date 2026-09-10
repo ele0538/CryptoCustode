@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cryptocustode"
+version = "0.1.0"
+requires-python = ">=3.14"
+
+[tool.setuptools.packages.find]
+include = ["cryptocustode*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "lento: test che caricano il modello spaCy",
+    "rete: test che richiedono connettività o una API key",
+]
