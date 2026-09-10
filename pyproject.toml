@@ -12,7 +12,7 @@ include = ["cryptocustode*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers -p no:cacheprovider"
 markers = [
     "lento: test che caricano il modello spaCy",
     "rete: test che richiedono connettività o una API key",

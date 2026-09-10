@@ -13,24 +13,125 @@ VIETATI = {
 }
 
 
-def moduli_importati(percorso: Path) -> set[str]:
-    """Restituisce i nomi dei moduli importati da un file Python."""
-    albero = ast.parse(percorso.read_text(encoding="utf-8"))
-    nomi: set[str] = set()
+def _e_vietato(nome: str) -> bool:
+    """Vero se `nome` è un modulo vietato, o un suo sotto-modulo."""
+    return any(nome == vietato or nome.startswith(vietato + ".") for vietato in VIETATI)
+
+
+def _base_import_relativo(livello: int, pacchetto: list[str]) -> str:
+    """Risolve il pacchetto base (nome assoluto puntato) di un `ImportFrom`
+    relativo con `level = livello`. `livello == 0` è un import assoluto."""
+    if livello == 0:
+        return ""
+    troncamento = livello - 1
+    segmenti = pacchetto[: len(pacchetto) - troncamento] if troncamento else pacchetto
+    return ".".join(segmenti)
+
+
+def nomi_vietati_in(sorgente: str, pacchetto: list[str]) -> set[str]:
+    """Restituisce i nomi importati da `sorgente` che violano l'invariante di
+    purezza.
+
+    `pacchetto` è la lista dei segmenti del pacchetto che contiene il file
+    sorgente (per esempio ["cryptocustode", "core"]): serve a risolvere gli
+    import relativi (`from .` / `from ..`) in nomi assoluti prima del
+    confronto con `VIETATI`.
+    """
+    albero = ast.parse(sorgente)
+    importati: set[str] = set()
     for nodo in ast.walk(albero):
         if isinstance(nodo, ast.Import):
             for alias in nodo.names:
-                nomi.add(alias.name)
-                nomi.add(alias.name.split(".")[0])
-        elif isinstance(nodo, ast.ImportFrom) and nodo.module:
-            nomi.add(nodo.module)
-            nomi.add(nodo.module.split(".")[0])
-    return nomi
+                importati.add(alias.name)
+        elif isinstance(nodo, ast.ImportFrom):
+            base = _base_import_relativo(nodo.level, pacchetto)
+            if nodo.module:
+                modulo = f"{base}.{nodo.module}" if base else nodo.module
+            else:
+                modulo = base
+            if modulo:
+                importati.add(modulo)
+                for alias in nodo.names:
+                    importati.add(f"{modulo}.{alias.name}")
+    return {nome for nome in importati if _e_vietato(nome)}
+
+
+def pacchetto_del_file(percorso: Path) -> list[str]:
+    """Il pacchetto di un file: il suo percorso relativo alla radice meno l'ultimo segmento."""
+    return list(percorso.relative_to(RADICE).parts[:-1])
 
 
 def test_core_non_importa_http_ne_stato():
     violazioni = []
     for percorso in sorted(CORE.rglob("*.py")):
-        for modulo in sorted(moduli_importati(percorso) & VIETATI):
-            violazioni.append(f"{percorso.relative_to(RADICE)} importa {modulo}")
+        sorgente = percorso.read_text(encoding="utf-8")
+        pacchetto = pacchetto_del_file(percorso)
+        for nome in sorted(nomi_vietati_in(sorgente, pacchetto)):
+            violazioni.append(f"{percorso.relative_to(RADICE)} importa {nome}")
     assert violazioni == [], "core/ deve restare puro:\n" + "\n".join(violazioni)
+
+
+# --- Test della funzione pura nomi_vietati_in --------------------------------
+#
+# Questi test coprono i quattro stili di import che la versione precedente del
+# test (basata su ast.walk + confronto esatto con VIETATI) non rilevava:
+# `from pacchetto import stato`, `import pacchetto.stato.sotto`,
+# `from ..stato import X`, `from .. import stato`. Più i casi che già
+# funzionavano e due casi negativi di controllo.
+
+PACCHETTO_DI_PROVA = ["cryptocustode", "core"]
+
+
+def test_rileva_import_assoluto_fastapi():
+    assert nomi_vietati_in("import fastapi\n", PACCHETTO_DI_PROVA) == {"fastapi"}
+
+
+def test_rileva_import_assoluto_uvicorn():
+    assert nomi_vietati_in("import uvicorn\n", PACCHETTO_DI_PROVA) == {"uvicorn"}
+
+
+def test_rileva_from_import_assoluto_su_sottomodulo():
+    trovati = nomi_vietati_in(
+        "from starlette.responses import JSONResponse\n", PACCHETTO_DI_PROVA
+    )
+    assert trovati, "deve rilevare l'import di un sottomodulo di starlette"
+
+
+def test_rileva_from_import_di_sibling_assoluto():
+    """`from cryptocustode import state`: il nome vietato è l'alias importato,
+    non il modulo di partenza (che è solo `cryptocustode`)."""
+    trovati = nomi_vietati_in("from cryptocustode import state\n", PACCHETTO_DI_PROVA)
+    assert trovati == {"cryptocustode.state"}
+
+
+def test_rileva_import_assoluto_con_sottomoduli_multipli():
+    """`import cryptocustode.state.store`: nessuna uguaglianza esatta con
+    "cryptocustode.state" è possibile, serve il confronto per prefisso."""
+    trovati = nomi_vietati_in("import cryptocustode.state.store\n", PACCHETTO_DI_PROVA)
+    assert trovati == {"cryptocustode.state.store"}
+
+
+def test_rileva_from_import_relativo_a_due_punti():
+    """`from ..state import State`: l'import relativo va risolto con il
+    prefisso del pacchetto assoluto prima del confronto."""
+    trovati = nomi_vietati_in("from ..state import State\n", PACCHETTO_DI_PROVA)
+    assert trovati == {"cryptocustode.state", "cryptocustode.state.State"}
+
+
+def test_rileva_import_relativo_del_pacchetto_sibling():
+    """`from .. import state`: nodo.module è None, il nome vietato è l'alias
+    importato, non il modulo di partenza (che qui non esiste nemmeno)."""
+    trovati = nomi_vietati_in("from .. import state\n", PACCHETTO_DI_PROVA)
+    assert trovati == {"cryptocustode.state"}
+
+
+def test_non_vieta_import_di_moduli_interni_a_core():
+    trovati = nomi_vietati_in(
+        "from cryptocustode.core.models import Span\n", PACCHETTO_DI_PROVA
+    )
+    assert trovati == set()
+
+
+def test_non_vieta_import_del_pacchetto_radice():
+    trovati = nomi_vietati_in("import cryptocustode\n", PACCHETTO_DI_PROVA)
+    assert trovati == set()
