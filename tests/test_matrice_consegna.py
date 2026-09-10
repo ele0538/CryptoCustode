@@ -21,7 +21,7 @@ from cryptocustode.state.session import (
 from tests.pdf_di_prova import pdf_di_prova
 
 TESTO_RICCO = (
-    "Il contratto è firmato da Mario Rossi, codice fiscale RSSMRA85M01H501Z, "
+    "Il contratto è firmato da Mario Rossi, codice fiscale RSSMRA85M01H501Q, "
     "con IBAN IT60X0542811101000000123456 e P. IVA 12345678903. "
     "Recapito: Cell. 3401234567, mario.rossi@esempio.it."
 )
@@ -42,13 +42,40 @@ def store_con(fascicolo):
     return store
 
 
+@pytest.mark.lento
 def test_anti_fuga_nessun_valore_del_dizionario_compare_nell_esportato():
-    """Il test più importante della suite: nessun valore sopravvive all'export."""
-    fascicolo = fascicolo_con(TESTO_RICCO)
+    """Il test più importante della suite, e i suoi limiti onesti.
+
+    Prova che ogni valore effettivamente rilevato è assente dal testo
+    esportato, e che le categorie che questa fixture pianta deliberatamente
+    (CF, IBAN, P. IVA, email, telefono, persona) sono state davvero rilevate
+    — non solo che il dizionario, qualunque cosa contenga, non fuga. Non può
+    provare l'assenza di valori che il motore non ha mai rilevato: se una
+    categoria futura sfugge al rilevamento, questo test non se ne accorge.
+    Per questo gira con `usa_ner=True`: senza la gamba statistica, PERSONA
+    non verrebbe mai prodotta e la sua assenza non entrerebbe mai in
+    dizionario, restando indimostrata invece che verificata.
+    """
+    fascicolo = fascicolo_con(TESTO_RICCO, usa_ner=True)
     approva(fascicolo)
     esportato = export_sanitized_text("f1", store_con(fascicolo))
     testo_esportato = "\n".join(esportato.values())
     assert fascicolo.entities, "il fascicolo deve avere almeno un'entità, altrimenti il test non prova nulla"
+    categorie_rilevate = {entita.category for entita in fascicolo.entities.values()}
+    categorie_pianificate = {
+        Category.CF,
+        Category.IBAN,
+        Category.PIVA,
+        Category.EMAIL,
+        Category.TELEFONO,
+        Category.PERSONA,
+    }
+    mancanti = categorie_pianificate - categorie_rilevate
+    assert not mancanti, (
+        "la fixture pianta queste categorie apposta per essere rilevate; se "
+        f"mancano ({mancanti}) il ciclo sottostante quantifica su meno di "
+        "quanto promesso e il test non proverebbe più nulla per loro"
+    )
     for entita in fascicolo.entities.values():
         assert entita.canonical_value not in testo_esportato
         for variante in entita.variants:
