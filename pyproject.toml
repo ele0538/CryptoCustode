@@ -10,6 +10,15 @@ requires-python = ">=3.14"
 [tool.setuptools.packages.find]
 include = ["cryptocustode*"]
 
+# `cryptocustode/ui/` non è un package Python — non ha `__init__.py`, e non deve
+# averlo — quindi `packages.find` non lo vede e senza questa voce una
+# `pip install .` produrrebbe un'installazione in cui `crea_app()` muore sul
+# mount degli statici. Oggi l'app si lancia dal clone, quindi il difetto è
+# latente: ma il repo dichiara un `build-system`, e una trappola latente in un
+# artefatto di consegna è comunque una trappola.
+[tool.setuptools.package-data]
+cryptocustode = ["ui/*.html", "ui/*.css", "ui/*.js"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers -p no:cacheprovider"
@@ -23,8 +32,18 @@ markers = [
 # anyio già deprecato. Nessuna delle due è azionabile qui, ed entrambe
 # comparirebbero a ogni esecuzione della suite: l'output pulito dei test è un
 # criterio di revisione, quindi il rumore andrebbe segnalato a ogni task.
-# Il filtro è ristretto ai due messaggi: qualunque altro warning resta visibile.
+#
+# Ogni filtro è ristretto a messaggio, categoria e modulo che lo emette, così
+# non copre nient'altro: qualunque altro warning, e in particolare qualunque
+# warning di codice nostro, resta visibile. Nota che la categoria del primo è
+# `StarletteDeprecationWarning`, che estende `UserWarning` e **non**
+# `DeprecationWarning`: pinnarlo come deprecazione lo lascerebbe passare.
+#
+# Quando rivedere questa voce: al prossimo aggiornamento di starlette o alla
+# migrazione a `httpx2`. Il primo messaggio è il segnale con cui il monte
+# chiede quella migrazione, e da qui in poi tace: se un giorno `httpx` non
+# fosse più supportato, non lo si scoprirebbe da un warning ma da un errore.
 filterwarnings = [
-    "ignore:Using .httpx. with .starlette.testclient. is deprecated",
-    "ignore:The anyio.abc.BlockingPortal alias is deprecated",
+    "ignore:Using .httpx. with .starlette.testclient. is deprecated:UserWarning:fastapi.testclient",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning:starlette.testclient",
 ]

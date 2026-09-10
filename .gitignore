@@ -10,6 +10,11 @@ __pycache__/
 # Vault cifrati: contengono dati di fascicolo, non vanno versionati
 *.vault
 
+# Artefatti di build
+build/
+dist/
+*.egg-info/
+
 # Test e strumenti
 .pytest_cache/
 .coverage
