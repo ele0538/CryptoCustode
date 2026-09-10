@@ -20,13 +20,35 @@ from cryptocustode.core.models import Category, Source, Span
 
 _NOMI_MESI = {nome: numero for numero, nome in enumerate(MESI.split("|"), start=1)}
 
+# Compilate una sola volta per categoria: un'alternanza delle parole chiave,
+# ciascuna delimitata da confini di parola non standard (`\b` non si comporta
+# bene dopo un punto finale come in "p.i."), così "particella" non attiva
+# "cell" (spec §6, §16 limite 3).
+_REGEX_CONTESTO: dict[Category, re.Pattern[str]] = {
+    categoria: re.compile(
+        "|".join(rf"(?<!\w){re.escape(parola)}(?!\w)" for parola in parole)
+    )
+    for categoria, parole in PAROLE_CONTESTO.items()
+}
 
-def _ha_contesto(testo: str, inizio: int, categoria: Category) -> bool:
-    parole = PAROLE_CONTESTO.get(categoria)
-    if parole is None:
+# Prefissi che certificano da soli il requisito di contesto: fanno parte del
+# match stesso, quindi non possono comparire nella finestra che lo precede
+# (spec §6: si applica solo a una sequenza nuda o senza prefisso internazionale).
+_PREFISSI_AUTOSUFFICIENTI: dict[Category, tuple[str, ...]] = {
+    Category.PIVA: ("IT",),
+    Category.TELEFONO: ("+39", "0039"),
+}
+
+
+def _ha_contesto(testo: str, inizio: int, valore: str, categoria: Category) -> bool:
+    prefissi = _PREFISSI_AUTOSUFFICIENTI.get(categoria, ())
+    if valore.startswith(prefissi):
+        return True
+    pattern = _REGEX_CONTESTO.get(categoria)
+    if pattern is None:
         return True
     finestra = testo[max(0, inizio - FINESTRA_CONTESTO):inizio].lower()
-    return any(parola in finestra for parola in parole)
+    return pattern.search(finestra) is not None
 
 
 def _data_esiste(valore: str) -> bool:
@@ -81,7 +103,7 @@ def trova_per_regole(testo: str, doc_id: str) -> list[Span]:
                 continue
             if not _accettato(categoria, valore):
                 continue
-            if not _ha_contesto(testo, corrispondenza.start(), categoria):
+            if not _ha_contesto(testo, corrispondenza.start(), valore, categoria):
                 continue
             inizio, fine = corrispondenza.start(), corrispondenza.end()
             trovati.append(
