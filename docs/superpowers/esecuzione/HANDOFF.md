@@ -94,7 +94,7 @@ tutto lo stack nativo di spaCy, quindi non serve un compilatore.
 
 ## Decisioni prese senza conferma dell'utente
 
-Cinque, in ordine. Ognuna è revocabile; la colonna del costo dice cosa si rischia se la
+Sei, in ordine. Ognuna è revocabile; la colonna del costo dice cosa si rischia se la
 decisione era sbagliata.
 
 **Ruling 1 — Ramo in-place invece di worktree separato.** Il Task 1 scarica 550 MB di
@@ -168,11 +168,28 @@ dalla spec, come è stato fatto per il piano 1.
 
 ## Nota sulle issue GitLab
 
-Il progetto è `welfare/ai_service/CryptoCustode` su `gitlab.trecuori.org`. `glab` è
-autenticato e `glab repo view` funziona, ma le issue e le label rispondono `403
-insufficient_granular_scope`: il token fine-grained ha `Project: Read` ma non `Work Item`
-né `Label`. Per usare `/to-tickets` o `/triage` serve un token con scope `api`, generabile
-da `https://gitlab.trecuori.org/-/user_settings/personal_access_tokens/legacy/new?scopes=api,write_repository`.
+Il progetto è `emanuele.quagliotto/CryptoCustode` (id 105) su `gitlab.trecuori.org`:
+namespace personale, **non** `welfare/ai_service/` come diceva la versione precedente di
+questa nota. `glab` è autenticato e funzionante.
+
+**Il blocco sui permessi è risolto** (verificato 2026-09-10, 11:10 locali). Il token in uso
+è `Claude_Access` (id 69, `granular: false`, scope `api` e `write_repository`, scadenza
+2027-09-10), creato alle 10:26 locali. `projects/105`, `projects/105/issues` e
+`projects/105/labels` rispondono tutti 200.
+
+La nota precedente riportava `403 insufficient_granular_scope`, con `Project: Read` ma
+senza `Work Item` né `Label`. Era vera, ma descriveva un token fine-grained già sostituito
+36 minuti prima che questa riga venisse committata: è stata riportata senza retest. Non
+ripetere quella conclusione senza aver prima riprovato una chiamata.
+
+Il tracker resta comunque **vuoto**: 0 issue e 0 label. Le cinque label canoniche di
+`docs/agents/triage-labels.md` non sono mai state create e i task 4-8 non esistono come
+issue. `/to-tickets` e `/triage` ora hanno i permessi per crearle.
+
+Attenzione: sull'istanza restano attivi cinque token granulari (`test`, `test 2`, `test 3`,
+`test 4`, `accessoClaude`), nessuno dei quali ha `Work Item` o `Label`. Un client ancora
+puntato su uno di essi continuerà a vedere `403 insufficient_granular_scope` anche ora che
+`glab` funziona, perché è una credenziale diversa. Vanno revocati o riconfigurati.
 
 Il percorso del binario, che non sempre è sul PATH delle shell degli agenti, è
 `C:\Users\<utente>\AppData\Local\Programs\glab\glab.exe`.
