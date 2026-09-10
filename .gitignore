@@ -1,0 +1,21 @@
+# Ambiente
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Segreti: la API key Gemini vive qui, mai nel repo
+.env
+
+# Vault cifrati: contengono dati di fascicolo, non vanno versionati
+*.vault
+
+# Test e strumenti
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store
