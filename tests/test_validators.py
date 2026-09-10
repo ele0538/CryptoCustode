@@ -27,11 +27,45 @@ class TestCodiceFiscale:
     def test_lunghezza_o_forma_errata(self, valore):
         assert cf_valido(valore) is False
 
-    def test_omocodia_non_fa_esplodere_il_calcolo(self):
-        # nell'omocodia alcune cifre diventano lettere: il CIN si calcola
-        # sui 15 caratteri così come compaiono
-        cin = cin_atteso("RSSMRAURMLNH5L1")
-        assert cin.isalpha() and len(cin) == 1
+    def test_cin_omocodico_calcolato_a_mano(self):
+        # Corpo omocodico RSSMRAURMLNH5L1: alle posizioni 7-8 ("UR"), 10-11
+        # ("LN") e 13-15 ("5L1") compaiono lettere al posto delle cifre che
+        # avrebbe un codice fiscale piano (nell'omocodia L=0, N=2, ...).
+        #
+        # Calcolo a mano da _DISPARI (posizioni dispari, 1-based) e _PARI
+        # (posizioni pari), lette carattere per carattere da validators.py:
+        #
+        # pos  car  tabella   valore
+        #  1    R   DISPARI      8
+        #  2    S   PARI        18
+        #  3    S   DISPARI     12
+        #  4    M   PARI        12
+        #  5    R   DISPARI      8
+        #  6    A   PARI         0
+        #  7    U   DISPARI     16
+        #  8    R   PARI        17
+        #  9    M   DISPARI     18
+        # 10    L   PARI        11
+        # 11    N   DISPARI     20
+        # 12    H   PARI         7
+        # 13    5   DISPARI     13
+        # 14    L   PARI        11
+        # 15    1   DISPARI      0
+        #
+        # somma posizioni dispari (1,3,5,7,9,11,13,15):
+        #   8 + 12 + 8 + 16 + 18 + 20 + 13 + 0 = 95
+        # somma posizioni pari (2,4,6,8,10,12,14):
+        #   18 + 12 + 0 + 17 + 11 + 7 + 11 = 76
+        # totale = 95 + 76 = 171; 171 % 26 = 15; chr(65 + 15) = 'P'
+        #
+        # Controllo di discriminazione (a mano, non testato qui): scambiando
+        # _DISPARI e _PARI sulle stesse posizioni si ottiene un totale diverso
+        # (167, cifra di controllo 11) e quindi un carattere diverso ('L'
+        # invece di 'P'): uno scambio delle tabelle altererebbe il risultato
+        # atteso da questo test, quindi lo farebbe fallire.
+        assert cin_atteso("RSSMRAURMLNH5L1") == "P"
+        assert cf_valido("RSSMRAURMLNH5L1P") is True
+        assert cf_valido("RSSMRAURMLNH5L1Z") is False
 
 
 class TestPartitaIva:
