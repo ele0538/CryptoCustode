@@ -133,7 +133,7 @@ PATTERN: dict[Category, Pattern[str]] = {
         # è "eurodollaro", mentre "EUR100" — cifre attaccate alla sigla — è un
         # importo e con `\b` avrebbe smesso di essere riconosciuto.
         r"(?:€|(?:EUR|euro)(?![A-Za-zÀ-ÿ]))"
-        r"\s?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?"
+        r"\s?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?"
         # `(?![\d.,]*\d)` chiude a destra i decimali: senza confine
         # "€ 12.345,678" veniva troncato in "€ 12.345,67" e la terza cifra
         # restava in chiaro accanto a un importo storpiato (ruling I3). Con il
@@ -143,7 +143,7 @@ PATTERN: dict[Category, Pattern[str]] = {
         # `(?<![\d.,])` impedisce di agganciare la coda di un numero più lungo:
         # senza confine a sinistra "12345 EUR" produceva lo span "345 EUR",
         # cioè un importo storpiato e le due cifre iniziali in chiaro.
-        r"|(?<![\d.,])(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?(?![\d.,]*\d)"
+        r"|(?<![\d.,])(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?(?![\d.,]*\d)"
         r"\s?(?:€|(?:EUR|euro)(?![A-Za-zÀ-ÿ]))",
         re.IGNORECASE,
     ),

@@ -446,18 +446,29 @@ class TestImportoSeguitoDalSimbolo:
 class TestConfineDestroDeiDecimali:
     """Ruling I3: senza confine a destra i decimali venivano troncati a due
     cifre e la terza restava in chiaro accanto a un importo storpiato
-    ("Canone di [IMPORTO]8 mensili"). Il lookahead trasforma la corruzione in
-    un'assenza di span: un importo o è preso intero o non è preso."""
+    ("Canone di [IMPORTO]8 mensili"). Il lookahead da solo trasformava però
+    la corruzione in un'assenza di span (una fuga: l'importo restava tutto
+    in chiaro). Ruling 22: la spec §6 non pone un limite alle cifre
+    decimali, quindi il gruppo decimale è stato allargato a `\\d+` — un
+    importo a tre decimali è una tariffa legittima e va mascherato per
+    intero. Il confine a destra resta invariato e continua a respingere le
+    forme malformate."""
 
     def test_tre_decimali_non_producono_un_importo_troncato(self):
-        assert valori("Canone di € 12.345,678 mensili", Category.IMPORTO) == []
+        assert valori("Canone di € 12.345,678 mensili", Category.IMPORTO) == ["€ 12.345,678"]
 
     def test_tariffa_a_tre_decimali_non_produce_un_importo_troncato(self):
-        assert valori("Prezzo € 0,505 per kWh", Category.IMPORTO) == []
+        assert valori("Prezzo € 0,505 per kWh", Category.IMPORTO) == ["€ 0,505"]
 
     def test_due_decimali_restano_riconosciuti(self):
         assert valori("Canone di € 1.250,00 mensili.", Category.IMPORTO) == ["€ 1.250,00"]
         assert valori("12.345,67 EUR", Category.IMPORTO) == ["12.345,67 EUR"]
+
+    def test_decimali_con_cifre_dopo_il_punto_restano_malformati(self):
+        # il confine a destra `(?![\d.,]*\d)` non è cambiato: una forma
+        # incoerente coi separatori (virgola decimale seguita da un punto
+        # con altre cifre) resta respinta, non troncata
+        assert valori("€ 1,2.3", Category.IMPORTO) == []
 
 
 class TestFormaDegliSpan:
