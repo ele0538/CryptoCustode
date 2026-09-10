@@ -63,3 +63,20 @@ def pdf_di_prova(pagine: list[str]) -> bytes:
     contenuto = documento.tobytes()
     documento.close()
     return contenuto
+
+
+def pdf_cifrato() -> bytes:
+    """Un PDF protetto da password, per il limite 10 della spec §16.
+
+    Verificato sulla macchina: `fitz.open()` su questi byte **non** solleva, e
+    `needs_pass` vale 1. È l'unico modo di intercettarlo — caricarne una pagina
+    solleverebbe `ValueError("document closed or encrypted")`, cioè un errore
+    grezzo invece del messaggio italiano che la spec §13 pretende.
+    """
+    documento = fitz.open()
+    _pagina_di_testo(documento)
+    contenuto = documento.tobytes(
+        encryption=fitz.PDF_ENCRYPT_AES_256, user_pw="segreto", owner_pw="segreto"
+    )
+    documento.close()
+    return contenuto

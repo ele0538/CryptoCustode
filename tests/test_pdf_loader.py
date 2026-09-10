@@ -2,7 +2,7 @@ import pytest
 
 from cryptocustode.core.errors import ScannedDocumentRejected
 from cryptocustode.core.ingest.pdf_loader import carica_pdf
-from tests.pdf_di_prova import TESTO_DI_PAGINA, pdf_di_prova
+from tests.pdf_di_prova import TESTO_DI_PAGINA, pdf_cifrato, pdf_di_prova
 
 
 def test_pdf_di_solo_testo_viene_estratto():
@@ -57,3 +57,12 @@ def test_pagina_raster_con_testo_residuo_viene_respinta():
 def test_pdf_illeggibile_viene_respinto():
     with pytest.raises(ScannedDocumentRejected):
         carica_pdf(b"questi non sono i byte di un PDF")
+
+
+def test_pdf_cifrato_viene_respinto():
+    # Spec §16 limite 10. Non lo copre il test precedente: su byte cifrati
+    # `fitz.open()` riesce, quindi l'`except` non scatta e l'unico controllo
+    # che li intercetta è `needs_pass`. Senza questo test quel ramo non è
+    # verificato da nulla.
+    with pytest.raises(ScannedDocumentRejected, match="password"):
+        carica_pdf(pdf_cifrato())
