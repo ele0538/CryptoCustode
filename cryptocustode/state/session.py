@@ -6,8 +6,12 @@
 from __future__ import annotations
 
 from cryptocustode.core.entities import risolvi_ambiguita_omonimia, suggerisci_fusioni
-from cryptocustode.core.errors import UnresolvedAmbiguities
-from cryptocustode.core.mask import hash_approvazione
+from cryptocustode.core.errors import (
+    ExportNotAllowed,
+    IntegrityError,
+    UnresolvedAmbiguities,
+)
+from cryptocustode.core.mask import hash_approvazione, maschera_documento
 from cryptocustode.core.models import Fascicolo, State
 
 
@@ -50,3 +54,41 @@ def registra_mutazione(fascicolo: Fascicolo) -> None:
     if fascicolo.state is State.APPROVED:
         fascicolo.state = State.PENDING_REVIEW
         fascicolo.approval_hash = None
+
+
+class SessionStore:
+    """I fascicoli vivi del processo, indicizzati per id.
+
+    Fuori di qui e dal vault cifrato un fascicolo non esiste: niente database,
+    niente file temporanei (spec §10).
+    """
+
+    def __init__(self) -> None:
+        self._fascicoli: dict[str, Fascicolo] = {}
+
+    def salva(self, fascicolo: Fascicolo) -> None:
+        self._fascicoli[fascicolo.fascicolo_id] = fascicolo
+
+    def prendi(self, fascicolo_id: str) -> Fascicolo:
+        return self._fascicoli[fascicolo_id]
+
+
+def export_sanitized_text(fascicolo_id: str, store: SessionStore) -> dict[str, str]:
+    """L'unico punto da cui esce il testo mascherato (spec §8).
+
+    Due controlli, in ordine: lo stato deve essere APPROVED, e il testo
+    mascherato corrente deve ancora produrre l'hash approvato. Il secondo
+    intercetta le mutazioni che non sono passate da `registra_mutazione`.
+
+    Il payload contiene esclusivamente `{nome_file: testo_mascherato}`: nessun
+    testo originale, nessun dizionario, nessuno span.
+    """
+    fascicolo = store.prendi(fascicolo_id)
+    if fascicolo.state is not State.APPROVED:
+        raise ExportNotAllowed("il fascicolo non è approvato")
+    if hash_approvazione(fascicolo) != fascicolo.approval_hash:
+        raise IntegrityError("il testo è cambiato dopo l'approvazione")
+    return {
+        documento.filename: maschera_documento(fascicolo, documento)
+        for documento in fascicolo.documents
+    }
