@@ -1487,8 +1487,10 @@ git commit -m "feat: ripristino della risposta dell'IA senza esiti parziali"
 - Test: `tests/test_session.py`
 
 **Interfaces:**
-- Consumes: `UnresolvedAmbiguities` dal Task 1; `hash_approvazione` da `core/mask.py`; `Fascicolo`, `State` da `core/models.py`.
+- Consumes: `UnresolvedAmbiguities` dal Task 1; `hash_approvazione` da `core/mask.py`; `risolvi_ambiguita_omonimia` e `suggerisci_fusioni` da `core/entities.py`; `Fascicolo`, `State` da `core/models.py`.
 - Produces: `analisi_completata(fascicolo) -> None`, `approva(fascicolo) -> None`, `registra_mutazione(fascicolo) -> None`. Usate dal Task 8 e dal piano 3.
+
+**`analisi_completata` deve popolare le code delle ambiguità.** Il piano 1 costruisce `risolvi_ambiguita_omonimia` e `suggerisci_fusioni` ma **nessuno le chiama**: `analizza_documento` aggrega gli span in entità e si ferma lì. Verificato leggendo il codice consegnato, non a memoria. Se `analisi_completata` non le invoca, la coda resta vuota per sempre, `approva` non trova mai nulla da bloccare e il gate delle omonimie della spec §7 non esiste in produzione. Le due chiamate vanno qui e non dentro `analizza_documento` per una ragione precisa: le omonimie sono una proprietà del **fascicolo intero**, quindi si possono calcolare solo quando tutti i documenti sono stati analizzati, non a metà del caricamento. `state/` può importare `core/`: l'invariante 1 vieta solo il verso opposto.
 
 **La macchina (spec §8):**
 
@@ -1668,7 +1670,62 @@ def test_una_mutazione_in_draft_non_cambia_nulla():
     fascicolo = fascicolo_vuoto("f1")
     registra_mutazione(fascicolo)
     assert fascicolo.state is State.DRAFT
+
+
+def test_l_analisi_popola_la_coda_delle_omonimie():
+    # Senza le due chiamate dentro analisi_completata questa coda resterebbe
+    # vuota per sempre e `approva` non avrebbe mai nulla da bloccare.
+    fascicolo = fascicolo_vuoto("f1")
+    for indice, testo in enumerate(["Il conduttore Mario Rossi.", "Il garante Mario Rossi."]):
+        documento = Document(
+            doc_id=f"d{indice}",
+            filename=f"doc{indice}.txt",
+            text=testo,
+            page_offsets=[0],
+            sha256=f"{indice}" * 64,
+        )
+        fascicolo.documents.append(documento)
+        aggiungi_span_manuale(
+            fascicolo, documento, testo.index("Mario Rossi"),
+            testo.index("Mario Rossi") + 11, Category.PERSONA,
+        )
+    analisi_completata(fascicolo)
+    assert any(a.blocca_approvazione for a in fascicolo.ambiguities)
+
+
+def test_l_analisi_popola_anche_i_suggerimenti_euristici():
+    fascicolo = fascicolo_vuoto("f1")
+    for indice, (testo, nome) in enumerate(
+        [("Il conduttore M. Rossi.", "M. Rossi"), ("Il garante Mario Rossi.", "Mario Rossi")]
+    ):
+        documento = Document(
+            doc_id=f"d{indice}",
+            filename=f"doc{indice}.txt",
+            text=testo,
+            page_offsets=[0],
+            sha256=f"{indice}" * 64,
+        )
+        fascicolo.documents.append(documento)
+        aggiungi_span_manuale(
+            fascicolo, documento, testo.index(nome),
+            testo.index(nome) + len(nome), Category.PERSONA,
+        )
+    analisi_completata(fascicolo)
+    suggerimenti = [
+        a
+        for a in fascicolo.ambiguities
+        if a.kind is AmbiguityKind.HEURISTIC_MERGE_SUGGESTION
+    ]
+    assert len(suggerimenti) == 1
+    assert suggerimenti[0].blocca_approvazione is False
 ```
+
+I due test nuovi importano anche `AmbiguityKind` e `aggiungi_span_manuale`: aggiungi
+`AmbiguityKind` alla lista di import da `cryptocustode.core.models` e
+`from cryptocustode.core.entities import aggiungi_span_manuale` in testa al file di test.
+Il tagging manuale è la via più corta per costruire due entità omonime senza dipendere dal
+NER, e `aggiungi_span_manuale` pretende che il documento sia già in `fascicolo.documents`
+— per questo l'append precede la chiamata.
 
 - [ ] **Step 2: Eseguire i test e verificare che falliscano**
 
@@ -1685,13 +1742,22 @@ Expected: FAIL con `ImportError` su `cryptocustode.state.session`.
 
 from __future__ import annotations
 
+from cryptocustode.core.entities import risolvi_ambiguita_omonimia, suggerisci_fusioni
 from cryptocustode.core.errors import UnresolvedAmbiguities
 from cryptocustode.core.mask import hash_approvazione
 from cryptocustode.core.models import Fascicolo, State
 
 
 def analisi_completata(fascicolo: Fascicolo) -> None:
-    """DRAFT -> PENDING_REVIEW, a analisi finita."""
+    """DRAFT -> PENDING_REVIEW, popolando le code delle ambiguità.
+
+    Le due code si calcolano qui e non dentro `analizza_documento` perché le
+    omonimie sono una proprietà del fascicolo intero: hanno senso solo quando
+    tutti i documenti sono stati analizzati. Senza queste due chiamate la coda
+    resterebbe vuota e `approva` non troverebbe mai nulla da bloccare.
+    """
+    risolvi_ambiguita_omonimia(fascicolo)
+    suggerisci_fusioni(fascicolo)
     fascicolo.state = State.PENDING_REVIEW
 
 
@@ -1726,7 +1792,7 @@ def registra_mutazione(fascicolo: Fascicolo) -> None:
 - [ ] **Step 4: Eseguire i test e verificare che passino**
 
 Run: `.venv\Scripts\python -m pytest tests/test_session.py -v`
-Expected: PASS, 13 test.
+Expected: PASS, 15 test.
 
 - [ ] **Step 5: Eseguire l'intera suite**
 
