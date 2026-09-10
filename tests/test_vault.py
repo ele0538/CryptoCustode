@@ -49,7 +49,6 @@ def fascicolo_popolato():
         placeholder="[PERSONA_1]",
         canonical_value="Mario Rossi",
         variants={"Mario Rossi", "M. Rossi"},
-        cf=None,
     )
     fascicolo.ambiguities.append(
         Ambiguity(

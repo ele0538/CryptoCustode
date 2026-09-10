@@ -2,8 +2,13 @@
 
 Principio guida (spec §7): fondere per errore corrompe i dati e rivela il nome
 di una persona al posto di un'altra; separare per errore degrada soltanto la
-qualità della risposta dell'IA. Quindi separare è il default, e solo il codice
-fiscale identico autorizza una fusione automatica.
+qualità della risposta dell'IA. Quindi separare è il default e le euristiche
+sui nomi producono suggerimenti, mai fusioni.
+
+Il codice fiscale non entra in questa partita: viene mascherato come entità a
+sé, ma non viene mai legato a una persona, perché nessuna regola può dire quale
+CF appartenga a quale nome senza rischiare di fondere due persone diverse (spec
+§7, emendata nella issue #12).
 """
 from __future__ import annotations
 
@@ -228,16 +233,7 @@ def risolvi_ambiguita_omonimia(fascicolo: Fascicolo) -> None:
         entita = fascicolo.entities.get(entity_id)
         if entita is None or entita.category not in _CATEGORIE_CON_VARIANTI:
             continue
-        # LIMITE NOTO: il ramo `entita.cf is not None` è morto, perché nessun
-        # codice in produzione assegna `Entity.cf` (vedi il commento sul campo
-        # in `models.py`). La regola di aggregazione per codice fiscale della
-        # spec §7 non è implementata e attende un emendamento della spec, che
-        # deve dire come un CF si lega a una persona. Finché resta così, due
-        # omonimi nello stesso documento condividono `[PERSONA_1]` e al
-        # ripristino uno dei due riceve il nome dell'altro. Il ramo resta
-        # scritto perché è la condizione che la spec chiede: quando il campo
-        # verrà popolato, questa riga sarà già quella giusta.
-        if len(documenti) < 2 or entita.cf is not None:
+        if len(documenti) < 2:
             continue
         if (entity_id,) in gia_aperte:
             continue

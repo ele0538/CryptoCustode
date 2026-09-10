@@ -66,7 +66,7 @@ def test_fascicolo_vuoto_parte_in_draft_con_tutte_le_categorie_attive():
 def test_entity_tiene_traccia_delle_varianti():
     e = Entity(
         entity_id="e1", category=Category.PERSONA, placeholder="[PERSONA_1]",
-        canonical_value="Mario Rossi", variants={"Mario Rossi", "M. Rossi"}, cf=None,
+        canonical_value="Mario Rossi", variants={"Mario Rossi", "M. Rossi"},
     )
     assert "M. Rossi" in e.variants
     assert e.canonical_value == "Mario Rossi"

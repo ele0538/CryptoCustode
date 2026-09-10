@@ -24,7 +24,7 @@ l'IA e il ritorno della risposta avvengono per copia-incolla, a cura dell'utente
 |---|---|---|
 | 1 | FastAPI + uvicorn su `127.0.0.1`, UI HTML/CSS/JS vanilla in una scheda del browser aperta all'avvio | L'API di esportazione richiesta dalla consegna esiste letteralmente ed è dimostrabile; la UI di revisione con testo evidenziato e selezione manuale è molto più semplice in HTML; il gate di approvazione è testabile con `TestClient` |
 | 2 | Il testo estratto è immutabile; l'utente agisce solo sugli span | Elimina la contraddizione fra editing libero e masking basato su offset; rende il masking una funzione pura, quindi l'hash di approvazione riproducibile; impedisce all'utente di reintrodurre dati reali nel testo esportabile |
-| 3 | Fusione automatica solo su codice fiscale identico; le euristiche sui nomi producono suggerimenti da confermare; separare è il default | Fondere per errore corrompe i dati e rivela il nome di una persona al posto di un'altra; separare per errore degrada solo la qualità della risposta dell'IA |
+| 3 | Nessuna fusione è autorizzata dal codice fiscale; le euristiche sui nomi producono suggerimenti da confermare; separare è il default | Fondere per errore corrompe i dati e rivela il nome di una persona al posto di un'altra; separare per errore degrada solo la qualità della risposta dell'IA. **Emendata il 2026-09-10 (issue #12):** la decisione prometteva la fusione automatica su codice fiscale identico, ritirata perché nessuna regola può legare un CF a una persona senza rischiare di fonderne due diverse (§7) |
 | 4 | Tutte le categorie mascherate di default, incluse date e importi; toggle per categoria più controllo sul singolo span | Prudente sulla privacy e aderente alla lettera della consegna, senza rinunciare al controllo dell'utente |
 | 5 | Nessuna scrittura in chiaro su disco; il `.vault` cifrato contiene l'intero fascicolo | Consente di riprendere una revisione e di ripristinare una risposta in una sessione successiva, al costo di qualche campo in più nello stesso blob cifrato |
 | 6 | Nessuna chiamata di rete nell'applicazione; la API key Gemini vive solo in `tools/e2e_gemini.py` | Storia della privacy verificabile: nessun dato esce dal processo. Lo script serve a provare il giro completo e il comportamento dell'IA che storpia i segnaposto |
@@ -148,7 +148,6 @@ class Entity:
     placeholder: str           # "[PERSONA_1]"
     canonical_value: str       # valore usato nel ripristino
     variants: set[str]
-    cf: str | None
 
 @dataclass
 class Ambiguity:
@@ -238,11 +237,41 @@ le aziende, i suffissi societari vengono normalizzati e ignorati nel confronto.
 
 | Situazione | Comportamento |
 |---|---|
-| CF identico | fusione automatica |
-| CF diversi, stesso nome | entità distinte, automaticamente, nessuna domanda |
+| Codice fiscale | mascherato come entità a sé (`[CF_1]`), mai legato a una persona: non fonde e non separa |
 | Stringa normalizzata identica, stesso documento | stessa entità. Assunzione dichiarata: dentro un singolo documento lo stesso nome indica la stessa persona |
-| Stringa normalizzata identica, documenti diversi, nessun CF che discrimini | **ambiguità `SAME_NAME_NO_CF`** in coda: l'utente decide se unire o separare (TC-03) |
+| Stringa normalizzata identica, documenti diversi | **ambiguità `SAME_NAME_NO_CF`** in coda: l'utente decide se unire o separare (TC-03) |
 | Corrispondenza per euristica: token invertiti (`Rossi Mario` come `Mario Rossi`), iniziale compatibile (`M. Rossi` candidato di `Mario Rossi`) | **ambiguità `HEURISTIC_MERGE_SUGGESTION`**: suggerimento, mai automatico |
+
+### Il codice fiscale non identifica le persone
+
+**Emendamento del 2026-09-10 (issue #12).** La versione precedente rendeva il codice
+fiscale decisivo — "CF identico: fusione automatica", "CF diversi, stesso nome: entità
+distinte" — senza mai dire *come* un CF trovato nel testo si leghi a una persona trovata
+nel testo. Quella regola non è mai esistita in codice, e le quattro candidate esaminate
+(prossimità entro N caratteri, stessa frase, etichetta esplicita più vicinanza,
+accoppiamento ordinale fra l'n-esimo CF e l'n-esima persona) sbagliano tutte su casi
+concreti e realistici. Legare un CF alla persona sbagliata **fonde due persone diverse**,
+l'errore che la decisione 3 della §2 giudica il peggiore.
+
+La regola è quindi che **non c'è regola**: il codice fiscale viene riconosciuto,
+validato e mascherato come qualunque altra entità, e non partecipa all'aggregazione
+delle persone.
+
+**Rischio accettato: la mancata fusione, mai la fusione errata automatica.** Il costo si
+paga in due punti, entrambi noti e nessuno silenzioso a valle:
+
+- *Fra documenti* non è silenzioso: lo stesso nome in due documenti apre una
+  `SAME_NAME_NO_CF` che blocca l'approvazione, quindi l'utente decide sempre. Il nome
+  dell'ambiguità è storico: oggi nessun CF discrimina mai, quindi la condizione "senza CF
+  che discrimini" è sempre vera.
+- *Dentro un singolo documento* il costo è reale e ricade sull'assunzione dichiarata qui
+  sopra: due omonimi condividono un segnaposto e al ripristino uno riceve il nome
+  dell'altro. È il limite noto 11 della §16.
+
+Il test `TestIlCodiceFiscaleNonLegaLePersone` in `tests/test_entities.py` fissa entrambe
+le metà: che il modello non offra un posto al legame, e che due omonimi con CF diversi
+nello stesso documento restino un solo segnaposto senza che nessuna coda avvisi l'utente.
+Se un giorno la legatura verrà implementata, quel test fallisce e obbliga a tornare qui.
 
 ### Blocco dell'approvazione
 
@@ -503,6 +532,12 @@ Tutti i dati di test sono inventati.
 9. **Il vault protegge i dati a riposo, non la memoria.** Nessuna difesa contro un dump
    della RAM o la scrittura su file di swap da parte del sistema operativo.
 10. **PDF cifrati o protetti da password** vengono trattati come non leggibili e respinti.
+11. **Omonimi dentro un singolo documento.** Due persone diverse con lo stesso nome nello
+    stesso documento condividono un segnaposto, e al ripristino una riceve il nome
+    dell'altra. Nessuna coda lo segnala, perché la §7 assume dichiaratamente che dentro un
+    documento lo stesso nome indichi la stessa persona. Il codice fiscale non risolve il
+    caso: non viene mai legato a una persona (§7, emendamento del 2026-09-10). Fra
+    documenti diversi il caso è invece intercettato e bloccante.
 
 ## 17. Fuori ambito
 

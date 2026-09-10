@@ -1,3 +1,5 @@
+from dataclasses import fields
+
 import pytest
 
 from cryptocustode.core.entities import (
@@ -10,6 +12,7 @@ from cryptocustode.core.models import (
     AmbiguityKind,
     Category,
     Document,
+    Entity,
     Source,
     fascicolo_vuoto,
 )
@@ -386,6 +389,57 @@ class TestSuggerimentiDiFusione:
             AmbiguityKind.HEURISTIC_MERGE_SUGGESTION, AmbiguityKind.SAME_NAME_NO_CF,
         ]
         assert [a.blocca_approvazione for a in f.ambiguities].count(True) == 1
+
+
+class TestIlCodiceFiscaleNonLegaLePersone:
+    """Emendamento della spec §7 deciso nella issue #12.
+
+    Il codice fiscale viene mascherato come entità a sé, ma non viene mai
+    legato a una persona: nessuna regola dice quale CF appartiene a quale
+    nome, e sbagliare quel legame fonderebbe due persone diverse. Il rischio
+    accettato è la *mancata* fusione, mai la fusione errata (spec §2,
+    decisione 3).
+    """
+
+    def test_il_modello_non_porta_un_legame_persona_codice_fiscale(self):
+        """La spec non promette più il legame, quindi il tipo non deve
+        offrirne il posto: un campo che nessuno popola è una promessa che il
+        prossimo lettore crederà mantenuta."""
+        assert "cf" not in {campo.name for campo in fields(Entity)}
+
+    def test_due_omonimi_con_cf_diversi_restano_un_solo_segnaposto(self):
+        """Fissa il limite accettato, non un comportamento desiderabile.
+
+        Padre e figlio con lo stesso nome e due CF diversi nello stesso
+        documento condividono `[PERSONA_1]`: al ripristino uno riceverebbe il
+        nome dell'altro. È il prezzo dichiarato nella §16, e nessuna coda
+        avvisa l'utente. Se qualcuno implementerà la legatura CF-persona
+        questo test fallirà, ed è il suo scopo: obbligarlo a emendare la §7
+        invece di cambiare il comportamento di straforo.
+        """
+        from cryptocustode.core.entities import (
+            risolvi_ambiguita_omonimia,
+            suggerisci_fusioni,
+        )
+        testo = (
+            "Comparsi Marco Rossi, C.F. RSSMRC50A01H501Q, "
+            "e suo figlio Marco Rossi, C.F. RSSMRC80A01H501W."
+        )
+        doc = documento("d1", testo)
+        f = fascicolo_vuoto("f1")
+        f.documents.append(doc)
+        analizza_documento(f, doc, usa_ner=False)
+        for inizio in (testo.index("Marco Rossi"), testo.rindex("Marco Rossi")):
+            _registra_manuale(f, doc, inizio, inizio + len("Marco Rossi"))
+        suggerisci_fusioni(f)
+        risolvi_ambiguita_omonimia(f)
+
+        codici = [e for e in f.entities.values() if e.category is Category.CF]
+        persone = [e for e in f.entities.values() if e.category is Category.PERSONA]
+        assert sorted(e.placeholder for e in codici) == ["[CF_1]", "[CF_2]"]
+        assert [e.placeholder for e in persone] == ["[PERSONA_1]"]
+        assert len([s for s in f.spans if s.category is Category.PERSONA]) == 2
+        assert f.ambiguities == []
 
 
 def _registra_manuale(fascicolo, documento, inizio, fine):

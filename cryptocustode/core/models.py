@@ -90,17 +90,6 @@ class Entity:
     placeholder: str
     canonical_value: str
     variants: set[str] = field(default_factory=set)
-    # LIMITE NOTO: nessun codice in produzione assegna `cf`, quindi le due
-    # righe della spec §7 che dipendono da questo campo — "CF identico:
-    # fusione automatica" e "CF diversi, stesso nome: entità distinte
-    # automaticamente" — non esistono ancora. La spec non dice *come* un
-    # codice fiscale si lega a una persona (vicinanza nel testo? stessa
-    # riga? stessa frase?), e inventare la regola qui sarebbe peggio che
-    # dichiararla mancante: legare il CF alla persona sbagliata fonde due
-    # persone diverse. Conseguenza attuale: due omonimi nello stesso
-    # documento condividono `[PERSONA_1]`, e al ripristino uno dei due
-    # riceve il nome dell'altro. Richiede un emendamento della spec.
-    cf: str | None = None
 
 
 @dataclass
