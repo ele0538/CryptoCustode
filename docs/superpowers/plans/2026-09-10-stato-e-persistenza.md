@@ -429,6 +429,23 @@ def pdf_di_prova(pagine: list[str]) -> bytes:
     contenuto = documento.tobytes()
     documento.close()
     return contenuto
+
+
+def pdf_cifrato() -> bytes:
+    """Un PDF protetto da password, per il limite 10 della spec §16.
+
+    Verificato sulla macchina: `fitz.open()` su questi byte **non** solleva, e
+    `needs_pass` vale 1. È l'unico modo di intercettarlo — caricarne una pagina
+    solleverebbe `ValueError("document closed or encrypted")`, cioè un errore
+    grezzo invece del messaggio italiano che la spec §13 pretende.
+    """
+    documento = fitz.open()
+    _pagina_di_testo(documento)
+    contenuto = documento.tobytes(
+        encryption=fitz.PDF_ENCRYPT_AES_256, user_pw="segreto", owner_pw="segreto"
+    )
+    documento.close()
+    return contenuto
 ```
 
 - [ ] **Step 2: Scrivere i test**
@@ -440,7 +457,7 @@ import pytest
 
 from cryptocustode.core.errors import ScannedDocumentRejected
 from cryptocustode.core.ingest.pdf_loader import carica_pdf
-from tests.pdf_di_prova import TESTO_DI_PAGINA, pdf_di_prova
+from tests.pdf_di_prova import TESTO_DI_PAGINA, pdf_cifrato, pdf_di_prova
 
 
 def test_pdf_di_solo_testo_viene_estratto():
@@ -495,6 +512,15 @@ def test_pagina_raster_con_testo_residuo_viene_respinta():
 def test_pdf_illeggibile_viene_respinto():
     with pytest.raises(ScannedDocumentRejected):
         carica_pdf(b"questi non sono i byte di un PDF")
+
+
+def test_pdf_cifrato_viene_respinto():
+    # Spec §16 limite 10. Non lo copre il test precedente: su byte cifrati
+    # `fitz.open()` riesce, quindi l'`except` non scatta e l'unico controllo
+    # che li intercetta è `needs_pass`. Senza questo test quel ramo non è
+    # verificato da nulla.
+    with pytest.raises(ScannedDocumentRejected, match="password"):
+        carica_pdf(pdf_cifrato())
 ```
 
 - [ ] **Step 3: Eseguire i test e verificare che falliscano**
@@ -586,7 +612,7 @@ def carica_pdf(contenuto: bytes) -> tuple[str, list[int]]:
 - [ ] **Step 5: Eseguire i test e verificare che passino**
 
 Run: `.venv\Scripts\python -m pytest tests/test_pdf_loader.py -v`
-Expected: PASS, 9 test.
+Expected: PASS, 10 test.
 
 - [ ] **Step 6: Eseguire l'intera suite**
 
@@ -2026,7 +2052,7 @@ def export_sanitized_text(fascicolo_id: str, store: SessionStore) -> dict[str, s
 - [ ] **Step 4: Eseguire i test e verificare che passino**
 
 Run: `.venv\Scripts\python -m pytest tests/test_export.py -v`
-Expected: PASS, 9 test.
+Expected: PASS, 10 test.
 
 - [ ] **Step 5: Commit**
 
