@@ -32,10 +32,15 @@ SUFFISSI_SOCIETARI = (
 # "Via ai Prati") non producevano alcuno span e finivano in chiaro. `del` non
 # può coprire `dello`, perché al connettivo deve seguire `\s+` e dopo `del`
 # viene una `l`; `dei` e `d'` non coprono `de'`.
+# Le famiglie `all'`/`alle` e `sul`/`sulla` (ruling C1) chiudono una fuga
+# totale: "Via alle Fonti 7" non produceva alcuno span e "Via all'Aeroporto 3,
+# 10121 Torino" lasciava in chiaro toponimo e CAP. `allo`/`alla`/`agli`/`ai`/`al`
+# c'erano già, ma `alle` e `all'` no, e nessuna forma della famiglia `sul`.
 CONNETTIVI = (
     r"dell'|della|delle|dello|degli|dei|del|de'|de|"
     r"dall'|dalla|dalle|dagli|dal|"
-    r"allo|alla|agli|ai|al|"
+    r"all'|alle|allo|alla|agli|ai|al|"
+    r"sull'|sulla|sulle|sugli|sui|sul|"
     r"di|da|d'|gli|il|lo|la|le|l'"
 )
 
@@ -67,10 +72,26 @@ PATTERN: dict[Category, Pattern[str]] = {
     Category.EMAIL: re.compile(
         r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
     ),
+    # I separatori (spazio, punto, trattino, slash) possono ripetersi fra le
+    # cifre: la spec §6 li elenca senza limitarne il numero, mentre le due
+    # forme nazionali ne ammettevano rispettivamente due e uno, e numeri
+    # scritti a gruppi ("011 123 45 67", "02 1234 5678", "340 123 45 67") non
+    # producevano alcuno span nemmeno *con* la parola chiave di contesto
+    # accanto (ruling I2). Il conteggio complessivo resta a
+    # `_telefono_plausibile` (9-11 cifre) e il requisito di contesto resta il
+    # cancello: non si apre alcuna valanga.
+    # Le ripetizioni sono pigre e chiuse da `\b`: così la corsa di cifre si
+    # ferma alla fine del numero invece di scavalcare uno spazio (o un a capo
+    # dell'estrazione PDF) e inglobare le cifre di ciò che segue — una data,
+    # per esempio — facendo sballare il conteggio e perdere del tutto il
+    # numero di telefono.
     Category.TELEFONO: re.compile(
         r"(?:\+39|0039)[\s.\-/]?\d(?:[\s.\-/]?\d){8,9}"
-        r"|\b3\d{2}[\s.\-/]?\d{3}[\s.\-/]?\d{3,4}\b"
-        r"|\b0\d{1,3}[\s.\-/]?\d{6,8}\b"
+        r"|\b3\d{2}(?:[\s.\-/]?\d){6,8}?\b"
+        # Il prefisso interurbano può stare fra parentesi ("(011) 1234567"):
+        # `\b` non serve nella variante con la parentesi aperta, perché fra uno
+        # spazio e `(` non c'è alcun confine di parola.
+        r"|(?:\(0\d{1,3}\)|\b0\d{1,3})(?:[\s.\-/]?\d){6,9}?\b"
     ),
     Category.CATASTO: re.compile(
         # Alternanza esplicita: la spec §6 nomina sia `foglio` sia l'abbreviazione
@@ -102,11 +123,28 @@ PATTERN: dict[Category, Pattern[str]] = {
         # ("12345 EUR") non era rappresentabile affatto: sul primo ramo
         # mancava lo span, sul secondo (prima del lookbehind sotto) veniva
         # storpiato in "€123".
-        r"(?:€|EUR|euro)\s?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?"
+        # Il confine sta *dentro* l'alternanza, sulle sole forme alfabetiche.
+        # Con `\b` dopo tutta l'alternanza il ramo del simbolo era
+        # inservibile, perché `€` non è un carattere di parola e `\b`
+        # pretendeva quindi una lettera o una cifra subito dopo: "1.250,00 €" e
+        # "800€" non producevano alcuno span, mentre l'assurdo "1.250,00€netti"
+        # sì (ruling C2). Sulle forme alfabetiche il confine serve e resta, ma
+        # come "nessuna lettera dopo" invece di `\b`: quel che va tenuto fuori
+        # è "eurodollaro", mentre "EUR100" — cifre attaccate alla sigla — è un
+        # importo e con `\b` avrebbe smesso di essere riconosciuto.
+        r"(?:€|(?:EUR|euro)(?![A-Za-zÀ-ÿ]))"
+        r"\s?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?"
+        # `(?![\d.,]*\d)` chiude a destra i decimali: senza confine
+        # "€ 12.345,678" veniva troncato in "€ 12.345,67" e la terza cifra
+        # restava in chiaro accanto a un importo storpiato (ruling I3). Con il
+        # lookahead il match fallisce del tutto: un importo o è preso intero o
+        # non è preso, mai a metà.
+        r"(?![\d.,]*\d)"
         # `(?<![\d.,])` impedisce di agganciare la coda di un numero più lungo:
         # senza confine a sinistra "12345 EUR" produceva lo span "345 EUR",
         # cioè un importo storpiato e le due cifre iniziali in chiaro.
-        r"|(?<![\d.,])(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?\s?(?:€|EUR|euro)\b",
+        r"|(?<![\d.,])(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?(?![\d.,]*\d)"
+        r"\s?(?:€|(?:EUR|euro)(?![A-Za-zÀ-ÿ]))",
         re.IGNORECASE,
     ),
     # `re.IGNORECASE` resta perché gli indirizzi e le ragioni sociali tutti in
@@ -127,7 +165,16 @@ PATTERN: dict[Category, Pattern[str]] = {
         # del CAP ("Via Roma 1012"), storpiando l'indirizzo e lasciando in
         # chiaro l'ultima cifra. Con il lookahead il gruppo, che è opzionale,
         # fallisce del tutto e lascia il CAP intero al gruppo successivo.
-        r"(?:,?\s*n?\.?\s*\d{1,4}(?!\d)[a-zA-Z]?)?"
+        # Il suffisso del civico ("12/A", "12 bis", "12-14") è un gruppo a sé:
+        # `[a-zA-Z]?` attaccato alle cifre non poteva attraversare un
+        # separatore, quindi su "Via Roma 12/A, 10121 Torino" lo span si
+        # fermava a "Via Roma 12" e il gruppo del CAP non riusciva più ad
+        # agganciarsi: restavano in chiaro il suffisso, il CAP *e* il comune
+        # (ruling I1). Ogni alternativa ha il proprio confine a destra, così il
+        # suffisso non si mangia l'inizio della parola successiva.
+        r"(?:,?\s*n?\.?\s*\d{1,4}(?!\d)"
+        r"(?:\s*[/\-]\s*\d{1,3}(?!\d)|\s*[/\-]?\s*[a-zA-Z](?!\w)"
+        r"|\s+(?:bis|ter|quater)(?!\w))?)?"
         # CAP e comune facoltativi (spec §6): il toponimo resta obbligatorio,
         # quindi un CAP da solo non genera mai uno span.
         rf"(?:,?\s*\d{{5}}\b(?:\s+{_PAROLA_INDIRIZZO})?)?",
