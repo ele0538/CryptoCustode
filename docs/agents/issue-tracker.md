@@ -23,10 +23,20 @@ ogni chiamata di progetto con `403 insufficient_granular_scope`, anche quando
 `glab auth status` riporta il login come riuscito — quindi lo status verde non è prova
 che le API funzionino. Verifica con `glab repo view`.
 
-Nota di consegna: la consegna del progetto richiede la delivery su GitHub, mentre
-il remote `origin` punta a GitLab self-hosted. Le issue restano su GitLab; per la
-consegna serve un secondo remote GitHub (o la migrazione del remote) — decisione
-ancora aperta.
+Forma della consegna — **decisa** (issue #13, 2026-09-10): tutto su GitLab, niente
+su GitHub. `origin` resta `gitlab.trecuori.org/welfare/ai_service/CryptoCustode` e
+codice e issue vivono nello stesso posto: nessun secondo remote, nessun mirror,
+nessuna pubblicazione selettiva. Il progetto GitLab è **privato**. Verificato il
+2026-09-10: su GitHub non esiste alcun repo CryptoCustode, quindi non c'era nulla da
+spostare. Se emerge un vincolo esterno che impone davvero GitHub, si riapre #13
+invece di aggiungere un remote di nascosto.
+
+Conseguenza da non perdere: finché il repo resta privato, nome ed email degli autori
+nei commit non sono esposti e non serve riscrivere la cronologia. Prima di qualunque
+futura pubblicazione — repo pubblico o push su un remote esterno — vanno decise due
+cose **prima** del primo push: se riscrivere gli autori dei commit, e una verifica di
+riservatezza sull'intera cronologia git (a oggi fatta solo a campione sui file di
+test: solo dati inventati, CF e IBAN sintetici).
 
 ## Conventions
 
