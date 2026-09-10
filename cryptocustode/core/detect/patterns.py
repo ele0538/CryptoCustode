@@ -61,11 +61,19 @@ PATTERN: dict[Category, Pattern[str]] = {
         re.IGNORECASE,
     ),
     Category.IMPORTO: re.compile(
-        r"(?:€|EUR|euro)\s?\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?"
+        # La parte numerica alterna due forme: raggruppamento a migliaia
+        # (`\d{1,3}(?:\.\d{3})+`) oppure cifre libere (`\d+`), in
+        # quest'ordine — l'alternanza è ordinata e "12.345,67" deve restare
+        # intero invece di degradare al ramo `\d+` fermandosi a "12". Senza
+        # il ramo `\d+`, una sequenza di 4+ cifre senza punti di separazione
+        # ("12345 EUR") non era rappresentabile affatto: sul primo ramo
+        # mancava lo span, sul secondo (prima del lookbehind sotto) veniva
+        # storpiato in "€123".
+        r"(?:€|EUR|euro)\s?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?"
         # `(?<![\d.,])` impedisce di agganciare la coda di un numero più lungo:
         # senza confine a sinistra "12345 EUR" produceva lo span "345 EUR",
         # cioè un importo storpiato e le due cifre iniziali in chiaro.
-        r"|(?<![\d.,])\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?\s?(?:€|EUR|euro)\b",
+        r"|(?<![\d.,])(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?\s?(?:€|EUR|euro)\b",
         re.IGNORECASE,
     ),
     # `re.IGNORECASE` resta perché gli indirizzi e le ragioni sociali tutti in

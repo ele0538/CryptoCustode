@@ -153,6 +153,24 @@ class TestAltreCategorie:
         trovati = valori("Totale 12345 EUR da versare", Category.IMPORTO)
         assert trovati in ([], ["12345 EUR"])
 
+    def test_importo_cifre_nude_seguite_da_valuta_riconosciuto(self):
+        # ruling 13: run di 4+ cifre senza separatori, ramo cifre-poi-valuta
+        assert valori("12345 EUR", Category.IMPORTO) == ["12345 EUR"]
+
+    def test_importo_valuta_seguita_da_cifre_nude_riconosciuto(self):
+        # ruling 13: run di 4+ cifre senza separatori, ramo valuta-poi-cifre
+        assert valori("€12345", Category.IMPORTO) == ["€12345"]
+
+    def test_importo_con_separatori_dopo_valuta_resta_intero(self):
+        # regressione sull'ordine dell'alternanza: il raggruppamento a
+        # migliaia deve restare il primo ramo, altrimenti "12.345,67"
+        # degrada a "12" sul ramo delle cifre libere
+        assert valori("12.345,67 EUR", Category.IMPORTO) == ["12.345,67 EUR"]
+
+    def test_importo_con_separatori_prima_delle_cifre_resta_intero(self):
+        # stessa regressione dell'ordine dell'alternanza, ramo valuta-poi-cifre
+        assert valori("€ 12.345,67", Category.IMPORTO) == ["€ 12.345,67"]
+
     def test_dati_catastali_con_foglio_abbreviato(self):
         trovati = valori("Immobile al fg 12 mappale 345", Category.CATASTO)
         assert trovati == ["fg 12 mappale 345"]
