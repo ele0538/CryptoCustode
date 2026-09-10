@@ -109,6 +109,57 @@ class TestMaiuscoleObbligatorie:
         assert Category.AZIENDA not in categorie("Il nuovo centro benessere spa apre domani")
 
 
+class TestConnettiviNelNome:
+    """Ruling 14: dentro un odonimo o una ragione sociale i connettivi minuscoli
+    ("dei", "del", "della", "di") sono ammessi, ma almeno una parola con
+    l'iniziale maiuscola resta obbligatoria."""
+
+    def test_indirizzo_con_articolo_prima_del_nome(self):
+        testo = "Residente in Via dei Mille 5, 10121 Torino."
+        assert valori(testo, Category.INDIRIZZO) == ["Via dei Mille 5, 10121 Torino"]
+
+    def test_indirizzo_con_preposizione_articolata_maschile(self):
+        testo = "Residente in Piazza del Popolo 12 Roma"
+        assert valori(testo, Category.INDIRIZZO) == ["Piazza del Popolo 12"]
+
+    def test_indirizzo_con_preposizione_articolata_femminile(self):
+        testo = "Residente in Corso della Repubblica 3"
+        assert valori(testo, Category.INDIRIZZO) == ["Corso della Repubblica 3"]
+
+    def test_indirizzo_tutto_maiuscolo_con_connettivo_riconosciuto(self):
+        # `re.IGNORECASE` vale anche sui connettivi: "DEI" resta ammesso
+        assert valori("Residente in VIA DEI MILLE 5", Category.INDIRIZZO) == ["VIA DEI MILLE 5"]
+
+    def test_azienda_con_connettivo_conserva_la_prima_parola(self):
+        # la troncatura da correggere restituiva "Roma S.p.A", lasciando in
+        # chiaro il resto della ragione sociale
+        testo = "Fattura da Banca di Fontechiara S.p.A. per il servizio"
+        trovati = valori(testo, Category.AZIENDA)
+        assert len(trovati) == 1
+        assert trovati[0].endswith("Banca di Fontechiara S.p.A")
+
+    def test_via_email_non_produce_alcuno_span(self):
+        # i connettivi non bastano da soli: senza una parola maiuscola nella
+        # sequenza non c'è nessun indirizzo, di nessuna categoria
+        assert trova_per_regole("Contattato via email dal cliente", "d1") == []
+
+    def test_centro_benessere_spa_non_produce_alcuno_span(self):
+        assert trova_per_regole("Il nuovo centro benessere spa apre domani", "d1") == []
+
+
+class TestCivicoECap:
+    """Spec §6: civico *e* CAP sono entrambi facoltativi. Senza civico le cinque
+    cifre del CAP devono restare intere dentro lo span."""
+
+    def test_cap_senza_civico_resta_intero(self):
+        testo = "Residente in Via Roma 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 10121 Torino"]
+
+    def test_cap_senza_civico_dopo_la_virgola_resta_intero(self):
+        testo = "Residente in Via Giuseppe Garibaldi, 10121 Torino."
+        assert valori(testo, Category.INDIRIZZO) == ["Via Giuseppe Garibaldi, 10121 Torino"]
+
+
 class TestAltreCategorie:
     def test_email(self):
         assert valori("Scrivere a mario.rossi@esempio.it subito.", Category.EMAIL) == [

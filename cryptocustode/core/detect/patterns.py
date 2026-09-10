@@ -20,6 +20,25 @@ SUFFISSI_SOCIETARI = (
     r"s\.?r\.?l\.?|s\.?p\.?a\.?|s\.?n\.?c\.?|s\.?a\.?s\.?|s\.?c\.?a\.?r\.?l\.?"
 )
 
+# Articoli e preposizioni che stanno *dentro* un odonimo o una ragione sociale
+# ("Via dei Mille", "Banca di Roma S.p.A."): sono minuscoli, quindi la guardia
+# sulle maiuscole li scarterebbe troncando il nome. Sono ammessi solo insieme
+# ad almeno una parola con l'iniziale maiuscola, che resta obbligatoria.
+# Alternanza dalla forma più lunga alla più corta, per leggibilità.
+CONNETTIVI = (
+    r"dell'|della|delle|degli|dei|del|dall'|dalla|dalle|dagli|dal|"
+    r"di|da|d'|gli|il|lo|la|le|l'"
+)
+
+# Un connettivo è seguito da spazio, tranne quando finisce per apostrofo
+# ("Via Massimo d'Azeglio"), dove lo spazio non c'è.
+_CONNETTIVO = rf"(?:{CONNETTIVI})(?:\s+|(?<=')\s*)"
+
+# L'iniziale deve essere davvero maiuscola: il gruppo a flag locale
+# `(?-i:[A-Z])` disattiva `re.IGNORECASE` solo su quel carattere.
+_PAROLA_INDIRIZZO = r"(?-i:[A-Z])[\w'À-ÿ]*"
+_PAROLA_AZIENDA = r"(?-i:[A-Z])[\w'À-ÿ&.]*"
+
 PATTERN: dict[Category, Pattern[str]] = {
     Category.CF: re.compile(
         r"\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}"
@@ -77,20 +96,36 @@ PATTERN: dict[Category, Pattern[str]] = {
         re.IGNORECASE,
     ),
     # `re.IGNORECASE` resta perché gli indirizzi e le ragioni sociali tutti in
-    # maiuscolo sono reali ("VIA GARIBALDI 42"), ma le iniziali della sequenza
-    # di nomi devono essere davvero maiuscole: il gruppo `(?-i:[A-Z])` disattiva
-    # localmente il flag. Senza di esso "via email dal cliente" diventava un
-    # indirizzo e "centro benessere spa" un'azienda.
+    # maiuscolo sono reali ("VIA GARIBALDI 42"), ma la sequenza di nomi deve
+    # contenere almeno una parola con l'iniziale davvero maiuscola: senza quel
+    # vincolo "via email dal cliente" diventava un indirizzo e "centro
+    # benessere spa" un'azienda. Pretenderla su *ogni* parola era però troppo,
+    # perché troncava "Via dei Mille": i connettivi minuscoli sono ammessi.
     Category.INDIRIZZO: re.compile(
-        rf"\b(?:{TOPONIMI})\s+(?:(?-i:[A-Z])[\w'À-ÿ]*\s?){{1,4}}"
-        r"(?:,?\s*n?\.?\s*\d{1,4}[a-zA-Z]?)?"
+        rf"\b(?:{TOPONIMI})\s+"
+        # connettivi iniziali ("Via dei Mille"), poi la parola maiuscola
+        # obbligatoria, poi altre parole con connettivi facoltativi in mezzo.
+        # Ogni ripetizione è limitata: nessuna sequenza illimitata.
+        rf"(?:{_CONNETTIVO}){{0,2}}{_PAROLA_INDIRIZZO}"
+        rf"(?:\s+(?:{_CONNETTIVO}){{0,2}}{_PAROLA_INDIRIZZO}){{0,3}}"
+        # Civico facoltativo. `(?!\d)` è indispensabile: su "Via Roma 10121
+        # Torino" senza civico il gruppo si mangiava quattro delle cinque cifre
+        # del CAP ("Via Roma 1012"), storpiando l'indirizzo e lasciando in
+        # chiaro l'ultima cifra. Con il lookahead il gruppo, che è opzionale,
+        # fallisce del tutto e lascia il CAP intero al gruppo successivo.
+        r"(?:,?\s*n?\.?\s*\d{1,4}(?!\d)[a-zA-Z]?)?"
         # CAP e comune facoltativi (spec §6): il toponimo resta obbligatorio,
         # quindi un CAP da solo non genera mai uno span.
-        r"(?:,?\s*\d{5}\b(?:\s+(?-i:[A-Z])[\w'À-ÿ]*)?)?",
+        rf"(?:,?\s*\d{{5}}\b(?:\s+{_PAROLA_INDIRIZZO})?)?",
         re.IGNORECASE,
     ),
+    # La ragione sociale parte da una parola maiuscola e i connettivi stanno
+    # solo tra due parole maiuscole: così "Banca di Roma S.p.A." resta intera
+    # invece di ridursi a "Roma S.p.A".
     Category.AZIENDA: re.compile(
-        rf"\b(?:(?-i:[A-Z])[\w'À-ÿ&.]*\s+){{1,4}}(?:{SUFFISSI_SOCIETARI})\b",
+        rf"\b{_PAROLA_AZIENDA}"
+        rf"(?:\s+(?:{_CONNETTIVO}){{0,2}}{_PAROLA_AZIENDA}){{0,3}}"
+        rf"\s+(?:{SUFFISSI_SOCIETARI})\b",
         re.IGNORECASE,
     ),
 }
