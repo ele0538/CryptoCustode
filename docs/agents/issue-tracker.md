@@ -4,11 +4,24 @@ Issues and specs for this repo live as GitLab issues. Use the [`glab`](https://g
 
 ## Prerequisiti
 
-La CLI `glab` non è ancora installata su questa macchina. Prima di usarla:
+`glab` 1.117.0 è installato e autenticato su `gitlab.trecuori.org` come
+`emanuele.quagliotto` (credenziali nel keyring di Windows).
 
-1. Installa `glab` (`winget install glab.glab`, o https://gitlab.com/gitlab-org/cli).
-2. Autenticati sull'istanza self-hosted:
-   `glab auth login --hostname gitlab.trecuori.org`
+**Percorso del binario:** `C:\Users\emanuele.quagliotto\AppData\Local\Programs\glab\glab.exe`
+
+È nel PATH dell'utente, ma le shell degli agenti possono avere una copia stale
+dell'ambiente e non trovarlo. In quel caso, invece di rinunciare, usa il percorso
+assoluto o prependi la cartella al PATH:
+
+```
+export PATH="/c/Users/emanuele.quagliotto/AppData/Local/Programs/glab:$PATH"
+```
+
+**Scope del token.** Serve un token con scope `api` (più `write_repository` per le
+operazioni git). Un token *fine-grained* senza il permesso `Project: Read` fa fallire
+ogni chiamata di progetto con `403 insufficient_granular_scope`, anche quando
+`glab auth status` riporta il login come riuscito — quindi lo status verde non è prova
+che le API funzionino. Verifica con `glab repo view`.
 
 Nota di consegna: la consegna del progetto richiede la delivery su GitHub, mentre
 il remote `origin` punta a GitLab self-hosted. Le issue restano su GitLab; per la

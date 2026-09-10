@@ -58,14 +58,14 @@ cryptocustode/
 │   │   ├── validators.py     # CIN codice fiscale, cifra di controllo P.IVA, IBAN MOD-97
 │   │   ├── rules.py          # regex + validatori -> Span
 │   │   └── ner.py            # spaCy -> Span
+│   ├── models.py             # dataclass del dominio (tipi puri, nessun comportamento)
 │   ├── spans.py              # risoluzione priorità e sovrapposizioni
 │   ├── entities.py           # Span -> Entity, euristiche nomi, coda ambiguità
 │   ├── mask.py               # (testo, span attivi) -> testo mascherato   [PURA]
 │   ├── unmask.py             # (risposta IA, dizionario) -> testo ripristinato
 │   └── vault.py              # AES-256-GCM + PBKDF2, header versionato
 ├── state/
-│   ├── models.py             # dataclass del dominio
-│   └── session.py            # macchina a stati, hash di approvazione, SessionStore
+│   └── session.py            # transizioni di stato, hash di approvazione, SessionStore
 ├── api/
 │   ├── app.py                # crea l'app, bind loopback, apre il browser
 │   ├── routes_fascicolo.py   # upload, analisi, revisione, approvazione
@@ -89,6 +89,15 @@ cryptocustode/
    serializza.
 4. **Il dizionario delle corrispondenze non appare in nessuna risposta HTTP.** Esce dal
    processo soltanto come blob cifrato dentro il `.vault`.
+
+**Perché i tipi di dominio stanno in `core/models.py` e non in `state/`.**
+`core/mask.py` e `core/vault.py` hanno bisogno di `Span`, `Entity` e `Fascicolo`: se
+quei tipi vivessero sotto `state/`, `core/` dovrebbe importarlo e l'invariante 1
+cadrebbe. La divisione corretta è per natura, non per anzianità del concetto: `core/`
+possiede i **tipi** e le **operazioni pure**, `state/` possiede le **transizioni** e lo
+store di processo. `Fascicolo` è una struttura dati, quindi appartiene a `core/`; far
+avanzare un fascicolo da `PENDING_REVIEW` ad `APPROVED` è una transizione, quindi
+appartiene a `state/`.
 
 La route di revisione **restituisce** il testo originale in chiaro, perché il punto 5
 della consegna richiede che l'utente legga tutte le pagine e corregga. Non contraddice
