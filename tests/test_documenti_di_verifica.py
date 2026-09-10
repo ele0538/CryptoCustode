@@ -153,8 +153,34 @@ def test_tutte_le_dodici_categorie_producono_almeno_uno_span(analisi):
 
 
 def test_nessun_valore_del_dizionario_sopravvive(analisi):
-    """L'asserzione generica della spec §14, qui su entità vere ricavate dal
-    motore invece che su uno scenario costruito a mano."""
+    """Anti-fuga sul dizionario, versione *catena di mascheratura*.
+
+    La spec §14 chiede questa asserzione generica sul testo **esportato**, e
+    quella la porta `test_matrice_consegna.py`. Questa qui è la sua gemella
+    sull'altro percorso: non è un duplicato, e togliere una delle due
+    lascerebbe scoperto un percorso intero.
+
+    - Qui: `analizza_documento` -> `maschera_documento`, chiamate a mano sul
+      documento di verifica realistico, senza gate in mezzo. Questo modulo,
+      tramite `VALORI_ATTESI`, misura in più il *richiamo* su tutte e dodici
+      le categorie in prosa vera — la direzione che l'altro test non può
+      misurare, perché quantifica solo sulle entità che il motore ha già
+      trovato.
+    - Là: `approva` -> `export_sanitized_text`, cioè il gate di stato e il
+      controllo di integrità. Qui la mascheratura è invocata direttamente,
+      quindi il gate non è sotto osservazione.
+
+    Le due direzioni sono state falsificate una per una, non solo affermate:
+
+    - se `export_sanitized_text` restituisce `documento.text` invece del testo
+      mascherato, l'anti-fuga della matrice fallisce e questo modulo passa
+      per intero;
+    - se il motore perde una categoria che la matrice non pianta (provato
+      spegnendo la regex CATASTO), questo modulo fallisce su tre test e la
+      matrice passa per intero.
+
+    Ecco perché convivono: ognuna copre una fuga che l'altra non vede.
+    """
     fascicolo, _, mascherato = analisi
     for entita in fascicolo.entities.values():
         for variante in entita.variants:

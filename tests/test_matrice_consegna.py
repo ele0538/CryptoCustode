@@ -55,6 +55,14 @@ def test_anti_fuga_nessun_valore_del_dizionario_compare_nell_esportato():
     Per questo gira con `usa_ner=True`: senza la gamba statistica, PERSONA
     non verrebbe mai prodotta e la sua assenza non entrerebbe mai in
     dizionario, restando indimostrata invece che verificata.
+
+    Percorso coperto: `approva` -> `export_sanitized_text`, cioè il gate di
+    stato e il controllo di integrità — ciò che la spec §14 chiede alla
+    lettera, «non compare nel testo *esportato*». La gemella sulla catena di
+    mascheratura, che aggiunge la misura del richiamo su tutte e dodici le
+    categorie, è `test_documenti_di_verifica.py::
+    test_nessun_valore_del_dizionario_sopravvive`; le due convivono perché
+    coprono percorsi diversi, e il confronto per esteso è scritto là.
     """
     fascicolo = fascicolo_con(TESTO_RICCO, usa_ner=True)
     approva(fascicolo)
