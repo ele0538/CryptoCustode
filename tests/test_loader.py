@@ -39,9 +39,24 @@ def test_estensione_sconosciuta_viene_trattata_come_txt():
         costruisci_documento("appunti", "perch\xe8".encode("latin-1"))
 
 
-def test_sha256_e_dei_byte_originali():
+def test_sha256_del_txt_e_dei_byte_originali():
+    # Per un TXT valido decode+encode UTF-8 è un'identità: i byte originali e
+    # il testo riestratto, una volta ricodificato, tornano identici. Questo
+    # test dimostra quindi solo che l'assert vale sul percorso TXT: non basta
+    # a distinguere un digest sui byte originali da uno sul testo estratto —
+    # per quello vedi il caso PDF sotto, dove i due divergono davvero.
     contenuto = "Torino".encode("utf-8")
     doc = costruisci_documento("a.txt", contenuto)
+    assert doc.sha256 == hashlib.sha256(contenuto).hexdigest()
+
+
+def test_sha256_del_pdf_e_dei_byte_originali_non_del_testo_estratto():
+    # Sul PDF i byte del file e il testo estratto, ricodificato in UTF-8, sono
+    # provabilmente diversi: solo qui il test può distinguere un digest sui
+    # byte originali da uno (erroneamente) sul testo estratto.
+    contenuto = pdf_di_prova(["testo"])
+    doc = costruisci_documento("a.pdf", contenuto)
+    assert doc.text.encode("utf-8") != contenuto
     assert doc.sha256 == hashlib.sha256(contenuto).hexdigest()
 
 
