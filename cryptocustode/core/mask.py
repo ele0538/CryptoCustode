@@ -23,9 +23,35 @@ def maschera(testo: str, spans: list[Span], entities: dict[str, Entity]) -> str:
 
     Procede da destra a sinistra: così ogni sostituzione lascia validi gli
     offset di quelle ancora da applicare (spec §9).
+
+    Solleva `ValueError` in due casi, entrambi a difesa chiusa:
+
+    - uno span punta a un `entity_id` assente da `entities`, quindi il valore
+      originale sopravviverebbe senza che nessuno se ne accorga;
+    - due span si sovrappongono. La sostituzione da destra a sinistra è valida
+      solo su span disgiunti: su due span sovrapposti produce un segnaposto
+      malformato ("[PERSONA_1]ONA_2]"), che il ripristino (spec §11)
+      rifiuterebbe come `MalformedPlaceholder` — cioè un testo corrotto in
+      silenzio. Gli span *adiacenti* (fine dell'uno uguale all'inizio
+      dell'altro) sono legittimi e non sollevano nulla.
     """
+    ordinati = sorted(spans, key=lambda s: s.start, reverse=True)
+    # Il controllo di sovrapposizione sta su una passata a parte, prima di
+    # toccare il testo: un rifiuto non deve lasciare a metà il lavoro.
+    # Confronta gli offset e non `spans.si_sovrappongono`, perché qui gli
+    # offset si applicano tutti a *un* testo: due span sovrapposti lo
+    # corrompono anche se dichiarano documenti diversi.
+    for successivo, precedente in zip(ordinati, ordinati[1:]):
+        if precedente.end > successivo.start:
+            raise ValueError(
+                f"gli span {precedente.span_id!r} "
+                f"[{precedente.start}:{precedente.end}] e "
+                f"{successivo.span_id!r} [{successivo.start}:{successivo.end}] "
+                "si sovrappongono: la mascheratura produrrebbe un segnaposto "
+                "malformato e un testo corrotto"
+            )
     risultato = testo
-    for span in sorted(spans, key=lambda s: s.start, reverse=True):
+    for span in ordinati:
         entita = entities.get(span.entity_id)
         if entita is None:
             raise ValueError(

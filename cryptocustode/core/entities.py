@@ -93,6 +93,14 @@ def _entita_per_valore(
     fascicolo: Fascicolo, categoria: Category, valore: str
 ) -> Entity | None:
     chiave = normalizza(valore)
+    # `normalizza("Sig.")` è la stringa vuota, perché il titolo viene rimosso e
+    # non resta nulla. Senza questa guardia due span diversi che si riducono a
+    # nulla ("Sig.", "Dott.ssa") si riconoscerebbero a vicenda e finirebbero
+    # nella stessa entità, quindi sotto lo stesso segnaposto: al ripristino
+    # uno dei due tornerebbe col valore dell'altro. Il percorso è reale, perché
+    # spaCy etichetta come `PER` anche un "Sig" isolato.
+    if not chiave:
+        return None
     for entita in fascicolo.entities.values():
         if entita.category is not categoria:
             continue
@@ -133,7 +141,19 @@ def analizza_documento(
     """Analizza un documento e aggiunge al fascicolo span ed entità.
 
     `usa_ner=False` esiste per i test che non devono caricare 550 MB di modello.
+
+    Non è idempotente e non finge di esserlo: una seconda analisi dello stesso
+    documento produrrebbe una seconda copia di ogni span, e `maschera`
+    applicherebbe due sostituzioni sovrapposte allo stesso intervallo,
+    troncando il testo dal primo segnaposto in poi. Meglio un rifiuto
+    esplicito: rianalizzare significa ricostruire il fascicolo, non aggiungere.
     """
+    if any(span.doc_id == documento.doc_id for span in fascicolo.spans):
+        raise ValueError(
+            f"il documento {documento.doc_id!r} ha già span nel fascicolo "
+            f"{fascicolo.fascicolo_id!r}: una seconda analisi duplicherebbe "
+            "gli span e la mascheratura distruggerebbe il testo"
+        )
     trovati = trova_per_regole(documento.text, documento.doc_id)
     if usa_ner:
         trovati += trova_per_ner(documento.text, documento.doc_id)
@@ -208,6 +228,15 @@ def risolvi_ambiguita_omonimia(fascicolo: Fascicolo) -> None:
         entita = fascicolo.entities.get(entity_id)
         if entita is None or entita.category not in _CATEGORIE_CON_VARIANTI:
             continue
+        # LIMITE NOTO: il ramo `entita.cf is not None` è morto, perché nessun
+        # codice in produzione assegna `Entity.cf` (vedi il commento sul campo
+        # in `models.py`). La regola di aggregazione per codice fiscale della
+        # spec §7 non è implementata e attende un emendamento della spec, che
+        # deve dire come un CF si lega a una persona. Finché resta così, due
+        # omonimi nello stesso documento condividono `[PERSONA_1]` e al
+        # ripristino uno dei due riceve il nome dell'altro. Il ramo resta
+        # scritto perché è la condizione che la spec chiede: quando il campo
+        # verrà popolato, questa riga sarà già quella giusta.
         if len(documenti) < 2 or entita.cf is not None:
             continue
         if (entity_id,) in gia_aperte:

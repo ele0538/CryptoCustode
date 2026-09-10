@@ -107,6 +107,67 @@ class TestMascheratura:
         f = fascicolo_vuoto("f1")
         assert maschera(doc.text, [], {}) == doc.text
 
+    def test_span_sovrapposti_sollevano_errore(self):
+        # senza questo controllo la sostituzione da destra a sinistra produce
+        # un segnaposto malformato ("[PERSONA_1]ONA_2]"), che il ripristino
+        # (spec §11) rifiuterebbe come MalformedPlaceholder: un testo corrotto
+        # in silenzio, senza eccezione e senza avviso (ruling I4)
+        f, doc = scenario()
+        f.spans.append(Span(span_id="s_sovrapposto", doc_id="d1", start=5, end=25,
+                            category=Category.PERSONA, source=Source.MANUAL,
+                            entity_id="e2"))
+        with pytest.raises(ValueError) as errore:
+            maschera_documento(f, doc)
+        assert "s_sovrapposto" in str(errore.value)
+        assert "si sovrappongono" in str(errore.value)
+
+    def test_span_con_lo_stesso_inizio_sollevano_errore(self):
+        # due span che partono dallo stesso offset si sovrappongono sempre,
+        # in qualunque ordine arrivino
+        f, doc = scenario()
+        f.spans.append(Span(span_id="s_gemello", doc_id="d1", start=0, end=5,
+                            category=Category.PERSONA, source=Source.MANUAL,
+                            entity_id="e2"))
+        with pytest.raises(ValueError) as errore:
+            maschera_documento(f, doc)
+        assert "si sovrappongono" in str(errore.value)
+
+    def test_span_adiacenti_senza_spazio_vengono_mascherati_entrambi(self):
+        # adiacenti non è sovrapposti: la fine dell'uno può coincidere con
+        # l'inizio dell'altro e il masking deve applicarli tutti e due
+        testo = "AAAABBBB"
+        doc = Document(doc_id="d1", filename="a.txt", text=testo,
+                       page_offsets=[0], sha256="x")
+        f = fascicolo_vuoto("f1")
+        f.documents.append(doc)
+        for indice, (inizio, fine) in enumerate([(0, 4), (4, 8)], start=1):
+            f.entities[f"e{indice}"] = Entity(
+                entity_id=f"e{indice}", category=Category.PRATICA,
+                placeholder=f"[PRATICA_{indice}]",
+                canonical_value=testo[inizio:fine], variants={testo[inizio:fine]},
+            )
+            f.spans.append(Span(span_id=f"s{indice}", doc_id="d1", start=inizio,
+                                end=fine, category=Category.PRATICA,
+                                source=Source.RULE, entity_id=f"e{indice}"))
+        assert maschera_documento(f, doc) == "[PRATICA_1][PRATICA_2]"
+
+    def test_span_che_termina_a_fine_testo(self):
+        # il caso limite degli offset: `end == len(testo)`, dove uno slice
+        # sbagliato lascerebbe fuori l'ultimo carattere o solleverebbe
+        testo = "Il conduttore è Mario Rossi"
+        doc = Document(doc_id="d1", filename="a.txt", text=testo,
+                       page_offsets=[0], sha256="x")
+        f = fascicolo_vuoto("f1")
+        f.documents.append(doc)
+        f.entities["e1"] = Entity(
+            entity_id="e1", category=Category.PERSONA, placeholder="[PERSONA_1]",
+            canonical_value="Mario Rossi", variants={"Mario Rossi"},
+        )
+        f.spans.append(Span(span_id="s1", doc_id="d1", start=len(testo) - 11,
+                            end=len(testo), category=Category.PERSONA,
+                            source=Source.NER, entity_id="e1"))
+        assert maschera_documento(f, doc) == "Il conduttore è [PERSONA_1]"
+
     def test_span_con_entita_assente_solleva_errore(self):
         # uno span che punta a un entity_id non presente nel fascicolo non va
         # ignorato in silenzio: il testo originale non deve mai sopravvivere

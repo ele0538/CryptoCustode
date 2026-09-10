@@ -4,9 +4,12 @@ from cryptocustode.core.models import Category, Source, Span
 from cryptocustode.core.spans import risolvi, si_sovrappongono
 
 
-def span(inizio: int, fine: int, categoria: Category, id_suffisso: str = "") -> Span:
+def span(
+    inizio: int, fine: int, categoria: Category, id_suffisso: str = "",
+    doc_id: str = "d1",
+) -> Span:
     return Span(
-        span_id=f"s{inizio}-{fine}{id_suffisso}", doc_id="d1", start=inizio, end=fine,
+        span_id=f"s{inizio}-{fine}{id_suffisso}", doc_id=doc_id, start=inizio, end=fine,
         category=categoria, source=Source.RULE, entity_id="",
     )
 
@@ -69,3 +72,28 @@ def test_a_parita_di_priorita_e_lunghezza_vince_quello_che_inizia_prima():
 
 def test_lista_vuota():
     assert risolvi([]) == []
+
+
+def test_span_di_documenti_diversi_non_si_sovrappongono():
+    # gli offset sono relativi al testo del proprio documento: confrontarli fra
+    # documenti non significa niente
+    a = span(0, 16, Category.CF, doc_id="d1")
+    b = span(0, 16, Category.CF, doc_id="d2")
+    assert si_sovrappongono(a, b) is False
+
+
+def test_risolvi_non_scarta_span_di_documenti_diversi():
+    # senza il termine sul doc_id, `risolvi(fascicolo.spans)` scarterebbe in
+    # silenzio gli span di un documento perché "sovrapposti" a quelli di un
+    # altro, e quel testo resterebbe in chiaro
+    dati = [
+        span(0, 16, Category.CF, "a", doc_id="d1"),
+        span(0, 16, Category.CF, "b", doc_id="d2"),
+        span(4, 12, Category.DATA, "c", doc_id="d2"),
+    ]
+    risolti = risolvi(dati)
+    # i due CF sopravvivono, uno per documento; la DATA perde contro il CF del
+    # *proprio* documento, che è l'unica sovrapposizione vera
+    assert {(s.doc_id, s.category) for s in risolti} == {
+        ("d1", Category.CF), ("d2", Category.CF),
+    }

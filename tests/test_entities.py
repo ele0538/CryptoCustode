@@ -11,7 +11,6 @@ from cryptocustode.core.models import (
     Category,
     Document,
     Source,
-    Span,
     fascicolo_vuoto,
 )
 
@@ -112,6 +111,46 @@ class TestAggregazione:
         analizza_documento(f, documento("d1", "P. IVA 12345678903."), usa_ner=False)
         for span in f.spans:
             assert span.entity_id in f.entities
+
+    def test_seconda_analisi_dello_stesso_documento_rifiutata(self):
+        """`analizza_documento` non è idempotente: una seconda passata
+        duplicherebbe gli span e la mascheratura, applicando due sostituzioni
+        allo stesso intervallo, troncherebbe il documento dal primo segnaposto
+        in poi. Il rifiuto è esplicito (ruling I4)."""
+        f = fascicolo_vuoto("f1")
+        doc = documento("d1", "Bonifico su IT60X0542811101000000123456 il 14/03/2024.")
+        analizza_documento(f, doc, usa_ner=False)
+        primi = list(f.spans)
+        with pytest.raises(ValueError) as errore:
+            analizza_documento(f, doc, usa_ner=False)
+        assert "d1" in str(errore.value)
+        assert f.spans == primi, "il rifiuto non deve lasciare tracce"
+
+    def test_analisi_di_un_secondo_documento_resta_permessa(self):
+        # il rifiuto è per documento, non per fascicolo: un fascicolo con
+        # dieci documenti va analizzato documento per documento
+        f = fascicolo_vuoto("f1")
+        for doc_id in ("d1", "d2"):
+            analizza_documento(f, documento(doc_id, "P. IVA 12345678903."),
+                               usa_ner=False)
+        assert {s.doc_id for s in f.spans} == {"d1", "d2"}
+
+    def test_span_di_soli_titoli_restano_entita_distinte(self):
+        """`normalizza("Sig.")` è la stringa vuota: senza guardia sulla chiave
+        vuota due span di solo titolo si riconoscerebbero a vicenda e
+        finirebbero sotto lo stesso segnaposto, così al ripristino uno dei due
+        tornerebbe col valore dell'altro."""
+        from cryptocustode.core.entities import aggiungi_span_manuale
+        f = fascicolo_vuoto("f1")
+        doc = documento("d1", "Il Sig. Rossi e il Sig. Bianchi firmano.")
+        f.documents.append(doc)
+        primo = doc.text.index("Sig.")
+        secondo = doc.text.index("Sig.", primo + 1)
+        a = aggiungi_span_manuale(f, doc, primo, primo + 4, Category.PERSONA)
+        b = aggiungi_span_manuale(f, doc, secondo, secondo + 4, Category.PERSONA)
+        assert normalizza("Sig.") == ""
+        assert a.entity_id != b.entity_id
+        assert len(f.entities) == 2
 
     @pytest.mark.lento
     def test_il_percorso_di_default_unisce_regole_e_ner(self):
