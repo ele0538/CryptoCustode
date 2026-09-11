@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from cryptocustode.core.errors import VaultUnreadable
+from cryptocustode.core.errors import VaultUnreadable, VaultVersionNotSupported
 from cryptocustode.core.models import (
     Ambiguity,
     AmbiguityKind,
@@ -120,7 +120,32 @@ def _a_dizionario(fascicolo: Fascicolo) -> dict:
     }
 
 
+def _verifica_versione(versione: object) -> None:
+    """Rifiuta un vault scritto da una versione più recente di questa.
+
+    La guardia chiude solo in avanti: un formato più vecchio resta leggibile,
+    altrimenti aggiornare l'applicazione butterebbe via il lavoro dell'utente.
+    Un formato più nuovo invece va rifiutato *prima* che ne esista uno che si
+    limita ad aggiungere chiavi, perché quello verrebbe caricato ignorandole in
+    silenzio e l'utente non saprebbe di aver perso qualcosa (issue #17).
+
+    Una versione che non è un intero è un payload corrotto, non un formato:
+    `ValueError` la fa ricadere nel messaggio indistinguibile di `carica`. Il
+    caso `bool` è escluso a mano perché in Python `isinstance(True, int)` è
+    vero, e un `"vault_version": true` passerebbe per la versione 1.
+    """
+    if isinstance(versione, bool) or not isinstance(versione, int):
+        raise ValueError(f"vault_version non è un intero: {versione!r}")
+    if versione > VAULT_VERSION:
+        raise VaultVersionNotSupported(
+            f"questo vault usa il formato {versione}, mentre questa versione di "
+            f"CryptoCustode ne legge al massimo {VAULT_VERSION}: aggiorna "
+            "l'applicazione per aprirlo"
+        )
+
+
 def _da_dizionario(dati: dict) -> Fascicolo:
+    _verifica_versione(dati["vault_version"])
     return Fascicolo(
         fascicolo_id=dati["fascicolo_id"],
         documents=[
@@ -199,7 +224,11 @@ def carica(blob: bytes, password: str) -> Fascicolo:
     """Decifra un vault e ricostruisce il fascicolo.
 
     Solleva `VaultUnreadable` per qualunque motivo di fallimento, con lo stesso
-    messaggio in tutti i casi.
+    messaggio in tutti i casi tranne uno: un vault scritto in un formato più
+    recente di quello leggibile qui solleva `VaultVersionNotSupported`, che ne
+    è una sottoclasse e porta un messaggio proprio. Quell'unica eccezione si
+    raggiunge solo *dopo* una decifratura riuscita, quindi non dice nulla a chi
+    non ha già la password (issue #17).
     """
     if len(blob) <= _FINE_INTESTAZIONE or blob[:4] != MAGIC:
         raise VaultUnreadable(_MESSAGGIO_ILLEGGIBILE)

@@ -297,6 +297,89 @@ class TestSuffissoDelCivico:
         ]
 
 
+class TestInternoDelCivico:
+    """Issue #15: fra il civico e il CAP l'indirizzo italiano infila
+    spessissimo l'interno ("Via Roma 12 int. 3, 10121 Torino"). Il gruppo del
+    CAP pretende le cinque cifre subito dopo il civico: con l'interno in mezzo
+    non si agganciava e, essendo facoltativo, si arrendeva senza consumare
+    nulla. Lo span si fermava a "Via Roma 12" e CAP e comune restavano in
+    chiaro nel testo esportato."""
+
+    def test_interno_abbreviato_include_cap_e_comune(self):
+        testo = "Residente in Via Roma 12 int. 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. 3, 10121 Torino"]
+
+    def test_interno_scritto_per_intero_include_cap_e_comune(self):
+        testo = "Residente in Via Roma 12 interno 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 interno 3, 10121 Torino"
+        ]
+
+    def test_interno_senza_virgola_prima_del_cap(self):
+        testo = "Residente in Via Roma 12 int. 3 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. 3 10121 Torino"]
+
+    def test_interno_con_lettera_al_posto_del_numero(self):
+        testo = "Residente in Via Roma 12 int. B, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. B, 10121 Torino"]
+
+    def test_interno_senza_cap_resta_dentro_lo_span(self):
+        # l'interno è parte dell'indirizzo anche quando il CAP non c'è: se
+        # restasse fuori sarebbe un dato personale in chiaro accanto a uno
+        # span che lo lambisce
+        assert valori("Residente in Via Roma 12 int. 3", Category.INDIRIZZO) == [
+            "Via Roma 12 int. 3"
+        ]
+
+    def test_scala_e_interno_insieme_includono_cap_e_comune(self):
+        # la forma composta "sc. B int. 3" è la stessa fuga: fra il civico e il
+        # CAP ci sono due complementi invece di uno
+        testo = "Residente in Via Roma 12 sc. B int. 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 sc. B int. 3, 10121 Torino"
+        ]
+
+    def test_scala_scritta_per_intero_include_cap_e_comune(self):
+        testo = "Residente in Via Roma 12 scala B, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 scala B, 10121 Torino"]
+
+    def test_lo_span_si_ferma_al_comune(self):
+        # un indirizzo vorace che si mangia il testo attorno è un difetto
+        # peggiore di quello corretto qui: il gruppo dell'interno non deve
+        # aprire la strada oltre il comune
+        testo = "Residente in Via Roma 12 int. 3, 10121 Torino presso lo studio Bianchi"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. 3, 10121 Torino"]
+
+    def test_la_parola_chiave_senza_identificativo_non_allunga_lo_span(self):
+        # "interno" è anche un aggettivo comunissimo: senza l'identificativo
+        # breve obbligatorio il gruppo si porterebbe dietro della prosa
+        testo = "Villa in Via Roma 12, interno completamente ristrutturato"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_la_parola_chiave_dell_interno_deve_essere_intera(self):
+        # `(?!\w)` dopo la parola chiave: senza di lui `sc` si aggancerebbe al
+        # prefisso di un'altra parola e lo span inghiottirebbe testo che
+        # nell'indirizzo non c'entra nulla ("Via Roma 12 sca")
+        testo = "Residente in Via Roma 12 sca 5, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_l_identificativo_dell_interno_non_mangia_le_cifre_del_cap(self):
+        # stesso confine `(?!\d)` del civico: senza di lui l'identificativo si
+        # prenderebbe quattro delle cinque cifre del CAP ("int. 1012") e
+        # l'ultima resterebbe in chiaro accanto a un indirizzo storpiato. O il
+        # CAP entra intero nello span, o non entra: mai a metà.
+        testo = "Residente in Via Roma 12 int. 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) in (
+            ["Via Roma 12"],
+            ["Via Roma 12 int. 10121 Torino"],
+        )
+
+    def test_la_parola_chiave_da_sola_non_produce_un_indirizzo(self):
+        # invariante dei giri precedenti: il toponimo resta obbligatorio, e il
+        # vocabolario allargato non lo aggira
+        assert Category.INDIRIZZO not in categorie("Il vano interno 3 misura 12 metri")
+
+
 class TestTelefonoAGruppi:
     """Ruling I2: la spec §6 elenca i separatori senza limitarne il numero, ma
     le due forme nazionali ne ammettevano una e due, quindi i numeri scritti a
@@ -336,6 +419,107 @@ class TestTelefonoAGruppi:
 
     def test_il_validatore_respinge_ancora_le_cifre_troppe(self):
         assert Category.TELEFONO not in categorie("Tel. 012312345678")
+
+
+class TestCodaDelPrefissoInternazionale:
+    """Issue #14, prima fuga: il ramo `+39`/`0039` era vorace e senza `\\b` in
+    coda, così su un numero seguito da una data si mangiava la prima cifra
+    della data ("+39 340 123456 1"). Il conteggio restava dentro i 9-11 della
+    spec §6, quindi il validatore accettava, e la priorità P2 del telefono
+    faceva scartare a `risolvi` l'intero span DATA: mascherato, il testo
+    diventava "[TELEFONO_1]4/03/2024" e **la data restava in chiaro**."""
+
+    def test_il_prefisso_piu_39_non_ingloba_la_cifra_della_data(self):
+        testo = "Tel. +39 340 123456 14/03/2024"
+        assert valori(testo, Category.TELEFONO) == ["+39 340 123456"]
+        assert valori(testo, Category.DATA) == ["14/03/2024"]
+
+    def test_il_prefisso_0039_non_ingloba_la_cifra_della_data(self):
+        # stessa alternativa, stessa coda: `0039` è l'altro ramo dello stesso
+        # gruppo e senza `\\b` sbaglia allo stesso modo
+        testo = "Tel. 0039 340 123456 14/03/2024"
+        assert valori(testo, Category.TELEFONO) == ["0039 340 123456"]
+        assert valori(testo, Category.DATA) == ["14/03/2024"]
+
+    def test_il_prefisso_internazionale_riconosce_ancora_dieci_cifre(self):
+        # il confine chiude la coda, non la accorcia: un cellulare con dieci
+        # cifre nazionali resta intero
+        assert valori("Tel. +39 340 1234567", Category.TELEFONO) == ["+39 340 1234567"]
+
+
+class TestFissoAGruppiCorti:
+    """Issue #14, seconda fuga: i fissi con prefisso a due cifre scritti a
+    gruppi corti — Milano e Roma, i due prefissi più diffusi d'Italia — non
+    producevano **nessuno** span pur avendo la parola chiave accanto.
+
+    Il ramo dei fissi era pigro con minimo 6, e il minimo di un prefisso a due
+    cifre è quindi 2+6 = 8 cifre: sotto il pavimento di 9 di
+    `_telefono_plausibile`. Il conteggio giusto c'era nel testo, ma la corsa
+    pigra si fermava al primo `\\b` utile e non lo raggiungeva mai. Il
+    percorso di ritaglio, che avrebbe potuto rimediare, era morto: il
+    pavimento era uno solo, tarato sulla lunghezza dell'IBAN, e nessun
+    candidato telefonico lo supera.
+
+    La corsa è ora vorace — come quella dell'IBAN, e per la stessa ragione: si
+    prende il più possibile e si lascia al validatore il compito di dire dove
+    finisce il valore. Perché quel compito sia eseguibile il ritaglio è stato
+    riaperto due volte: il pavimento è per categoria, e il taglio cade su
+    qualunque separatore e non solo sugli spazi."""
+
+    def test_fisso_di_milano_a_gruppi_di_due(self):
+        assert valori("Tel. 02 12 34 56 78", Category.TELEFONO) == ["02 12 34 56 78"]
+
+    def test_fisso_di_roma_a_gruppi_di_due(self):
+        assert valori("Tel. 06 12 34 56 78", Category.TELEFONO) == ["06 12 34 56 78"]
+
+    def test_il_prefisso_a_quattro_cifre_con_sei_cifre_resta_riconosciuto(self):
+        # il minimo della ripetizione, 6, è tarato sul prefisso più lungo: con
+        # un prefisso a quattro cifre sono esattamente le sei cifre che
+        # restano. La voracità non deve accorciare questo caso limite, che
+        # senza le due cifre del prefisso lungo scenderebbe sotto la soglia.
+        assert valori("Tel. 0331 123456", Category.TELEFONO) == ["0331 123456"]
+
+    def test_il_fisso_piu_corto_ammesso_resta_riconosciuto(self):
+        # nove cifre esatte, il pavimento della spec §6: qui il prefisso lungo
+        # e il minimo della ripetizione non stanno insieme nel conteggio, e a
+        # far tornare i conti è l'arretramento del prefisso
+        assert valori("Tel. 0331 12345", Category.TELEFONO) == ["0331 12345"]
+        assert valori("Tel. 011 123456", Category.TELEFONO) == ["011 123456"]
+
+    def test_il_ritaglio_riporta_la_coda_vorace_dentro_il_conteggio(self):
+        # con la corsa vorace il numero arriva a inglobare le due cifre del
+        # giorno ("011 1234567 14", dodici cifre): è il ritaglio per categoria
+        # a restituire la data al proprio span. Con il pavimento dell'IBAN
+        # questo candidato è lungo 14 caratteri, il ritaglio si arrende e il
+        # numero sparisce del tutto.
+        testo = "Tel. 011 1234567 14/03/2024"
+        assert valori(testo, Category.TELEFONO) == ["011 1234567"]
+        assert valori(testo, Category.DATA) == ["14/03/2024"]
+
+    def test_il_ritaglio_taglia_anche_dove_il_separatore_non_e_uno_spazio(self):
+        # la coda vorace non si attacca solo attraverso uno spazio: se il
+        # numero è seguito da altre cifre separate da "/" o "-", il taglio
+        # all'ultimo *spazio* cadeva prima del numero, il candidato scendeva a
+        # tre cifre e il numero spariva del tutto — la stessa fuga totale che
+        # la correzione deve chiudere. Il ritaglio taglia quindi anche sui
+        # separatori che la regex ammette dentro il valore.
+        assert valori("Tel. 011 1234567/14", Category.TELEFONO) == ["011 1234567"]
+        assert valori("Tel. 011 1234567-14", Category.TELEFONO) == ["011 1234567"]
+
+    def test_il_pavimento_piu_basso_non_fa_passare_le_cifre_troppo_poche(self):
+        # il pavimento scende a 9 perché 9 cifre senza separatori sono la forma
+        # più corta che un numero valido può avere: il ritaglio ora gira anche
+        # per il telefono, ma non deve accettare nulla sotto la soglia della
+        # spec §6
+        assert Category.TELEFONO not in categorie("Tel. 02 12 34 56")
+        assert Category.TELEFONO not in categorie("Tel. 06 1234 56")
+
+    def test_il_ritaglio_non_fabbrica_un_telefono_da_una_cifratura_lunga(self):
+        # dodici cifre a gruppi non sono un numero di telefono: la corsa vorace
+        # le prende tutte, il validatore le respinge e il ritaglio le accorcia
+        # fino al prefisso, senza mai trovare un candidato plausibile
+        assert Category.TELEFONO not in categorie("Tel. 0123 45678901")
+        assert Category.TELEFONO not in categorie("Tel. 0123 4567 8901 2345")
 
 
 class TestAltreCategorie:

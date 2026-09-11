@@ -1,6 +1,15 @@
 import itertools
 
-from cryptocustode.core.models import Category, Source, Span
+from cryptocustode.core.detect.rules import trova_per_regole
+from cryptocustode.core.entities import analizza_documento
+from cryptocustode.core.mask import maschera_documento
+from cryptocustode.core.models import (
+    Category,
+    Document,
+    Source,
+    Span,
+    fascicolo_vuoto,
+)
 from cryptocustode.core.spans import risolvi, si_sovrappongono
 
 
@@ -80,6 +89,50 @@ def test_span_di_documenti_diversi_non_si_sovrappongono():
     a = span(0, 16, Category.CF, doc_id="d1")
     b = span(0, 16, Category.CF, doc_id="d2")
     assert si_sovrappongono(a, b) is False
+
+
+def _mascherato(testo: str) -> str:
+    """Il testo mascherato da capo a fondo, senza NER: regole, risoluzione
+    delle sovrapposizioni, entità e sostituzione."""
+    documento = Document(
+        doc_id="d1", filename="contratto.txt", text=testo, page_offsets=[0],
+        sha256="x",
+    )
+    fascicolo = fascicolo_vuoto("f1")
+    fascicolo.documents.append(documento)
+    analizza_documento(fascicolo, documento, usa_ner=False)
+    return maschera_documento(fascicolo, documento)
+
+
+def test_il_telefono_col_prefisso_internazionale_non_si_mangia_la_data():
+    # Issue #14: il ramo `+39` della regex del telefono era vorace e senza
+    # `\b` in coda, quindi lo span arrivava a "+39 340 123456 1" — la prima
+    # cifra della data dentro il numero. Il conteggio restava plausibile, il
+    # validatore accettava, e qui `risolvi` faceva il resto: TELEFONO è P2 e
+    # DATA è P3, quindi lo span della data veniva scartato *intero* perché
+    # sovrapposto. È il punto in cui la fuga diventa visibile.
+    testo = "Tel. +39 340 123456 14/03/2024"
+    risolti = risolvi(trova_per_regole(testo, "d1"))
+    assert [(s.category, testo[s.start:s.end]) for s in risolti] == [
+        (Category.TELEFONO, "+39 340 123456"),
+        (Category.DATA, "14/03/2024"),
+    ]
+
+
+def test_la_data_dopo_un_telefono_finisce_mascherata():
+    # la conseguenza dell'anti-fuga precedente, vista da fuori: prima della
+    # correzione questo testo diventava "Tel. [TELEFONO_1]4/03/2024" e la data
+    # restava in chiaro accanto a un numero storpiato
+    assert _mascherato("Tel. +39 340 123456 14/03/2024") == "Tel. [TELEFONO_1] [DATA_1]"
+
+
+def test_la_data_dopo_un_fisso_a_gruppi_corti_finisce_mascherata():
+    # stesso controllo sul ramo dei fissi, la cui corsa è vorace: se il
+    # ritaglio non riportasse la coda dentro il conteggio, qui sparirebbe il
+    # numero invece della data
+    assert _mascherato("Tel. 02 12 34 56 78 il 14/03/2024") == (
+        "Tel. [TELEFONO_1] il [DATA_1]"
+    )
 
 
 def test_risolvi_non_scarta_span_di_documenti_diversi():

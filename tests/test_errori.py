@@ -12,12 +12,14 @@ NOMI_ATTESI = {
     "ScannedDocumentRejected",
     "FascicoloFull",
     "DuplicateFilename",
+    "FascicoloNotFound",
     "ExportNotAllowed",
     "IntegrityError",
     "UnresolvedAmbiguities",
     "UnknownPlaceholder",
     "MalformedPlaceholder",
     "VaultUnreadable",
+    "VaultVersionNotSupported",
 }
 
 

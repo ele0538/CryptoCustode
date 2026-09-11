@@ -3,6 +3,7 @@ import pytest
 from cryptocustode.core.errors import (
     DuplicateFilename,
     ExportNotAllowed,
+    FascicoloNotFound,
     IntegrityError,
 )
 from cryptocustode.core.ingest.loader import aggiungi_documento, costruisci_documento
@@ -68,7 +69,7 @@ def test_lo_store_restituisce_quello_che_ha_salvato():
 
 
 def test_lo_store_solleva_su_un_id_sconosciuto():
-    with pytest.raises(KeyError):
+    with pytest.raises(FascicoloNotFound):
         SessionStore().prendi("inesistente")
 
 

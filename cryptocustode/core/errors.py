@@ -32,6 +32,17 @@ class DuplicateFilename(CryptoCustodeError):
     """
 
 
+class FascicoloNotFound(CryptoCustodeError):
+    """Fascicolo chiesto allo store con un id che non vi corrisponde.
+
+    Esiste perché lo store non lasci uscire il `KeyError` del dizionario che lo
+    indicizza: quel KeyError non è un `CryptoCustodeError`, attraversa il gate
+    dell'export prima dei due controlli della §8 senza che nessuno lo
+    riconosca, e il layer HTTP lo tradurrebbe in un 500 al posto del 404 della
+    §13 (issue #16).
+    """
+
+
 class ExportNotAllowed(CryptoCustodeError):
     """Esportazione richiesta con il fascicolo in uno stato diverso da APPROVED."""
 
@@ -54,3 +65,18 @@ class MalformedPlaceholder(CryptoCustodeError):
 
 class VaultUnreadable(CryptoCustodeError):
     """Password errata o file danneggiato: i due casi non si distinguono."""
+
+
+class VaultVersionNotSupported(VaultUnreadable):
+    """Vault scritto da una versione più recente dell'applicazione.
+
+    Sottoclasse e non fratello di `VaultUnreadable`: un vault che non si sa
+    leggere *è* illeggibile, quindi chi cattura il genitore continua a
+    funzionare, e chi vuole distinguere il caso può prenderlo per nome.
+
+    È l'unico fallimento del vault con un messaggio proprio, e non contraddice
+    la regola della §13 sul messaggio indistinguibile: il numero di versione
+    vive dentro il payload cifrato, quindi per arrivare a leggerlo servono già
+    la password giusta e il file integro. Dirlo a quel punto non rivela nulla a
+    chi è ancora fuori (issue #17).
+    """

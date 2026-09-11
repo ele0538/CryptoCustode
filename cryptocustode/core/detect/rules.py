@@ -101,9 +101,67 @@ _VALIDATORI = {
     Category.DATA: _data_esiste,
 }
 
-# Lunghezza minima di un IBAN: due lettere di paese, due cifre di controllo e
-# undici caratteri di corpo (spec §6). Sotto questa soglia il ritaglio si ferma.
-_LUNGHEZZA_MINIMA_RITAGLIO = 15
+# Pavimento del ritaglio, **per categoria**: sotto questa lunghezza il
+# candidato non può più superare il validatore, quindi continuare ad
+# accorciarlo è lavoro buttato e il ritaglio si arrende.
+#
+# Era un numero solo, 15, cioè la lunghezza minima di un IBAN (due lettere di
+# paese, due cifre di controllo, undici caratteri di corpo — spec §6),
+# applicato a ogni categoria. Nessun candidato telefonico arriva a 15
+# caratteri, quindi per il telefono il ritaglio era morto in partenza: una coda
+# vorace troppo lunga veniva scartata invece di essere riportata dentro il
+# conteggio, e il numero spariva del tutto (issue #14). Ogni pavimento
+# discende ora dal validatore della *propria* categoria, quindi abbassarne uno
+# non allenta gli altri.
+#
+# CF, PIVA e DATA sono qui per completezza e non cambiano comportamento: le
+# loro regex non contengono spazi (CF, PIVA) oppure non ammettono alcun
+# troncamento valido (togliere l'ultimo gruppo a "14 marzo 2024" non produce
+# mai una data), quindi per loro il ritaglio finisce comunque senza candidati.
+_LUNGHEZZA_MINIMA_RITAGLIO: dict[Category, int] = {
+    # Sedici caratteri, lunghezza fissa del codice fiscale.
+    Category.CF: 16,
+    # Undici cifre; con il prefisso `IT` sono tredici, ma il pavimento è un
+    # minimo e deve valere per la forma più corta.
+    Category.PIVA: 11,
+    Category.IBAN: 15,
+    # Nove cifre senza separatori: è la forma più corta che
+    # `_telefono_plausibile` possa accettare.
+    Category.TELEFONO: 9,
+    # "1/1/2024", la forma numerica più corta che `_data_esiste` accetta.
+    Category.DATA: 8,
+}
+
+
+# Caratteri su cui il ritaglio può tagliare, oltre agli spazi di qualunque
+# forma (compreso l'a capo che l'estrazione da PDF infila dentro i numeri).
+#
+# Tagliare ai soli spazi non basta. La coda vorace non si attacca sempre
+# attraverso uno spazio: se al numero seguono altre cifre separate da "/" o
+# "-" ("011 1234567/14"), l'ultimo spazio del candidato cade *prima* del
+# numero, il ritaglio scende di colpo al solo prefisso e il numero viene
+# scartato del tutto — la stessa fuga totale che la correzione deve chiudere.
+#
+# Sono i separatori che le regex ammettono *dentro* un valore, quindi tagliare
+# qui non inventa confini: al più si prova un candidato in più, e l'ultima
+# parola resta al validatore. Per l'IBAN l'insieme è inerte, perché
+# la sua regex ammette solo spazi fra i gruppi; per la data i candidati più
+# corti non sono mai date valide, quindi il ritaglio finisce come prima senza
+# candidati.
+_SEPARATORI_DI_RITAGLIO = ".-/"
+
+
+def _ultimo_taglio(candidato: str) -> int:
+    """L'indice dell'ultimo separatore del candidato, oppure -1 se non ce ne
+    sono: è il punto in cui il ritaglio prova ad accorciarlo."""
+    return max(
+        (
+            indice
+            for indice, carattere in enumerate(candidato)
+            if carattere.isspace() or carattere in _SEPARATORI_DI_RITAGLIO
+        ),
+        default=-1,
+    )
 
 
 def _accettato(categoria: Category, valore: str) -> str | None:
@@ -112,24 +170,30 @@ def _accettato(categoria: Category, valore: str) -> str | None:
 
     Un match può inglobare testo che non appartiene al valore. Quando il
     validatore lo boccia, riprovo con candidati via via più corti, tagliati
-    all'ultimo gruppo separato da spazi, e mi fermo al primo che passa: è il
-    checksum a disambiguare dove finisce il valore. Oggi l'unico consumatore è
-    l'IBAN — la sua regex tollera gli spazi interni e la coda vorace arriva a
-    mangiare la parola maiuscola successiva ("IT60... PRESSO") — mentre CF e
-    PIVA hanno lunghezza fissa e nessuno spazio interno.
+    all'ultimo separatore, e mi fermo al primo che passa: è il validatore a
+    disambiguare dove finisce il valore.
+
+    I consumatori sono due. L'IBAN, la cui regex tollera gli spazi interni e la
+    cui coda vorace arriva a mangiare la parola maiuscola successiva
+    ("IT60... PRESSO"), e il telefono, la cui corsa vorace può inglobare le
+    cifre di ciò che segue il numero ("011 1234567 14" davanti a una data).
+    CF e PIVA hanno lunghezza fissa e nessuno spazio interno: per loro il primo
+    taglio non esiste nemmeno.
     """
     validatore = _VALIDATORI.get(categoria)
     if validatore is None:
         return valore
+    # Il valore di ripiego è 0, cioè "nessuna scorciatoia": una categoria con
+    # validatore ma senza pavimento dichiarato ritaglia fino a esaurire gli
+    # spazi. È più lento, non più permissivo — resta il validatore a decidere
+    # — e non lascia passare in silenzio una categoria dimenticata.
+    pavimento = _LUNGHEZZA_MINIMA_RITAGLIO.get(categoria, 0)
     candidato = valore
     while True:
         if validatore(candidato):
             return candidato
-        taglio = max(
-            (indice for indice, carattere in enumerate(candidato) if carattere.isspace()),
-            default=-1,
-        )
-        if taglio < 0 or len(candidato) < _LUNGHEZZA_MINIMA_RITAGLIO:
+        taglio = _ultimo_taglio(candidato)
+        if taglio < 0 or len(candidato) < pavimento:
             return None
         candidato = candidato[:taglio]
 

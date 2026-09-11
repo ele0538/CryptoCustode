@@ -29,6 +29,7 @@ from cryptocustode.core.models import (
     Source,
     Span,
 )
+from cryptocustode.core.placeholders import costruisci_segnaposto
 from cryptocustode.core.spans import risolvi, si_sovrappongono
 
 _TITOLI = (
@@ -89,9 +90,14 @@ def _iniziale_compatibile(a: str, b: str) -> bool:
 
 def prossimo_placeholder(fascicolo: Fascicolo, categoria: Category) -> str:
     """Assegna il prossimo indice della categoria. I contatori non tornano mai
-    indietro: un indice bruciato resta bruciato (spec §5)."""
+    indietro: un indice bruciato resta bruciato (spec §5).
+
+    Qui vive la politica degli indici; la *forma* del segnaposto è di
+    `core/placeholders.py`, lo stesso modulo da cui il ripristino prende la
+    regex che dovrà riconoscerla (issue #20).
+    """
     fascicolo.counters[categoria] = fascicolo.counters.get(categoria, 0) + 1
-    return f"[{categoria.value}_{fascicolo.counters[categoria]}]"
+    return costruisci_segnaposto(categoria.value, fascicolo.counters[categoria])
 
 
 def _entita_per_valore(
