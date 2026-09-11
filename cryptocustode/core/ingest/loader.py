@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import uuid
 
 from cryptocustode.core.errors import DuplicateFilename, FascicoloFull
 from cryptocustode.core.ingest.pdf_loader import carica_pdf
 from cryptocustode.core.ingest.txt_loader import carica_txt
 from cryptocustode.core.models import Document, Fascicolo
-
-# La forma canonica di un segnaposto (spec §7). La stessa regex vive in
-# core/unmask.py per il verso opposto: qui serve ad avvisare che il testo in
-# ingresso ne contiene già uno.
-SEGNAPOSTO = re.compile(r"\[[A-Z]+_\d+\]")
+from cryptocustode.core.placeholders import SEGNAPOSTO
 
 
 def segnaposto_preesistenti(testo: str) -> list[tuple[int, str]]:
