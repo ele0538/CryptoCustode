@@ -27,9 +27,29 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.formparsers import MultiPartParser
+
+from cryptocustode.api.routes_fascicolo import crea_router
+from cryptocustode.core.errors import (
+    CryptoCustodeError,
+    DuplicateFilename,
+    ExportNotAllowed,
+    FascicoloFull,
+    FascicoloNotFound,
+    IntegrityError,
+    InvalidEncoding,
+    MalformedPlaceholder,
+    ScannedDocumentRejected,
+    UnknownPlaceholder,
+    UnresolvedAmbiguities,
+    VaultUnreadable,
+    VaultVersionNotSupported,
+)
+from cryptocustode.state.session import SessionStore
 
 HOST = "127.0.0.1"
 PORTA = 8765
@@ -37,6 +57,53 @@ INDIRIZZO = f"http://{HOST}:{PORTA}/"
 
 UI = Path(__file__).resolve().parents[1] / "ui"
 PAGINA = UI / "index.html"
+
+HOST_CONSENTITI = ("127.0.0.1", "localhost")
+"""Gli unici valori accettati nell'intestazione `Host`.
+
+Il bind sul loopback impedisce che l'app sia raggiungibile dalla rete, non che
+una pagina ostile aperta nel browser dell'utente le parli: un form cross-origin
+in `multipart/form-data` è una richiesta "semplice", quindi il browser la
+manda senza preflight. La risposta resta opaca a chi attacca, ma col DNS
+rebinding — un nome che risolve a 127.0.0.1 — smetterebbe di esserlo, e
+diventerebbe leggibile appena esisterà una route che restituisce il testo
+originale. Controllare l'`Host` chiude il rebinding, e costa una riga adesso
+contro una riprogettazione dopo. L'autenticazione resta fuori ambito
+(spec §17): questo non la sostituisce, chiude solo la strada che il bind sul
+loopback lascia aperta.
+"""
+
+DIMENSIONE_MASSIMA_IN_MEMORIA = 64 * 1024 * 1024
+"""Quanto di un caricamento resta in RAM prima che starlette lo scriva su disco.
+
+Il valore predefinito di `MultiPartParser.spool_max_size` è 1 MiB: oltre
+quella soglia il `SpooledTemporaryFile` che regge il file caricato rotola in un
+file vero nella cartella temporanea del sistema, **in chiaro**. Per un PDF di
+qualche megabyte — il caso normale, non il limite — vorrebbe dire scrivere su
+disco il documento che la spec §10 promette di tenere solo nella RAM del
+processo. La §16.9 concede lo swap del sistema operativo, che è un
+fatto del sistema; questa sarebbe una scrittura scelta dall'applicazione.
+
+**Alzare la soglia non chiude l'invariante della §10, la sposta.** I
+documenti reali non toccano più il disco, ma un caricamento oltre questa
+soglia rotola ancora in un file in chiaro nella cartella temporanea, e niente
+lo rifiuta: la promessa «fuori dal vault il fascicolo vive solo nella RAM del
+processo» resta violabile con un input più grande, e quel file sopravvive al
+processo in un posto che nessuno pulisce.
+
+Chiuderla davvero vuole un tetto, cioè un rifiuto, cioè un errore di
+dominio e una riga nella tabella della §13: è la issue #27. Due vincoli
+per chi la prenderà, verificati qui:
+
+- il tetto deve stare **sotto** questa soglia, altrimenti il rifiuto arriva
+  dopo la scrittura e non serve a niente;
+- il controllo non può stare nel corpo della route. Starlette applica
+  `max_part_size` solo alle parti che **non** sono file
+  (`formparsers.on_part_data`), quindi un file caricato non ha alcun limite, e
+  quando la route riceve il suo `UploadFile` i byte sono già stati scritti.
+  L'unico punto utile precede la lettura: `Content-Length`, o un conteggio
+  sullo stream in ingresso.
+"""
 
 AlPronto = Callable[[], None]
 """Cosa fare quando l'app entra in servizio. In produzione apre il browser."""
@@ -52,14 +119,104 @@ class PortaOccupata(RuntimeError):
     """La porta locale è già in uso: un altro programma, o un'altra istanza."""
 
 
-def crea_app(al_pronto: AlPronto | None = None) -> FastAPI:
-    """L'app HTTP: serve la pagina della UI e i suoi file statici.
+STATO_HTTP: dict[type[CryptoCustodeError], int] = {
+    InvalidEncoding: 422,
+    ScannedDocumentRejected: 422,
+    FascicoloFull: 422,
+    DuplicateFilename: 422,
+    FascicoloNotFound: 404,
+    ExportNotAllowed: 409,
+    IntegrityError: 409,
+    UnresolvedAmbiguities: 409,
+    UnknownPlaceholder: 422,
+    MalformedPlaceholder: 422,
+    VaultUnreadable: 422,
+    VaultVersionNotSupported: 422,
+}
+"""La tabella della spec §13, trascritta una volta sola.
+
+Sta qui e non dentro le route perché è un contratto dell'applicazione, non di
+un endpoint: ripetuta in ogni handler divergerebbe al primo che dimentica una
+riga. `tests/test_caricamento.py` fa rispettare che ogni errore di dominio
+abbia la sua riga, così un errore nuovo non può arrivare all'utente come 500.
+
+Il 409 al posto del 403 per l'export negato è lo scostamento consapevole
+dichiarato dalla §13: la risorsa è nello stato sbagliato, non manca un
+permesso. Le righe del 409 non hanno ancora una route che le solleva — sono il
+contratto che le issue dell'approvazione e dell'esportazione erediteranno.
+"""
+
+
+def stato_http_di(errore: BaseException) -> int | None:
+    """Il primo stato dichiarato risalendo la gerarchia dell'errore.
+
+    Risalire invece di guardare il tipo esatto serve a un caso che esiste
+    già: `VaultVersionNotSupported` è sottoclasse di `VaultUnreadable`
+    perché la §13 vuole che chi cattura il genitore continui a
+    funzionare. Col confronto esatto un discendente senza riga propria
+    diventerebbe un 500 — un difetto del server per una richiesta che il server
+    ha capito benissimo.
+
+    Il test di esaustività pretende comunque una riga per ogni discendente,
+    e le due difese coprono cose diverse: il test impedisce che una riga
+    mancante arrivi fino a un utente, la risalita impedisce che, se ci
+    arrivasse, il danno sia un 500. E la risalita copre il buco del test:
+    `__subclasses__` vede solo le classi già importate, quindi un errore
+    definito in un modulo che nessun test importa gli sfuggirebbe.
+    """
+    # Attenzione a chi tocca il test di esaustività: questa risalita
+    # **sposta** la rete, non la aggiunge. Col confronto sul tipo esatto
+    # una riga mancante era rumorosa a runtime (un 500); risalendo, un
+    # errore nuovo sotto una classe già mappata eredita in silenzio il
+    # codice del padre, che potrebbe non essere il suo. Ciò che rende
+    # sicura questa scelta è soltanto quel test: la protezione è
+    # passata dal runtime al tempo di test, e indebolire il test riapre la
+    # classe di difetto in silenzio.
+    for classe in type(errore).__mro__:
+        if classe in STATO_HTTP:
+            return STATO_HTTP[classe]
+    return None
+
+
+def rispondi_all_errore_di_dominio(richiesta: Request, errore: Exception) -> JSONResponse:
+    """Traduce un errore di dominio nella sua risposta HTTP (spec §13).
+
+    Il messaggio dell'errore arriva all'utente così com'è: i messaggi del core
+    sono già in italiano e già portano il dettaglio che serve a rimediare — il
+    numero di pagina della scansione, l'offset del byte invalido, il nome del
+    file duplicato. Riscriverli qui significherebbe averne due versioni che
+    divergono.
+
+    Se nemmeno la gerarchia dichiara uno stato, l'errore viene
+    **rilanciato**: finisce in `ServerErrorMiddleware`, che lo registra col
+    suo traceback. Servirlo come 500 col messaggio di dominio lo renderebbe
+    invisibile nei log e indistinguibile, per chi guarda, da una risposta
+    voluta.
+    """
+    stato = stato_http_di(errore)
+    if stato is None:
+        raise errore
+    return JSONResponse(status_code=stato, content={"errore": str(errore)})
+
+
+def crea_app(
+    *, al_pronto: AlPronto | None = None, store: SessionStore | None = None
+) -> FastAPI:
+    """L'app HTTP: serve la pagina della UI, i suoi statici e le route del fascicolo.
 
     `al_pronto` viene chiamato quando l'app entra in servizio, non quando viene
     creata: è l'aggancio con cui `avvia` apre la scheda del browser soltanto a
     server pronto. Chi crea l'app per interrogarla — i test, e in futuro altre
     route — lo lascia assente e non apre nulla.
+
+    `store` è il secondo seme: in produzione ogni avvio parte da uno store
+    vuoto, e chi costruisce l'app per interrogarla passa il proprio così da
+    poter guardare il fascicolo invece di credere alla risposta HTTP sulla
+    parola. Non è un singleton di modulo di proposito: due app dello stesso
+    processo non devono condividere il fascicolo.
     """
+    if store is None:
+        store = SessionStore()
 
     @asynccontextmanager
     async def ciclo_di_vita(app: FastAPI):
@@ -67,8 +224,18 @@ def crea_app(al_pronto: AlPronto | None = None) -> FastAPI:
             al_pronto()
         yield
 
+    # Soglia di processo, non dell'app: `spool_max_size` è un attributo
+    # di classe che starlette legge a ogni parsing. Sta qui e non a livello
+    # di modulo perché l'import di `api.app` non deve avere effetti
+    # collaterali su una libreria di terze parti; creare l'app sì, è
+    # il momento in cui questo processo diventa l'applicazione.
+    MultiPartParser.spool_max_size = DIMENSIONE_MASSIMA_IN_MEMORIA
+
     app = FastAPI(title="CryptoCustode", lifespan=ciclo_di_vita)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(HOST_CONSENTITI))
     app.mount("/static", StaticFiles(directory=UI), name="static")
+    app.include_router(crea_router(store))
+    app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)
 
     @app.get("/", include_in_schema=False)
     def pagina() -> FileResponse:

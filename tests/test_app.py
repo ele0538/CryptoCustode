@@ -29,6 +29,13 @@ from cryptocustode.api.app import (
     esegui_uvicorn,
 )
 
+INDIRIZZO_DI_PROVA = "http://127.0.0.1:8765"
+"""L'app controlla l'intestazione `Host` e accetta solo il loopback, quindi
+il `base_url` di default del TestClient (`http://testserver`) verrebbe
+rifiutato con un 400. Mettere "testserver" fra gli host consentiti avrebbe
+significato portare un valore di prova dentro la configurazione di
+produzione; questa costante lo tiene dove deve stare."""
+
 
 def test_la_home_serve_la_pagina_html_con_il_nome_dell_app():
     """La slice esiste per dimostrare che l'ossatura HTTP c'è: se la route `/`
@@ -37,7 +44,7 @@ def test_la_home_serve_la_pagina_html_con_il_nome_dell_app():
     Il tipo di contenuto è parte del contratto: servita come `text/plain` la
     pagina arriverebbe comunque 200, e il browser mostrerebbe il sorgente HTML
     all'utente invece della UI."""
-    with TestClient(crea_app()) as client:
+    with TestClient(crea_app(), base_url=INDIRIZZO_DI_PROVA) as client:
         risposta = client.get("/")
 
     assert risposta.status_code == 200
@@ -50,7 +57,7 @@ def test_ogni_risorsa_referenziata_dalla_pagina_e_servita():
     pagina arriva comunque 200 e resta muta sotto gli occhi dell'utente. Questo
     test estrae i riferimenti dalla pagina e li chiede davvero, così un mount
     dimenticato o un file rinominato falliscono qui."""
-    with TestClient(crea_app()) as client:
+    with TestClient(crea_app(), base_url=INDIRIZZO_DI_PROVA) as client:
         pagina = client.get("/").text
         riferimenti = re.findall(r'(?:href|src)="(/[^"]+)"', pagina)
 
