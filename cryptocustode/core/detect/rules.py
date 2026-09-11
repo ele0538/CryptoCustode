@@ -12,13 +12,52 @@ from cryptocustode.core.detect import validators
 from cryptocustode.core.detect.patterns import (
     FINESTRA_CONTESTO,
     MESI,
+    MESI_ABBREVIATI,
     PAROLE_CONTESTO,
     PATTERN,
     PREFISSI_CONTESTO,
 )
 from cryptocustode.core.models import Category, Source, Span
 
-_NOMI_MESI = {nome: numero for numero, nome in enumerate(MESI.split("|"), start=1)}
+# Nomi interi e abbreviazioni finiscono nella stessa tabella: le due costanti
+# elencano i mesi nello stesso ordine, quindi la stessa enumerazione vale per
+# entrambe. Se qualcuno le disallineasse, "31 apr." passerebbe come data
+# valida — c'è un test che lo sorveglia.
+_NOMI_MESI = {nome: numero for numero, nome in enumerate(MESI.split("|"), start=1)} | {
+    nome: numero for numero, nome in enumerate(MESI_ABBREVIATI.split("|"), start=1)
+}
+
+# **La regola del secolo per l'anno a due cifre** (issue #33), dichiarata qui
+# invece di essere ereditata dal `%y` di `strptime`, che applicherebbe di suo il
+# taglio POSIX 69/68 senza che nessuno l'abbia scelto: `12/05/74` vale 2074, non
+# 1974, perché a un anno di due cifre si antepone sempre il secolo corrente.
+#
+# La scelta è sbagliata sul piano del senso — come data di nascita 2074 è
+# assurdo, e in questi documenti l'anno a due cifre sta quasi sempre su una data
+# passata — ed è comunque quella giusta qui, per due ragioni.
+#
+# La prima: il secolo non esce da questa funzione. `_data_esiste` risponde
+# soltanto "questa data esiste nel calendario"; lo span conserva il testo
+# originale e la mascheratura sostituisce le cifre così come sono, quindi
+# nessuno legge, salva o mostra mai l'anno esteso. Non c'è nessun consumatore
+# che la scelta possa storpiare.
+#
+# La seconda: l'unico input su cui la regola è osservabile è `29/02/00`. Per
+# ogni altro `YY`, 19YY e 20YY hanno la stessa bisestilità — nessuno dei due è
+# un anno secolare — quindi la risposta non cambia. Su `00` sì: 1900 non è
+# bisestile, 2000 lo è. Leggere 20YY **accetta** il 29 febbraio 2000; leggere
+# 19YY lo respingerebbe, e qui un rifiuto significa una data di nascita lasciata
+# in chiaro nel testo esportato (spec §2 decisione 4). Fra i due errori possibili
+# si sceglie quello che non perde dati.
+#
+# Cosa si è sacrificato: la plausibilità semantica dell'anno, e con lei la
+# possibilità di riusare questa costante il giorno in cui qualcosa dovrà
+# *normalizzare* o *mostrare* una data. Lì servirebbe una finestra scorrevole —
+# per esempio "il secolo che non colloca la data nel futuro" — e non una
+# costante: chi arriva a quel punto riscrive questa regola invece di appoggiarsi
+# a questa, e il test `test_il_ventinove_febbraio_del_duemila_e_una_data` è il
+# posto in cui la sostituzione si vede.
+_SECOLO_ANNO_A_DUE_CIFRE = 2000
 
 # Compilate una sola volta per categoria: un'alternanza delle parole chiave,
 # ciascuna delimitata da confini di parola non standard (`\b` non si comporta
@@ -82,15 +121,23 @@ def _ha_contesto(testo: str, inizio: int, valore: str, categoria: Category) -> b
 
 def _data_esiste(valore: str) -> bool:
     ripulito = valore.strip().lower()
-    numerica = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", ripulito)
+    numerica = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4}|\d{2})", ripulito)
     if numerica:
         giorno, mese, anno = (int(g) for g in numerica.groups())
+        if len(numerica.group(3)) == 2:
+            anno += _SECOLO_ANNO_A_DUE_CIFRE
     else:
         iso = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", ripulito)
         if iso:
             anno, mese, giorno = (int(g) for g in iso.groups())
         else:
-            testuale = re.fullmatch(r"(\d{1,2})\s+([a-zà-ÿ]+)\s+(\d{4})", ripulito)
+            # Il segno di grado del primo del mese e il punto
+            # dell'abbreviazione restano fuori dai gruppi: il giorno è un
+            # numero e il mese è la chiave della tabella, che le abbreviazioni
+            # elencano senza punto.
+            testuale = re.fullmatch(
+                r"(\d{1,2})[°º]?\s+([a-zà-ÿ]+)\.?\s+(\d{4})", ripulito
+            )
             if not testuale:
                 return False
             giorno = int(testuale.group(1))

@@ -903,6 +903,159 @@ class TestAltreCategorie:
         assert valori("Pratica 2024/ABC-77.", Category.PRATICA) == ["Pratica 2024/ABC-77"]
 
 
+class TestFormeDiData:
+    """Issue #33: tre forme di data italiane comunissime non producevano alcuno
+    span, e una data non è un dato qualunque — "Nato a Torino il 12/05/74" è un
+    identificativo indiretto forte, che la spec §2 decisione 4 maschera di
+    default. Le tre radici stavano tutte nella voce `Category.DATA` di
+    `PATTERN`:
+
+    - l'ordinale del primo del mese ("1° marzo 2024"): dopo `\\d{1,2}` c'era
+      `\\s+`, che non ammette il segno di grado;
+    - l'anno a due cifre ("12/05/74"): `\\d{4}` era obbligatorio;
+    - il mese abbreviato ("3 mar. 2024"): `MESI` elencava solo i nomi interi.
+
+    `_data_esiste` resta il cancello in tutte e tre: la regex allarga ciò che si
+    può proporre, non ciò che si accetta.
+    """
+
+    # --- l'ordinale del primo del mese ---
+
+    def test_decorrenza_col_primo_del_mese_ordinale(self):
+        testo = "Il contratto decorre dal 1° marzo 2024 e dura sei anni."
+        assert valori(testo, Category.DATA) == ["1° marzo 2024"]
+
+    def test_decorrenza_col_primo_di_gennaio_ordinale(self):
+        testo = "Con decorrenza 1° gennaio 2025 il canone e aggiornato."
+        assert valori(testo, Category.DATA) == ["1° gennaio 2025"]
+
+    def test_ordinale_scritto_con_l_indicatore_maschile(self):
+        # U+00BA (º, indicatore ordinale) al posto di U+00B0 (°, segno di
+        # grado): a schermo sono la stessa cosa e i documenti reali contengono
+        # l'uno o l'altro secondo la tastiera di chi ha scritto
+        testo = "Con decorrenza 1º giugno 2024 il canone e aggiornato."
+        assert valori(testo, Category.DATA) == ["1º giugno 2024"]
+
+    def test_una_temperatura_non_diventa_una_data(self):
+        # Guardia anti-vorace della forma ordinale: l'ordinale è ammesso solo
+        # sul giorno 1, perché in italiano solo il primo del mese si scrive
+        # così ("1° marzo", ma "2 marzo"). Ammettere `\\d{1,2}°` renderebbe una
+        # data qualunque temperatura seguita da mese e anno, e "25 marzo 2024"
+        # esiste nel calendario: il validatore non potrebbe fermarla.
+        testo = "Media delle massime 25° marzo 2024 nella stazione di Torino."
+        assert valori(testo, Category.DATA) == []
+
+    # --- l'anno a due cifre ---
+
+    def test_data_di_nascita_con_anno_a_due_cifre(self):
+        testo = "Nato a Torino il 12/05/74 e residente in citta."
+        assert valori(testo, Category.DATA) == ["12/05/74"]
+
+    def test_fattura_con_anno_a_due_cifre(self):
+        testo = "Fattura emessa in data 14/03/24 con pagamento a 30 giorni."
+        assert valori(testo, Category.DATA) == ["14/03/24"]
+
+    def test_anno_a_due_cifre_separato_dai_punti(self):
+        assert valori("Nato il 12.05.74 a Torino.", Category.DATA) == ["12.05.74"]
+
+    def test_un_numero_di_versione_non_diventa_una_data(self):
+        # Guardia anti-vorace della forma con anno a due cifre: giorno e mese
+        # devono essere scritti a due cifre. Senza quel vincolo "1.2.34" è una
+        # data valida (1 febbraio) e ogni numero di versione del documento
+        # verrebbe mascherato.
+        assert valori("Versione 1.2.34 del programma.", Category.DATA) == []
+
+    def test_anno_a_due_cifre_non_aggancia_un_numero_piu_lungo(self):
+        # Guardia anti-vorace: il confine a destra impedisce alle due cifre
+        # dell'anno di staccarsi dalla testa di un numero più lungo. Senza di
+        # lui "12/05/745" darebbe lo span "12/05/74" e l'ultima cifra
+        # resterebbe in chiaro accanto a una data storpiata.
+        assert valori("Codice 12/05/745 in archivio.", Category.DATA) == []
+
+    def test_giorno_e_mese_a_una_cifra_con_anno_a_due_restano_fuori(self):
+        # Sacrificio dichiarato, non un invariante: "1/3/24" è una data reale e
+        # resta senza span, perché è indistinguibile da un numero di versione.
+        # "1/3/2024" con l'anno per intero continua a essere riconosciuta.
+        assert valori("Scadenza 1/3/24 del contratto.", Category.DATA) == []
+
+    # --- il mese abbreviato ---
+
+    def test_mese_abbreviato_col_punto(self):
+        testo = "Sottoscritto in data 3 mar. 2024 presso lo studio."
+        assert valori(testo, Category.DATA) == ["3 mar. 2024"]
+
+    def test_nascita_con_mese_abbreviato(self):
+        assert valori("Nato il 12 mag. 1974 a Torino.", Category.DATA) == ["12 mag. 1974"]
+
+    def test_mese_abbreviato_con_l_iniziale_maiuscola(self):
+        assert valori("Firmato il 3 Dic. 2024 a Torino.", Category.DATA) == ["3 Dic. 2024"]
+
+    def test_mese_abbreviato_senza_punto_resta_fuori(self):
+        # Guardia anti-vorace della forma abbreviata: il punto è obbligatorio.
+        # Senza di lui "3 set 2024" — tre set, anno 2024 — diventa il 3
+        # settembre 2024, che esiste e che il validatore non può respingere.
+        testo = "Acquistati 3 set 2024 pezzi di ricambio."
+        assert valori(testo, Category.DATA) == []
+
+    def test_abbreviazione_che_non_e_un_mese_resta_fuori(self):
+        # Doppia serratura: l'abbreviazione deve essere una delle dodici sia
+        # nella regex sia nella tabella dei nomi. Questa passa già grazie alla
+        # seconda, e sta qui perché la prima non venga allargata a
+        # `[a-z]{3}\\.` nella convinzione che il validatore basti da solo.
+        assert valori("Il capitolo 3 par. 2024 del manuale.", Category.DATA) == []
+
+    def test_abbreviazione_di_quattro_lettere_resta_fuori(self):
+        # Sacrificio dichiarato: "sett." è reale, ma abbrevia anche
+        # "settimana" ("consegna in 3 sett."), quindi l'ambiguità è sulla
+        # parola, non sulla forma. Chi deciderà di ammetterla cancella questo
+        # test invece di aggirarlo.
+        assert valori("Consegna il 3 sett. 2024 presso la sede.", Category.DATA) == []
+
+    # --- `_data_esiste` resta il cancello ---
+
+    def test_data_inesistente_con_anno_a_due_cifre_ignorata(self):
+        assert Category.DATA not in categorie("Scadenza 30/02/24 indicata per errore.")
+
+    def test_data_inesistente_con_mese_abbreviato_ignorata(self):
+        assert Category.DATA not in categorie("Termine 31 feb. 2024 indicato per errore.")
+
+    def test_trentuno_aprile_abbreviato_ignorato(self):
+        # Aprile ha trenta giorni: se le abbreviazioni fossero mappate sul
+        # numero sbagliato, "31 apr." finirebbe su un mese da trentuno e
+        # passerebbe. Il test pesa la tabella, non solo la regex.
+        assert Category.DATA not in categorie("Termine 31 apr. 2024 nel contratto.")
+
+    def test_ventinove_febbraio_non_bisestile_abbreviato_ignorato(self):
+        assert Category.DATA not in categorie("Firmato il 29 feb. 2023 a Torino.")
+
+    # --- la regola del secolo ---
+
+    def test_il_ventinove_febbraio_del_duemila_e_una_data(self):
+        # È l'unico input in cui la regola del secolo si vede: per ogni altro
+        # `YY` il 19YY e il 20YY hanno la stessa bisestilità. `00` letto come
+        # 1900 renderebbe inesistente il 29 febbraio 2000 e lascerebbe una data
+        # di nascita in chiaro; letto come 2000 no.
+        assert valori("Nato il 29/02/00 a Torino.", Category.DATA) == ["29/02/00"]
+
+    def test_il_ventinove_febbraio_di_un_anno_non_bisestile_a_due_cifre(self):
+        assert Category.DATA not in categorie("Scadenza 29/02/23 per errore.")
+
+    # --- controprove: le forme già riconosciute non si muovono ---
+
+    def test_il_primo_del_mese_senza_ordinale_resta_riconosciuto(self):
+        testo = "Il contratto decorre dal 1 marzo 2024 e dura sei anni."
+        assert valori(testo, Category.DATA) == ["1 marzo 2024"]
+
+    def test_data_iso_resta_riconosciuta(self):
+        assert valori("Data ISO 1974-05-12 nel tracciato.", Category.DATA) == ["1974-05-12"]
+
+    def test_data_numerica_con_anno_intero_resta_riconosciuta(self):
+        assert valori("Firmato il 12/05/1974 a Torino.", Category.DATA) == ["12/05/1974"]
+
+    def test_data_testuale_dopo_la_formula_di_luogo_resta_riconosciuta(self):
+        assert valori("Torino, li 14 marzo 2024", Category.DATA) == ["14 marzo 2024"]
+
+
 class TestImportoSeguitoDalSimbolo:
     """Ruling C2: `\\b` stava dopo tutta l'alternanza della valuta, quindi il
     ramo del simbolo pretendeva un carattere di parola subito dopo `€`, che è

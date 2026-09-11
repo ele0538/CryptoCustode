@@ -10,6 +10,17 @@ MESI = (
     "settembre|ottobre|novembre|dicembre"
 )
 
+# Le abbreviazioni dei mesi, **nello stesso ordine** di `MESI`: `rules.py`
+# costruisce la tabella nome->numero enumerando l'una e l'altra, quindi
+# riordinarle qui sposterebbe in silenzio i giorni di ciascun mese (issue #33).
+# Sono le sole tre lettere canoniche, e nella regex sono **sempre seguite dal
+# punto**: senza quel vincolo "3 set 2024" — tre set, anno 2024 — diventerebbe
+# il 3 settembre, e il validatore non potrebbe respingerlo perché la data
+# esiste. Le forme di quattro lettere ("sett.", "genn.") restano fuori di
+# proposito: "sett." abbrevia anche "settimana", quindi lì l'ambiguità non è
+# nella forma ma nella parola.
+MESI_ABBREVIATI = "gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic"
+
 TOPONIMI = (
     r"via|viale|v\.le|piazza|p\.zza|piazzale|corso|c\.so|largo|vicolo|"
     r"strada|contrada|localit[àa]|borgo|salita|lungomare"
@@ -131,10 +142,41 @@ PATTERN: dict[Category, Pattern[str]] = {
         r"[\s.:n°/\-]{0,6}([A-Za-z0-9][A-Za-z0-9/._\-]{1,19}[A-Za-z0-9])",
         re.IGNORECASE,
     ),
+    # Tre forme italiane comunissime mancavano all'appello (issue #33), e una
+    # data non è un dato qualunque: "Nato a Torino il 12/05/74" è una data di
+    # nascita, cioè un identificativo indiretto forte che la spec §2 decisione 4
+    # maschera di default.
+    #
+    # L'anno a due cifre ("12/05/74", "14/03/24") vuole giorno e mese scritti a
+    # due cifre. Il vincolo è la guardia anti-vorace della forma: con
+    # `\d{1,2}` anche "1.2.34" sarebbe una data — il 1° febbraio, che esiste —
+    # e ogni numero di versione del documento verrebbe mascherato. Il prezzo è
+    # "1/3/24", data reale che resta senza span; "1/3/2024" con l'anno per
+    # intero continua a essere riconosciuta dal primo ramo. Il ramo con l'anno
+    # intero resta **davanti**: l'alternanza è ordinata e su "14/03/2024" il
+    # ramo corto si fermerebbe a "14/03/20" se lo precedesse (il `\b` finale
+    # lo impedisce comunque, ma l'ordine lo rende evidente). Quello stesso
+    # `\b` impedisce alle due cifre dell'anno di agganciarsi alla testa di un
+    # numero più lungo: "12/05/745" non produce "12/05/74".
+    #
+    # L'ordinale del primo del mese ("1° marzo 2024") è **la** forma standard
+    # delle decorrenze contrattuali, e prima falliva perché dopo `\d{1,2}`
+    # c'era `\s+`, che il segno di grado non attraversa. È ammesso solo sul
+    # giorno 1, ed è la guardia anti-vorace della forma: in italiano solo il
+    # primo del mese prende l'ordinale ("1° marzo", ma "2 marzo"), mentre
+    # `\d{1,2}°` renderebbe una data qualunque temperatura seguita da mese e
+    # anno ("massime 25° marzo 2024") — e il 25 marzo esiste, quindi il
+    # validatore non potrebbe fermarla. `º` (U+00BA) accanto a `°` (U+00B0):
+    # a schermo sono la stessa cosa e i documenti contengono l'uno o l'altro
+    # secondo la tastiera di chi ha scritto.
+    #
+    # Il mese abbreviato ("3 mar. 2024") è normale in fatture e moduli. Il
+    # punto è obbligatorio: vedi il commento di `MESI_ABBREVIATI`.
     Category.DATA: re.compile(
         r"\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4}\b"
+        r"|\b\d{2}[/\-.]\d{2}[/\-.]\d{2}\b"
         r"|\b\d{4}-\d{2}-\d{2}\b"
-        rf"|\b\d{{1,2}}\s+(?:{MESI})\s+\d{{4}}\b",
+        rf"|\b(?:1[°º]|\d{{1,2}})\s+(?:{MESI}|(?:{MESI_ABBREVIATI})\.)\s+\d{{4}}\b",
         re.IGNORECASE,
     ),
     Category.IMPORTO: re.compile(
