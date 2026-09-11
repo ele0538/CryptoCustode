@@ -66,10 +66,10 @@ worktree e i propri agenti. Due segnali che sembrano coordinamento non lo sono:
 
 Il caso reale, 2026-09-11. La sessione `cryptocustode-bc` ha letto la #14 assegnata da
 17 ore senza commit, ha concluso "agente morto" e ha messo un proprio agente sulla #22.
-La #22 tocca la stessa regex `INDIRIZZO` in `core/detect/patterns.py` e la stessa classe
-di test in `tests/test_rules.py` che `cryptocustode-9c` teneva in esclusiva per la #14 —
-viva, e partita da dieci minuti. Il conflitto è stato evitato solo perché le due sessioni
-si sono parlate.
+La #22 tocca la stessa regex `INDIRIZZO` in `cryptocustode/core/detect/patterns.py` e la
+stessa classe di test in `tests/test_rules.py` che `cryptocustode-9c` teneva in esclusiva
+per la #14 — viva, e partita da dieci minuti. Il conflitto è stato evitato solo perché
+le due sessioni si sono parlate.
 
 **Come ci si parla.** `ListAgents` elenca le sessioni peer come `cryptocustode-NN`;
 `SendMessage` con quel nome recapita, e la risposta arriva in un minuto o due. Sono
@@ -83,10 +83,31 @@ dell'altra è **sempre** vecchio di qualche minuto: va bene per sapere cosa una 
 *intende* fare, non per sapere cosa *ha* fatto. Chiedi pure con `SendMessage` chi sta
 facendo cosa, ma prima di agire su un fatto — se un ramo è fuso, se un file è cambiato,
 se una issue è chiusa — guardalo nel repo: `git log`, `git status`, `git worktree list`.
-Non fidarti del racconto, nemmeno del tuo di dieci minuti fa.
+Non fidarti del racconto, nemmeno del tuo di dieci minuti fa: possiede una issue chi ha
+un agente in volo **verificato adesso**, non chi ce l'aveva secondo un messaggio di dieci
+minuti fa.
 
 Misurato il 2026-09-11: ogni deduzione tratta da un messaggio di un'altra sessione è
 risultata sbagliata, ogni verifica fatta nel repo è risultata giusta al primo colpo.
+
+**L'esempio lavorato è questo documento.** La catena, lo stesso giorno:
+
+1. `9c` racconta in un messaggio che la collisione #14/#22 si risolve dividendo
+   `patterns.py` per righe.
+2. Mezz'ora dopo quella frase viene passata come fatto acquisito all'agente che sta
+   scrivendo questa sezione, senza tornare a verificarla.
+3. Nel frattempo `bc` e `9c` avevano già scartato quella soluzione e rinviato la #22 con
+   `Blocked by: #14`.
+4. La sezione stava per uscire insegnando ai lettori futuri a spartire un modulo fra due
+   sessioni: esattamente la cosa che la convenzione esiste per impedire.
+5. L'errore è stato intercettato solo perché `9c` leggeva il diff mentre veniva scritto,
+   invece di aspettare il risultato.
+
+La morale è scomoda: l'errore l'ha commesso chi stava scrivendo la regola, violando la
+regola, su un fatto vecchio di trenta minuti. Non è negligenza, è il modo normale in cui
+il racconto di un'altra sessione invecchia senza avvisare — un fatto non annuncia di
+essere scaduto. E la pratica che l'ha fermato vale per conto suo: leggere il diff di
+un'altra sessione mentre si scrive, invece di aspettarne il risultato.
 
 ### Prima di prendere una issue
 
@@ -106,14 +127,19 @@ nota:
 
 ```
 glab issue note <n> --message "Presa da cryptocustode-9c, <data e ora>.
-File tenuti in esclusiva: core/detect/patterns.py (Category.INDIRIZZO, righe 156-203),
-tests/test_rules.py (nuove classi in coda)."
+File tenuti in esclusiva: cryptocustode/core/detect/patterns.py (voce
+Category.INDIRIZZO del dizionario PATTERN), tests/test_rules.py (nuove classi in coda)."
 ```
 
 È esattamente questo che ha tenuto le altre sessioni alla larga dalla #14 e dalla #15:
 non l'assegnatario, ma l'elenco dei file. Scrivi la nota **prima** di far partire un
 agente, e aggiornala se l'ambito cambia: una nota che elenca file che non stai più
 toccando blocca gli altri per niente.
+
+Nomina le entità — la voce del dizionario, la classe, la funzione — invece dei numeri di
+riga: i numeri invecchiano al primo commit che allunga il file (la #15 ne ha aggiunte 18
+a `patterns.py` in un giorno), e chi legge la nota deve poter ritrovare il pezzo anche
+dopo.
 
 **Una rivendicazione condizionata non è possesso.** "La prendo se il mio utente me lo
 conferma" non è una rivendicazione: o tieni la issue, o è libera. Lo stato intermedio,
@@ -123,12 +149,33 @@ conferma non arriva, scrivi una nota che libera la issue invece di lasciarla app
 
 ### Se scopri che qualcuno è già partito
 
-Non far mollare nessuno per anzianità di assegnazione: **dividi l'ambito**. Quando bc e
-9c si sono parlate hanno spartito lo stesso file per righe — `Category.TELEFONO` righe
-88-95 a una, `Category.INDIRIZZO` righe 156-203 all'altra — e hanno concordato dove
-ciascuna avrebbe appeso le nuove classi di test. Nessuna delle due ha buttato via il
-proprio lavoro. Dopo l'accordo, entrambe le sessioni aggiornano la nota della propria
-issue, così la divisione sopravvive a chi l'ha concordata.
+Non far mollare nessuno per anzianità di assegnazione, ma non dividere un modulo fra due
+sessioni: **un modulo, una sessione.** Spartire lo stesso file per righe o per simboli
+regge solo finché i due ticket restano disgiunti per caso — è una proprietà dei
+ticket di oggi, non del modulo, e al primo lavoro che tocca qualcosa in mezzo la
+collisione torna e va rinegoziata da capo. "Un modulo, una sessione" è invece una
+proprietà del modulo e non si rinegozia a ogni ticket.
+
+Nel caso #14/#22 la divisione per righe è stata proposta e poi scartata, per una ragione
+tecnica prima che di etichetta: la #14 trasforma `_LUNGHEZZA_MINIMA_RITAGLIO` in
+`rules.py` da valore unico tarato sull'IBAN a pavimento *per categoria*, e quel pavimento
+governa il ritaglio di tutte le categorie, INDIRIZZO compresa. Un agente che avesse
+fissato in parallelo i confini dello span dell'indirizzo li avrebbe fissati contro il
+pavimento vecchio: non un rischio di merge, ma lavoro che nasce già da rifare.
+
+La regola non è calata dall'alto, è il residuo di un disaccordo, e conviene saperlo:
+la divisione per righe l'aveva proposta `9c` — e per quei due ticket sarebbe stata
+corretta; a smontarla è stato `bc`, con l'argomento dei ticket-contro-modulo che è poi
+diventato la regola; il motivo tecnico che ha chiuso la questione, il pavimento
+condiviso, l'ha portato di nuovo `9c`. Nessuna delle due aveva ragione dall'inizio ed
+entrambe hanno cambiato idea: una regola raggiunta così regge meglio di una dichiarata.
+
+Esito reale: la #22 è stata **rinviata**, non spartita. Porta `Blocked by: #14`, nessuna
+delle due sessioni ha un agente sopra, e non parte niente prima che la #14 sia fusa.
+Quando due ticket condividono un modulo, la domanda "di chi è" spesso non va risolta: va
+rinviata. Il blocco si scrive sulla issue — la riga `Blocked by: #<n>` in cima alla
+descrizione, o il quick action `/blocked_by` dove i link nativi ci sono — così sopravvive
+alla sessione che l'ha concordato.
 
 Se la sessione nominata non risponde, prendi un'altra issue che non condivida file: il
 costo di aspettare è un ticket rimandato, il costo di sbagliare sono due rami che
