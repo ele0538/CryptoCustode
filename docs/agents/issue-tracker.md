@@ -55,8 +55,12 @@ Infer the repo from `git remote -v`; `glab` does this automatically when run ins
 Su questo repo lavorano più sessioni Claude insieme, ciascuna coi propri agenti. Alcune
 stanno in una worktree propria, altre scrivono direttamente nel **working tree
 principale**, che è condiviso: la prima cosa da sapere è in quale dei due casi ti trovi,
-e lo dicono `git rev-parse --show-toplevel` e `git worktree list`. Due segnali che
-sembrano coordinamento non lo sono:
+e lo dicono `git rev-parse --show-toplevel` e `git worktree list`. La worktree isolata è
+la condizione normale consigliata, e non per eleganza: i due incidenti veri di questi
+giorni — il `vault.py` contaminato e un test rosso attribuito alla sessione sbagliata —
+sono nati tutti e due nel tree principale, e le sessioni che hanno mandato i loro agenti
+in worktree isolate non ne hanno avuti. Due segnali che sembrano coordinamento non lo
+sono:
 
 - **L'assegnatario GitLab non è un lock.** Tutte le sessioni agiscono come lo stesso
   utente (`emanuele.quagliotto`), quindi `glab issue update <n> --assignee @me` dice
@@ -79,30 +83,43 @@ le due sessioni si sono parlate.
 strumenti della sessione, non comandi `glab`: su GitLab non resta traccia, quindi quello
 che viene concordato va poi scritto in una nota sulla issue.
 
-### Nel working tree principale si è in tanti
+### Il tree condiviso è dove succedono i guai
 
 Chi non lavora in una worktree propria scrive negli stessi file di chi sta scrivendo
 adesso, e l'area di staging è una sola per tutti. Da lì è venuto il danno peggiore
-finora, il 2026-09-10: mentre `cryptocustode-06` modificava `cryptocustode/core/vault.py`
-nel tree condiviso, un'altra sessione ha fatto un `git add` a tappeto e ha committato.
-Quelle modifiche sono finite dentro `d21d53e`, il cui messaggio parla delle correzioni
-alla spec per la #21 e non le nomina nemmeno: `git show --stat d21d53e` mostra `vault.py`
-accanto al file della spec, e chi cerca da dove salti fuori `VAULT_VERSION = 2` non lo
-trova dove dovrebbe. Il contenuto era giusto e la suite verde, quindi nessuno se n'è
-accorto subito — è un difetto della cronologia, non del codice, ed è per questo che dura.
-Lo stesso rischio al contrario si è presentato lo stesso giorno: un `git add` del file
-della spec ha raccolto il lavoro in corso di un'altra sessione sulla #19, e il patch è
-stato filtrato hunk per hunk prima di committare.
+finora, il 2026-09-10. `cryptocustode-9c` stava correggendo un commento in
+`cryptocustode/core/vault.py` e ha messo in stage quel file e la spec **per nome**: la
+precauzione che tutti raccomandano, e non è bastata. Dentro `vault.py` c'erano righe non
+committate di un'altra sessione, e `git show d21d53e -- cryptocustode/core/vault.py` ha
+quattro hunk di cui uno solo è dell'autore, il commento sulla §10. Gli altri tre sono il
+lavoro della #12 entrato in silenzio: `VAULT_VERSION` che passa da 1 a 2 col suo
+commento, e la rimozione di `cf` dalla serializzazione e dalla deserializzazione. Il
+messaggio del commit parla solo delle correzioni alla spec per la #21, quindi chi cerca
+da dove salti fuori `VAULT_VERSION = 2` non lo trova dove dovrebbe. Il contenuto era
+giusto e la suite verde, così nessuno se n'è accorto subito: è un difetto della
+cronologia, non del codice, ed è per questo che dura. Lo stesso rischio si è presentato
+al contrario quel giorno, ed è stato schivato: un `git add` del file della spec avrebbe
+raccolto il lavoro in corso di un'altra sessione sulla #19, e il patch è stato filtrato
+hunk per hunk prima di committare.
 
-- **`git add` sempre coi percorsi espliciti.** Mai `git add -A`, mai `git add .`, mai
-  `git add <cartella>`: ingoi il lavoro in volo di un'altra sessione e lo seppellisci
-  sotto un messaggio che parla d'altro.
-- **Prima di committare leggi `git diff --cached --stat`** e controlla che contenga solo
-  i file che hai toccato tu. Se un file condiviso — la spec, un file di test — contiene
-  sia il tuo lavoro sia quello di un altro, filtra per hunk invece di committare tutto.
+- **Indicare i percorsi non basta.** Nominare i file protegge dagli altri file, non dalle
+  altre righe dello stesso file. Prima di mettere in stage guarda il diff *del file*
+  (`git diff -- <file>`) e verifica che ogni riga sia tua; se dentro ci sono righe di
+  un'altra sessione, metti in stage solo le tue. Il danno tipico non è committare un file
+  estraneo — quello si vede — è committare righe estranee dentro un file tuo, sotto un
+  messaggio che non le nomina, dove nessuno andrà a cercarle. `git add -A`, `git add .` e
+  `git add <cartella>` restano da evitare, ma sono il caso facile.
+- **Come si mette in stage solo una parte di un file, senza interattività.** `git add -p`
+  apre un prompt e in questi ambienti non è utilizzabile. La via che ha funzionato:
+  `git diff -- <file> > patch`, si tengono nel patch solo i propri hunk, poi
+  `git reset -q HEAD -- <file>` e `git apply --cached --recount patch`. È così che il
+  file della spec è stato separato dal lavoro in corso sulla #19.
+- **Prima di committare leggi `git diff --cached`** — non solo `--stat`, che vede i file
+  e non le righe — e controlla che non sia rimasto niente di altrui.
 - **Un test rosso può non essere tuo**, e nemmeno un conteggio di test che cresce da
-  solo: i file cambiano sotto di te a metà task. Prima di diagnosticare un fallimento,
-  guarda con `git status` se il file rosso è fra quelli che hai toccato.
+  solo: i file cambiano sotto di te a metà task, ed è già successo che un fallimento
+  venisse attribuito alla sessione sbagliata. Prima di diagnosticare, guarda con
+  `git status` se il file rosso è fra quelli che hai toccato.
 - **Niente operazioni distruttive sul repo mentre altre sessioni sono attive**: rimuovere
   worktree, `reset --hard`, riscrivere la storia. Vale anche per riparare un commit che
   ha inghiottito roba altrui — riscrivere la storia di un ramo su cui qualcuno sta
