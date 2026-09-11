@@ -297,6 +297,82 @@ class TestSuffissoDelCivico:
         ]
 
 
+class TestSuffissoDelCivicoNonSiAggancia:
+    """Issue #29: il suffisso a lettera sola del ruling I1 ammetteva lo spazio
+    come separatore, quindi si agganciava a *qualunque* lettera isolata dopo il
+    civico — una parola di una lettera, una congiunzione, una preposizione — e
+    non solo alla lettera che del civico fa davvero parte.
+
+    Le forme reali del suffisso sono attaccate ("12A") o separate da barra o
+    trattino ("12/A", "12-A"): la lettera sta col numero, non a distanza di
+    spazio. La correzione è qui, sul separatore, e non fra le parole chiave
+    dell'interno: `p` è una chiave di una lettera sola, ambigua con qualunque
+    altra iniziale, e ammetterla allargherebbe la voracità invece di ridurla —
+    oltre a non chiudere il difetto, che si presenta anche senza `p.`.
+
+    Le guardie in coda sono la metà che tiene: restringere il separatore
+    troppo toglierebbe le forme per cui il suffisso esiste."""
+
+    def test_una_lettera_isolata_seguita_da_punto_non_entra_nello_span(self):
+        # `p.` è un'abbreviazione di "piano": lo span si mangiava la `p`
+        # ("Via Roma 12 p"), quindi restituiva un civico storpiato. Ora il
+        # suffisso non si aggancia e il civico resta intero.
+        #
+        # LIMITE NOTO, dichiarato: CAP e comune restano in chiaro lo stesso,
+        # perché `p.` non è fra le parole chiave ammesse fra civico e CAP e
+        # aggiungercelo è stato scartato con motivo (vedi il docstring). Questo
+        # test chiude la voracità sulla `p`, non la fuga del CAP: quella resta
+        # aperta e va decisa a parte.
+        testo = "Via Roma 12 p. 2, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_la_congiunzione_dopo_il_civico_non_entra_nello_span(self):
+        # voracità pura: la `e` non è un dato personale e lo span la mascherava
+        testo = "Il piano regolatore di Via Roma 12 e stato approvato"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_la_preposizione_dopo_il_civico_non_entra_nello_span(self):
+        # stessa famiglia: ogni lettera isolata dopo il numero valeva come
+        # suffisso, anche quando introduce la frase invece dell'indirizzo
+        assert valori("Abita in Via Roma 12 a Torino", Category.INDIRIZZO) == [
+            "Via Roma 12"
+        ]
+
+    # --- guardie: le forme reali del suffisso non devono regredire -----------
+    # è il motivo per cui il suffisso esiste (ruling I1): se la restrizione le
+    # togliesse, il gruppo del CAP tornerebbe a non agganciarsi e resterebbero
+    # in chiaro suffisso, CAP e comune — il difetto che I1 aveva chiuso.
+
+    def test_il_suffisso_attaccato_al_civico_resta(self):
+        testo = "Residente in Via Roma 12A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12A, 10121 Torino"]
+
+    def test_il_suffisso_dopo_la_barra_resta(self):
+        testo = "Residente in Via Roma 12/A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12/A, 10121 Torino"]
+
+    def test_il_suffisso_dopo_la_barra_spaziata_resta(self):
+        # lo spazio non è vietato: è vietato lo spazio *da solo*. Con la barra
+        # davanti la lettera è dichiarata parte del civico da chi ha scritto il
+        # documento, e l'ambiguità che la #29 chiude non c'è.
+        testo = "Residente in Via Roma 12 / A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 / A, 10121 Torino"]
+
+    def test_il_suffisso_dopo_il_trattino_resta(self):
+        testo = "Residente in Via Roma 12-A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12-A, 10121 Torino"]
+
+    def test_il_suffisso_a_parola_resta(self):
+        # "bis" ha il proprio ramo e lo spazio gli è indispensabile: la
+        # restrizione sul separatore non deve toccarlo
+        testo = "Residente in Via Roma 12 bis, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 bis, 10121 Torino"]
+
+    def test_il_civico_a_intervallo_resta(self):
+        testo = "Residente in Via Roma 12-14, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12-14, 10121 Torino"]
+
+
 class TestInternoDelCivico:
     """Issue #15: fra il civico e il CAP l'indirizzo italiano infila
     spessissimo l'interno ("Via Roma 12 int. 3, 10121 Torino"). Il gruppo del

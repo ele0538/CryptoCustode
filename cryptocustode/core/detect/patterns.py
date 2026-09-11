@@ -196,8 +196,23 @@ PATTERN: dict[Category, Pattern[str]] = {
         # agganciarsi: restavano in chiaro il suffisso, il CAP *e* il comune
         # (ruling I1). Ogni alternativa ha il proprio confine a destra, così il
         # suffisso non si mangia l'inizio della parola successiva.
+        # Il ramo della lettera sola ammetteva però anche lo spazio *da solo*
+        # come separatore (`\s*[/\-]?\s*`), e con lui si agganciava a qualunque
+        # lettera isolata dopo il civico (issue #29): "Via Roma 12 p. 2, 10121
+        # Torino" dava "Via Roma 12 p" — civico storpiato — e "Via Roma 12 e
+        # stato approvato" dava "Via Roma 12 e", mascherando una congiunzione
+        # che non è un dato personale. Il separatore è ora obbligatorio quando
+        # c'è distanza: la lettera o è attaccata alle cifre ("12A"), o la barra
+        # (o il trattino) dichiara che fa parte del civico ("12/A", "12 - A").
+        # Le forme reali del suffisso sono queste; "12 A" non si distingue da
+        # una parola di una lettera e il civico preferisce troncarsi.
+        # La correzione sta qui e non fra le parole chiave sotto: aggiungere
+        # `p` a quelle sarebbe una chiave di una lettera sola, ambigua con
+        # qualunque altra iniziale, e allargherebbe la voracità invece di
+        # ridurla — oltre a non chiudere il difetto, che si presenta anche
+        # senza `p.`.
         r"(?:,?\s*n?\.?\s*\d{1,4}(?!\d)"
-        r"(?:\s*[/\-]\s*\d{1,3}(?!\d)|\s*[/\-]?\s*[a-zA-Z](?!\w)"
+        r"(?:\s*[/\-]\s*\d{1,3}(?!\d)|(?:\s*[/\-]\s*)?[a-zA-Z](?!\w)"
         r"|\s+(?:bis|ter|quater)(?!\w))?)?"
         # Interno, scala e piano, facoltativi e fra il civico e il CAP ("Via
         # Roma 12 int. 3, 10121 Torino"): il gruppo del CAP pretende le cinque
