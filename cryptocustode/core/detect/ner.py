@@ -99,6 +99,88 @@ def solo_parole_di_struttura(valore: str) -> bool:
     return True
 
 
+def tronca_al_primo_a_capo(valore: str) -> str:
+    """La parte di `valore` che precede il primo a capo, senza spazi in coda.
+
+    Un a capo separa due campi del documento, non due parti dello stesso dato:
+    l'a capo è il confine, e qui è dove lo span si ferma (issue #36).
+
+    **Si tronca, non si scarta.** Sullo span vorace il troncamento dà la
+    risposta giusta e basta — `'ALBERTO\\nMatricola 0012345 - Qualifica'`
+    diventa `'ALBERTO'`, `'Orbassano\\nAssunto'` diventa `'Orbassano'` — perché
+    il modello parte dall'entità vera e poi dilaga oltre il confine. Ma la
+    ragione per cui si tronca vale anche quando il troncamento *non* dà la
+    risposta giusta, ed è il caso che segue.
+
+    **Cosa viene sacrificato: il nome legittimamente spezzato a capo
+    dall'estrazione PDF.** Se il testo estratto contiene `'Alberto\\nFerrante'`
+    e il modello lo riconosce come una persona sola, da qui esce `'Alberto'` e
+    il cognome resta in chiaro. È una perdita reale e dichiarata, ed è la stessa
+    famiglia del limite già noto per cui un codice fiscale spezzato a capo non
+    viene rilevato. La si accetta perché le due direzioni non sono simmetriche:
+
+    - troncare fa fuggire `'Ferrante'`;
+    - scartare lo span farebbe fuggire `'Alberto Ferrante'`, cioè tutto.
+
+    La fuga del troncamento è un sottoinsieme stretto della fuga dello scarto,
+    quindi troncare domina su ogni testo. È la stessa asimmetria che governa
+    `solo_parole_di_struttura` (commit `2c61c8f`): scartare uno span del NER è
+    la direzione che fa fuggire i dati, e non la si prende senza necessità.
+    Il sottoinsieme è stretto davvero: gli offset arrivano qui già ripuliti
+    dallo spazio ai bordi, quindi la testa non è mai vuota e c'è sempre
+    qualcosa che il troncamento maschera e lo scarto no.
+
+    **Perché non si spezza in due span, tenendo anche la coda.** È la terza via
+    che sembrerebbe dominare entrambe, e non funziona: la coda dopo l'a capo è
+    proprio il campo *altrui* in cui il modello è dilagato, quindi promuoverla
+    a span rimette in piedi il difetto invece di toglierlo. `'Matricola 0012345
+    - Qualifica'` diventerebbe un `[PERSONA_n]` per conto suo, e
+    `solo_parole_di_struttura` non lo ferma, perché "matricola" non è una
+    parola di struttura. Sui due casi la stessa mossa ha esiti opposti, e
+    distinguerli è esattamente ciò che il modello ha sbagliato. Troncare
+    sceglie: della testa ci si fida, della coda no — ed è la scelta calibrata
+    su come il modello sbaglia, cioè partendo dall'entità vera e dilagando in
+    avanti.
+
+    **Un troncamento che lascia un frammento corto non viene scartato.** Se
+    l'estrazione spezza la parola invece della riga (`'Ferran\\nte'`), da qui
+    esce `'Ferran'`: mezzo cognome mascherato e mezzo in chiaro. Non si
+    introduce una soglia di lunghezza minima sotto la quale buttare il resto,
+    per due ragioni. La prima è l'asimmetria di sopra, identica un livello più
+    in basso: scartare il frammento fa fuggire *anche* la testa che il
+    troncamento aveva mascherato, quindi la soglia peggiora il caso che vuole
+    curare. La seconda è che non sarebbe verificabile — i cognomi italiani di
+    due lettere esistono (Fo, Bo, Re), e una regola che li scarta è la
+    "euristica sulla plausibilità del nome" che `2c61c8f` ha rifiutato per
+    nome. L'unica soglia che resta è quella che il repo aveva già, il carattere
+    singolo della validazione P4 (spec §6): `trova_per_ner` la applica *dopo*
+    il troncamento invece che prima, così guarda ciò che diventa davvero uno
+    span invece di ciò che il modello aveva proposto.
+
+    All'obiezione che mezzo nome mascherato sia peggio di niente, perché dà
+    falsa sicurezza, la risposta sta nella spec §16.7: la gamba statistica è
+    dichiaratamente inaffidabile e assiste la revisione umana invece di
+    sostituirla. Quello che resta in chiaro resta *visibile* a chi rivede, che
+    può marcarlo a mano; quello che si scarta è in chiaro esattamente allo
+    stesso modo, solo con un segnaposto in meno accanto. Nessuna delle due
+    scelte è una garanzia, e fra le due si prende quella che maschera di più.
+
+    Si taglia solo sull'a capo, che è un confine di campo. Non si taglia sulle
+    corse di spazi (`'Alberto   Luogo'`, colonne di un PDF): uno spazio sta
+    dentro i nomi veri, quindi lì il confine non è deterministico e la regola
+    smetterebbe di essere verificabile.
+
+    Il risultato è sempre un prefisso di `valore`, ed è l'invariante su cui
+    poggia l'aritmetica degli offset in `trova_per_ner`: l'inizio non si muove
+    e la nuova fine si ricava dalla lunghezza, senza ricercare niente nel
+    testo.
+    """
+    testa, a_capo, _ = valore.partition("\n")
+    if not a_capo:
+        return valore
+    return testa.rstrip()
+
+
 def trova_per_ner(testo: str, doc_id: str) -> list[Span]:
     """Span ricavati dal NER, senza risoluzione delle sovrapposizioni."""
     documento = carica_modello()(testo)
@@ -111,7 +193,14 @@ def trova_per_ner(testo: str, doc_id: str) -> list[Span]:
         # il testo mascherato non resta con spazi doppi.
         inizio = entita.start_char + (len(entita.text) - len(entita.text.lstrip()))
         fine = entita.end_char - (len(entita.text) - len(entita.text.rstrip()))
-        if fine - inizio <= 1:
+        # Issue #36: un a capo separa due campi, non due parti dello stesso
+        # dato, e lo span si ferma lì. Il taglio viene prima delle due
+        # validazioni che seguono perché le sposta entrambe: quello che va
+        # pesato — un carattere solo, o sole parole di struttura — è il resto
+        # che diventa segnaposto, non quello che il modello aveva proposto.
+        valore = tronca_al_primo_a_capo(testo[inizio:fine])
+        fine = inizio + len(valore)
+        if len(valore) <= 1:
             continue
         # Validazione P4 della spec §6: uno span fatto solo di parole di
         # struttura non è un dato personale. Il filtro non protegge la privacy
@@ -119,7 +208,7 @@ def trova_per_ner(testo: str, doc_id: str) -> list[Span]:
         # segnaposto che per progetto non vengono mai riciclati (spec §5),
         # degrada il testo che l'IA riceve e sommerge gli span veri che
         # l'utente deve rivedere.
-        if solo_parole_di_struttura(testo[inizio:fine]):
+        if solo_parole_di_struttura(valore):
             continue
         trovati.append(
             Span(
