@@ -1,12 +1,35 @@
-/* UI vanilla, senza framework (spec §2 decisione 1). */
+/* UI vanilla, senza framework e senza web font (spec §2, decisioni 1 e 6: l'app
+   non fa chiamate di rete, e una richiesta a un servizio di font lo sarebbe).
+
+   Linguaggio visivo: superficie grigio caldo dentro un telaio charcoal molto
+   arrotondato, card bianche con raggi ampi e ombre morbide, chip a pillola,
+   cifre grandi in peso leggero con etichette piccole, e un solo accento giallo
+   acido — usato soltanto per marcatori e badge, mai come colore di testo.
+
+   I sei token storici (--inchiostro, --tenue, --sfondo, --carta, --bordo,
+   --accento) tengono il nome: altre parti della UI li usano già. --accento è
+   il charcoal delle pillole scure, sicuro come sfondo con testo bianco e come
+   colore di testo; il giallo ha un token suo, --evidenza. */
 
 :root {
-  --inchiostro: #1b1f24;
-  --tenue: #5b6673;
-  --sfondo: #f6f7f9;
+  --inchiostro: #1c1c1a;
+  --tenue: #5f5f5a;
+  --sfondo: #e9e7e1;
   --carta: #ffffff;
-  --bordo: #dde1e6;
-  --accento: #1f5f8b;
+  --bordo: #d9d6ce;
+  --accento: #2b2b2b;
+  --evidenza: #e8ff3d;
+  --pagina: #d8d8d6;
+  --telaio: #3a3a39;
+  --chip: #f1efe9;
+  --ok: #2f7a4d;
+  --rifiuto: #b8352c;
+  --raggio-card: 22px;
+  --raggio-telaio: 30px;
+  --ombra-card: 0 12px 30px rgba(30, 30, 28, 0.08), 0 1px 2px rgba(30, 30, 28, 0.06);
+  --ombra-telaio: 0 30px 70px rgba(0, 0, 0, 0.28);
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --transizione: 200ms ease;
 }
 
 * {
@@ -15,46 +38,377 @@
 
 body {
   margin: 0;
-  padding: 2.5rem 1.5rem;
-  background: var(--sfondo);
+  padding: 24px;
+  min-height: 100vh;
+  background:
+    radial-gradient(120% 80% at 50% 0%, #ecece9 0%, var(--pagina) 60%, #cfcfcd 100%);
   color: var(--inchiostro);
-  font: 16px/1.55 system-ui, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.55 var(--font);
 }
 
-header,
-main,
-footer {
-  max-width: 48rem;
+/* --- Telaio e superficie --------------------------------------------------- */
+
+.telaio {
+  max-width: 1180px;
   margin: 0 auto;
+  padding: 14px;
+  background: var(--telaio);
+  border-radius: var(--raggio-telaio);
+  box-shadow: var(--ombra-telaio);
+}
+
+.app {
+  background: var(--sfondo);
+  border-radius: calc(var(--raggio-telaio) - 10px);
+  padding: 28px 32px 24px;
+  min-height: calc(100vh - 76px);
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  flex: 1;
+}
+
+/* --- Intestazione: marchio e chip dei passi ------------------------------- */
+
+.barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
+}
+
+.marchio {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accento);
+  color: var(--evidenza);
+  flex: none;
 }
 
 h1 {
   margin: 0;
-  font-size: 1.9rem;
+  font-size: 1.75rem;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 
-h2 {
-  margin: 0 0 0.6rem;
-  font-size: 1.05rem;
-  color: var(--accento);
+.passi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.sottotitolo {
-  margin: 0.4rem 0 2rem;
+.passo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  background: var(--chip);
   color: var(--tenue);
-  max-width: 40rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  transition: box-shadow var(--transizione), background var(--transizione);
 }
+
+.passo.attivo {
+  background: var(--carta);
+  color: var(--inchiostro);
+  font-weight: 500;
+  box-shadow: var(--ombra-card);
+}
+
+.passo.inattivo {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.didascalia {
+  margin: 0.9rem 0 1.4rem;
+  max-width: 62rem;
+  color: var(--tenue);
+  font-size: 0.9rem;
+}
+
+/* --- Card --------------------------------------------------------------- */
 
 .riquadro {
   background: var(--carta);
-  border: 1px solid var(--bordo);
-  border-radius: 8px;
-  padding: 1.25rem 1.4rem;
+  border-radius: var(--raggio-card);
+  box-shadow: var(--ombra-card);
+  padding: 1.4rem 1.6rem;
+}
+
+.riquadro h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.riquadro p {
+  margin: 0 0 0.6rem;
 }
 
 .riquadro p:last-child {
   margin-bottom: 0;
+}
+
+.etichetta {
+  margin: 0;
+  color: var(--tenue);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.etichetta-sezione {
+  margin: 0.4rem 0 0.6rem 0.2rem;
+  color: var(--tenue);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.tenue {
+  color: var(--tenue);
+  font-size: 0.9rem;
+}
+
+/* --- La scheda del fascicolo: testa e cifre grandi ------------------------ */
+
+.fascicolo-testa {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.fascicolo-titolo {
+  flex: 1 1 14rem;
+}
+
+.fascicolo-titolo h2 {
+  margin: 0.1rem 0 0;
+  font-size: 1.2rem;
+}
+
+.icona-tonda {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--evidenza);
+  color: var(--inchiostro);
+  flex: none;
+}
+
+.metriche {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem 1.5rem;
+  margin: 1.3rem 0 0;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--bordo);
+}
+
+.metrica dt {
+  color: var(--tenue);
+  font-size: 0.78rem;
+}
+
+.metrica dd {
+  margin: 0.15rem 0 0;
+  font-size: 2.1rem;
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.metrica dd small {
+  color: var(--tenue);
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* --- Pillole (pulsanti e badge) ------------------------------------------ */
+
+.pillola {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.15rem;
+  border-radius: 999px;
+  border: 0;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.pillola.scura {
+  background: var(--accento);
+  color: #ffffff;
+  cursor: pointer;
+  transition: transform var(--transizione), filter var(--transizione);
+}
+
+.pillola.scura:hover {
+  filter: brightness(1.18);
+  transform: translateY(-1px);
+}
+
+.pillola.scura:active {
+  transform: translateY(0);
+}
+
+.pillola.chiara {
+  background: var(--chip);
+  color: var(--tenue);
+  font-weight: 400;
+  font-size: 0.82rem;
+}
+
+/* --- La card di caricamento ------------------------------------------------ */
+
+.modulo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem 0.9rem;
+  margin: 1rem 0 0.4rem;
+}
+
+/* L'input resta nel DOM, raggiungibile da tastiera e dai lettori di schermo,
+   ma è la pillola-etichetta a mostrarsi. Il fuoco sull'input si disegna sulla
+   pillola, che è ciò che l'utente vede. */
+.nascosto-accessibile {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.nascosto-accessibile:focus-visible + .pillola,
+.pillola.scura:focus-visible {
+  outline: 3px solid var(--evidenza);
+  outline-offset: 3px;
+}
+
+.suggerimento {
+  font-size: 0.85rem;
+}
+
+.caricamento {
+  transition: outline-color var(--transizione), transform var(--transizione);
+  outline: 2px dashed transparent;
+  outline-offset: 6px;
+}
+
+.caricamento.trascinando {
+  outline-color: var(--accento);
+  transform: scale(1.005);
+}
+
+/* --- Gli esiti come linea del tempo --------------------------------------- */
+
+ul.esiti {
+  list-style: none;
+  position: relative;
+  margin: 0 0 0 1.1rem;
+  padding: 0.2rem 0 0.2rem 1.7rem;
+  border-left: 2px solid var(--bordo);
+}
+
+ul.esiti:empty {
+  border-left-color: transparent;
+}
+
+ul.esiti:empty::after {
+  content: "Ancora nessun caricamento.";
+  color: var(--tenue);
+  font-size: 0.9rem;
+}
+
+ul.esiti li {
+  position: relative;
+  background: var(--carta);
+  border-radius: 18px;
+  box-shadow: var(--ombra-card);
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.93rem;
+}
+
+/* Il marcatore sulla linea: colore, segno e parola insieme, mai il colore da
+   solo. Charcoal con la spunta per un documento entrato, rosso con la croce
+   per un rifiuto, giallo acido con il punto esclamativo per un avviso. */
+ul.esiti li::before {
+  content: "\2713";
+  position: absolute;
+  left: calc(-1.7rem - 15px);
+  top: 0.8rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  background: var(--accento);
+  color: #ffffff;
+  box-shadow: 0 0 0 4px var(--sfondo);
+}
+
+ul.esiti li.rifiutato::before {
+  content: "\2715";
+  background: var(--rifiuto);
+}
+
+ul.esiti li.avviso::before {
+  content: "!";
+  background: var(--evidenza);
+  color: var(--inchiostro);
+}
+
+ul.esiti li.rifiutato {
+  color: var(--rifiuto);
+}
+
+ul.esiti li.avviso {
+  background: #fdfce8;
+}
+
+p.estratto {
+  margin: 0.55rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--bordo);
+  color: var(--tenue);
+  font-size: 0.85rem;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  overflow-wrap: anywhere;
 }
 
 code {
@@ -65,73 +419,74 @@ code {
   font-size: 0.9em;
 }
 
-footer p {
-  margin-top: 2rem;
-  color: var(--tenue);
-  font-size: 0.85rem;
-}
+/* --- Barra bassa ---------------------------------------------------------- */
 
-/* --- Caricamento (issue #3) ------------------------------------------------ */
-
-form#modulo-caricamento {
+.barra-bassa {
+  margin-top: 1.8rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
   align-items: center;
-  margin: 1rem 0 0.6rem;
-}
-
-button {
+  gap: 0.8rem;
+  padding: 0.75rem 1.3rem;
+  border-radius: 999px;
   background: var(--accento);
-  color: #fff;
-  border: 0;
-  border-radius: 6px;
-  padding: 0.45rem 1rem;
-  font: inherit;
-  cursor: pointer;
-}
-
-button:hover {
-  filter: brightness(1.08);
-}
-
-.tenue {
-  color: var(--tenue);
-  font-size: 0.9rem;
-  margin: 0.2rem 0 0;
-}
-
-ul.esiti {
-  list-style: none;
-  padding: 0;
-  margin: 0.8rem 0 0;
-}
-
-ul.esiti li {
-  border-left: 3px solid var(--bordo);
-  padding: 0.45rem 0.7rem;
-  margin-bottom: 0.4rem;
-  background: var(--sfondo);
-  border-radius: 0 4px 4px 0;
-  font-size: 0.92rem;
-}
-
-ul.esiti li.caricato {
-  border-left-color: #2f7a4d;
-}
-
-ul.esiti li.rifiutato {
-  border-left-color: #a8322d;
-}
-
-ul.esiti li.avviso {
-  border-left-color: #b07c19;
-}
-
-p.estratto {
-  margin: 0.35rem 0 0;
-  color: var(--tenue);
+  color: #e9e7e1;
   font-size: 0.85rem;
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  overflow-wrap: anywhere;
+}
+
+.barra-bassa p {
+  margin: 0;
+}
+
+.puntino {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--evidenza);
+  flex: none;
+}
+
+/* --- Movimento e schermi stretti ------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body {
+    padding: 10px;
+  }
+
+  .telaio {
+    padding: 8px;
+    border-radius: 22px;
+  }
+
+  .app {
+    padding: 18px 16px;
+    border-radius: 16px;
+    min-height: calc(100vh - 36px);
+  }
+
+  .riquadro {
+    padding: 1.1rem 1.15rem;
+  }
+
+  .metriche {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  ul.esiti {
+    margin-left: 0.8rem;
+    padding-left: 1.4rem;
+  }
+
+  ul.esiti li::before {
+    left: calc(-1.4rem - 15px);
+  }
+
+  .barra-bassa {
+    border-radius: 18px;
+  }
 }

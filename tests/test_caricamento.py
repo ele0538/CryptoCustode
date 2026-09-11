@@ -568,3 +568,46 @@ def test_l_estratto_del_testo_arriva_in_pagina():
     [prima] = [riga for riga in esito["righe"] if riga["classe"] == "caricato"][:1]
     assert prima["dettaglio"] is not None
     assert "Rossi" in prima["dettaglio"]
+
+
+# --- Il restyle: le due aggiunte di comportamento, prima del codice -----------
+
+
+@senza_node
+def test_le_metriche_del_fascicolo_si_aggiornano_con_i_caricamenti():
+    """La card del fascicolo mostra quattro numeri grandi — documenti, pagine,
+    caratteri, avvisi — e li aggiorna a ogni caricamento. I documenti vengono
+    dal payload (è il server a sapere quanti sono), pagine e caratteri si
+    sommano, gli avvisi si contano. Lo scenario serve 61 caratteri e 1 pagina,
+    poi 40 e 3 con due segnaposto: i totali attesi sono contati a mano.
+    """
+    esito = esito_della_ui("metriche")
+
+    assert esito["metriche"] == {
+        "documenti": "2",
+        "pagine": "4",
+        "caratteri": "101",
+        "avvisi": "2",
+    }
+
+
+@senza_node
+def test_i_file_lasciati_cadere_sulla_card_vengono_caricati():
+    """Il trascinamento è la stessa strada del modulo, non una seconda:
+    un file lasciato cadere sulla card deve produrre la stessa richiesta e la
+    stessa riga di verdetto di un file scelto col pulsante."""
+    esito = esito_della_ui("trascinamento")
+
+    assert [tentativo["file"] for tentativo in esito["tentativi"]] == ["uno.txt"]
+    assert [riga["classe"] for riga in esito["righe"]] == ["caricato"]
+
+
+@senza_node
+def test_la_pagina_dice_quanti_file_sono_stati_scelti():
+    """L'input dei file è nascosto dietro un pulsante a pillola, quindi il
+    browser non mostra più da sé i nomi scelti: senza questo conteggio
+    l'utente clicca «Carica» senza sapere se la scelta è andata a buon fine.
+    Lo scenario sceglie tre file."""
+    esito = esito_della_ui("corpo-non-json")
+
+    assert "3" in esito["file_scelti"]

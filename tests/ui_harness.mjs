@@ -22,7 +22,7 @@ const scenario = process.argv[2];
 const radice = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function elementoFinto(nome) {
-  return {
+  const elemento = {
     nome,
     className: "",
     textContent: "",
@@ -30,6 +30,18 @@ function elementoFinto(nome) {
     value: "",
     figli: [],
     gestori: {},
+    // `classList` come nel DOM: la card di caricamento la usa per lo stato
+    // "trascinando" durante il drag-and-drop.
+    classi: new Set(),
+    classList: {
+      add(nome) {
+        this.classi.add(nome);
+      },
+      remove(nome) {
+        this.classi.delete(nome);
+      },
+      classi: null,
+    },
     appendChild(figlio) {
       this.figli.push(figlio);
     },
@@ -37,6 +49,8 @@ function elementoFinto(nome) {
       this.gestori[evento] = gestore;
     },
   };
+  elemento.classList.classi = elemento.classi;
+  return elemento;
 }
 
 const elementi = new Map();
@@ -78,6 +92,27 @@ const CARICATO = {
 // `json` assente significa: la risposta non ha un corpo JSON, e `risposta.json()`
 // rigetta. È il caso del 500 non gestito, servito come testo.
 const SCENARI = {
+  // Due caricamenti con numeri diversi: le metriche del fascicolo devono
+  // sommare pagine, caratteri e avvisi, e prendere i documenti dal payload.
+  metriche: [
+    CARICATO,
+    {
+      stato: 201,
+      json: {
+        ...CARICATO.json,
+        filename: "due.txt",
+        caratteri: 40,
+        pagine: 3,
+        documenti_nel_fascicolo: 2,
+        segnaposto_preesistenti: [
+          { posizione: 4, segnaposto: "[PERSONA_1]" },
+          { posizione: 20, segnaposto: "[LUOGO_2]" },
+        ],
+      },
+    },
+  ],
+  // I file lasciati cadere sulla card seguono la stessa strada del modulo.
+  trascinamento: [CARICATO],
   "corpo-non-json": [
     CARICATO,
     { stato: 500 },
@@ -140,7 +175,22 @@ scelta.files = ["uno.txt", "due.txt", "tre.txt"]
   .slice(0, Math.max(programmate.length, 1))
   .map((name) => ({ name }));
 
-await modulo.gestori.submit({ preventDefault() {} });
+// Il conteggio dei file scelti si aggiorna al `change` dell'input, prima del submit.
+if (scelta.gestori.change !== undefined) {
+  scelta.gestori.change({ target: scelta });
+}
+const fileSceltiDopoLaScelta = document.getElementById("file-scelti").textContent;
+
+if (scenario === "trascinamento") {
+  // Niente submit: i file arrivano lasciati cadere sulla card di caricamento.
+  const card = document.getElementById("card-caricamento");
+  await card.gestori.drop({
+    preventDefault() {},
+    dataTransfer: { files: scelta.files },
+  });
+} else {
+  await modulo.gestori.submit({ preventDefault() {} });
+}
 
 const esiti = document.getElementById("esiti");
 console.log(
@@ -153,5 +203,12 @@ console.log(
     conteggio: document.getElementById("conteggio").textContent,
     tentativi,
     scelta_svuotata: scelta.value === "",
+    file_scelti: fileSceltiDopoLaScelta,
+    metriche: {
+      documenti: document.getElementById("metrica-documenti").textContent,
+      pagine: document.getElementById("metrica-pagine").textContent,
+      caratteri: document.getElementById("metrica-caratteri").textContent,
+      avvisi: document.getElementById("metrica-avvisi").textContent,
+    },
   })
 );
