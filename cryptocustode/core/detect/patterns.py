@@ -199,23 +199,39 @@ PATTERN: dict[Category, Pattern[str]] = {
         r"(?:,?\s*n?\.?\s*\d{1,4}(?!\d)"
         r"(?:\s*[/\-]\s*\d{1,3}(?!\d)|\s*[/\-]?\s*[a-zA-Z](?!\w)"
         r"|\s+(?:bis|ter|quater)(?!\w))?)?"
-        # Interno e scala, facoltativi e fra il civico e il CAP ("Via Roma 12
-        # int. 3, 10121 Torino"): il gruppo del CAP pretende le cinque cifre
-        # subito dopo il civico, quindi con l'interno in mezzo non si
+        # Interno, scala e piano, facoltativi e fra il civico e il CAP ("Via
+        # Roma 12 int. 3, 10121 Torino"): il gruppo del CAP pretende le cinque
+        # cifre subito dopo il civico, quindi con l'interno in mezzo non si
         # agganciava e — essendo facoltativo — si arrendeva senza consumare
         # nulla. Lo span si fermava a "Via Roma 12" e CAP e comune restavano in
         # chiaro (issue #15). `int.` è comunissimo negli indirizzi italiani.
+        # `piano` è la stessa fuga con un'altra parola, ed è stato aggiunto qui
+        # (issue #22): la #15 si era fermata a interno e scala, e "Via Roma 12
+        # int. 3 piano 2, 10121 Torino" si troncava a "Via Roma 12 int. 3"
+        # mentre "Via Roma 12 piano 2, 10121 Torino", senza interno, si
+        # troncava a "Via Roma 12". La correzione è una voce in più in questa
+        # alternativa, non un allentamento dell'adiacenza: il gruppo del CAP
+        # continua a pretendere le cinque cifre subito dopo, e ciò che sta in
+        # mezzo deve essere una di queste forme chiuse. Ammettere invece "testo
+        # breve qualunque" fra civico e CAP era la strada già esplorata e
+        # scartata dalla #15, perché rende l'indirizzo vorace su testo che non
+        # gli appartiene — difetto peggiore di quello chiuso.
         # Il gruppo non può allargare l'indirizzo a testo qualunque: la parola
         # chiave è obbligatoria e chiusa da `(?!\w)` (così "sca" non passa per
-        # `sc`), e le è obbligatorio un identificativo breve — poche cifre
-        # oppure una lettera sola con il proprio confine a destra. Le due
-        # ripetizioni ammesse coprono la forma composta ("sc. B int. 3");
-        # nessuna sequenza illimitata.
+        # `sc` e "pianoforte" non passa per `piano`), e le è obbligatorio un
+        # identificativo breve — poche cifre oppure una lettera sola con il
+        # proprio confine a destra. È l'identificativo obbligatorio che tiene
+        # fuori la prosa dove `piano` è una parola comune nel senso di progetto
+        # ("piano di ristrutturazione", "piano regolatore") o regge un aggettivo
+        # ("piano nobile"): lì il gruppo fallisce del tutto e l'indirizzo
+        # preferisce troncarsi invece di inghiottire testo che non è un dato
+        # personale. Le due ripetizioni ammesse coprono la forma composta
+        # ("sc. B int. 3", "int. 3 piano 2"); nessuna sequenza illimitata.
         # `\d{1,4}(?!\d)` è lo stesso confine del civico e serve alla stessa
         # cosa: su "Via Roma int. 10121 Torino" impedisce all'identificativo di
         # mangiare quattro delle cinque cifre del CAP. Il gruppo, facoltativo,
         # fallisce del tutto e lascia il CAP intero a chi viene dopo.
-        r"(?:,?\s*(?:int(?:erno)?|sc(?:ala)?)(?!\w)\.?\s*"
+        r"(?:,?\s*(?:int(?:erno)?|sc(?:ala)?|piano)(?!\w)\.?\s*"
         r"(?:\d{1,4}(?!\d)|[a-zA-Z](?!\w))){0,2}"
         # CAP e comune facoltativi (spec §6): il toponimo resta obbligatorio,
         # quindi un CAP da solo non genera mai uno span.
