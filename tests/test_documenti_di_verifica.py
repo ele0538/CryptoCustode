@@ -104,11 +104,30 @@ VALORI_ATTESI = (
     "foglio 24 particella 318",
 )
 
-# Spec §11, passo 3: la regex permissiva che intercetta i quasi-segnaposto.
-# Applicata al *nostro* output, dice se la mascheratura ha prodotto qualcosa
-# che il ripristino rifiuterebbe.
-QUASI_SEGNAPOSTO = re.compile(r"\[[A-Za-z]+[_\-\s]?\d*\]?")
-SEGNAPOSTO = re.compile(r"\[[A-Z]+_\d+\]")
+# Le due forme della spec, trascritte a mano e **non** importate da
+# `core/placeholders.py` né da `core/unmask.py`: qui sono una guardia
+# indipendente, non una copia da unificare (issue #23, coda della #20).
+#
+# Perché l'import le renderebbe inutili. Il test qui sotto confronta due cose:
+# una rete larga (cosa *somiglia* a un segnaposto nell'output della catena
+# vera) e un criterio severo (cosa è ben formato secondo la spec §7). Se
+# entrambe venissero dal codice sotto esame, il confronto diventerebbe il
+# modulo contro sé stesso: cambiando insieme costruttore e regex — che è
+# esattamente lo scenario della #20, il formato che divergeva in silenzio — il
+# test resterebbe verde mentre la produzione sbaglia. Misurato, non dedotto:
+# con queste copie locali le due mutazioni della prova del nove — `_` in `-`
+# nel solo costruttore, e in costruttore e regex insieme — fanno rosso
+# entrambe; con l'import la seconda direzione tornerebbe verde.
+#
+# Non sono una duplicazione nascosta: sono la spec scritta due volte di
+# proposito, §7 per la forma canonica e §11 passo 3 per la permissiva (che la
+# spec riporta alla lettera). Il prezzo è che un cambio di formato voluto va
+# aggiornato anche qui a mano — ed è il prezzo giusto, perché questo è il
+# posto in cui il cambio viene *confermato* invece di propagarsi da solo. I
+# nomi tengono il suffisso `_DA_SPEC` perché la prossima persona che li legge
+# sappia che l'import è la scelta sbagliata, non una dimenticanza.
+QUASI_SEGNAPOSTO_DA_SPEC = re.compile(r"\[[A-Za-z]+[_\-\s]?\d*\]?")
+SEGNAPOSTO_DA_SPEC = re.compile(r"\[[A-Z]+_\d+\]")
 
 
 @pytest.fixture(scope="module")
@@ -201,9 +220,17 @@ def test_gli_span_risolti_non_si_sovrappongono(analisi):
 def test_il_testo_mascherato_non_contiene_segnaposto_alterati(analisi):
     """Ogni quasi-segnaposto trovato nell'output deve essere un segnaposto
     ben formato: un troncamento come "[PERSONA_1]ONA_2]" bloccherebbe il
-    ripristino (spec §11) invece di limitarsi a essere brutto."""
+    ripristino (spec §11) invece di limitarsi a essere brutto.
+
+    È la guardia indipendente sul formato: le due regex qui sopra sono
+    trascritte dalla spec e non importate, per il motivo scritto accanto."""
     _, _, mascherato = analisi
-    for trovato in QUASI_SEGNAPOSTO.finditer(mascherato):
-        assert SEGNAPOSTO.fullmatch(trovato.group(0)), (
-            f"segnaposto alterato nel testo mascherato: {trovato.group(0)!r}"
+    trovati = [t.group(0) for t in QUASI_SEGNAPOSTO_DA_SPEC.finditer(mascherato)]
+    # La rete deve pescare qualcosa, altrimenti l'asserzione sotto non parla:
+    # un output senza nessun segnaposto non è un output ben formato, è un
+    # documento che nessuno ha mascherato.
+    assert trovati, "nessun segnaposto nel testo mascherato del documento di verifica"
+    for trovato in trovati:
+        assert SEGNAPOSTO_DA_SPEC.fullmatch(trovato), (
+            f"segnaposto alterato nel testo mascherato: {trovato!r}"
         )
