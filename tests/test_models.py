@@ -72,6 +72,10 @@ def test_entity_tiene_traccia_delle_varianti():
     assert e.canonical_value == "Mario Rossi"
 
 
-def test_fascicolo_accetta_al_massimo_dieci_documenti():
-    f = fascicolo_vuoto("f1")
+def test_il_modello_dichiara_il_tetto_di_dieci_documenti():
+    """Pianta la costante, non il comportamento: il 10 è un contratto verso
+    l'utente (spec §1) e compare come letterale anche nel `match="10"` del
+    loader. Il tetto lo *applica* `aggiungi_documento`, ed è
+    `test_l_undicesimo_documento_viene_rifiutato` in `tests/test_loader.py` a
+    provare il rifiuto."""
     assert Fascicolo.MAX_DOCUMENTI == 10

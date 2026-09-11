@@ -380,6 +380,98 @@ class TestInternoDelCivico:
         assert Category.INDIRIZZO not in categorie("Il vano interno 3 misura 12 metri")
 
 
+class TestPianoDelCivico:
+    """Issue #22: stessa fuga della #15, con `piano` al posto di `int.`. La #15
+    ha aperto il gruppo fra civico e CAP a interno e scala e si è fermata lì;
+    `piano` è la forma vicina rimasta fuori, ed è comune negli indirizzi
+    italiani almeno quanto `int.`. Senza di lui
+    "Via Roma 12 int. 3 piano 2, 10121 Torino" si fermava a
+    "Via Roma 12 int. 3" e CAP e comune restavano in chiaro nel testo
+    esportato; "Via Roma 12 piano 2, 10121 Torino", senza interno, si fermava
+    a "Via Roma 12".
+
+    La correzione ha la forma della #15 — parola chiave obbligatoria e intera,
+    identificativo breve col proprio confine, ripetizioni limitate — e non
+    allenta l'adiacenza pretesa dal gruppo del CAP: allentarla renderebbe
+    l'indirizzo vorace su testo che non gli appartiene, difetto peggiore di
+    quello chiuso qui. Le guardie in coda sono quelle che tengono ferma questa
+    scelta."""
+
+    def test_il_piano_dopo_l_interno_include_cap_e_comune(self):
+        testo = "Via Roma 12 int. 3 piano 2, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 int. 3 piano 2, 10121 Torino"
+        ]
+
+    def test_il_piano_senza_interno_include_cap_e_comune(self):
+        # il difetto si vede anche senza interno: fra il civico e il CAP basta
+        # un complemento qualsiasi perché il gruppo del CAP non si agganci
+        testo = "Via Roma 12 piano 2, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 piano 2, 10121 Torino"]
+
+    def test_il_piano_senza_virgola_prima_del_cap(self):
+        testo = "Via Roma 12 piano 2 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 piano 2 10121 Torino"]
+
+    def test_il_piano_con_lettera_al_posto_del_numero(self):
+        testo = "Residente in Via Roma 12 piano A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 piano A, 10121 Torino"]
+
+    def test_il_piano_senza_cap_resta_dentro_lo_span(self):
+        # come per l'interno: il piano è parte dell'indirizzo anche quando il
+        # CAP non c'è, e lasciarlo fuori sarebbe un dato in chiaro accanto a
+        # uno span che lo lambisce
+        assert valori("Residente in Via Roma 12 piano 2", Category.INDIRIZZO) == [
+            "Via Roma 12 piano 2"
+        ]
+
+    # --- guardie anti-vorace -------------------------------------------------
+    # `piano` non è solo una parte dell'indirizzo: è una parola comunissima nel
+    # senso di progetto ("piano regolatore", "piano casa") e un sostantivo che
+    # regge un aggettivo ("piano nobile"). Se il gruppo si accontentasse di
+    # trovare la parola, o ammettesse del testo qualunque dopo di lei, lo span
+    # si porterebbe dietro della prosa: un indirizzo vorace è un difetto
+    # peggiore di un indirizzo troncato, perché maschera testo che non è un
+    # dato personale e lo fa sparire dal documento.
+
+    def test_il_piano_come_parola_comune_non_allunga_lo_span(self):
+        # nel senso di progetto: l'identificativo breve obbligatorio è quello
+        # che tiene fuori "di ristrutturazione approvato"
+        testo = "Villa in Via Roma 12, piano di ristrutturazione approvato"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_il_piano_nobile_non_porta_dentro_la_prosa(self):
+        # "piano nobile" è la forma che smaschera l'adiacenza allentata: con un
+        # `[^,]*` o un `.{0,20}` fra civico e CAP lo span inghiottirebbe
+        # l'aggettivo *e* la coda con CAP e comune. Qui l'indirizzo preferisce
+        # troncarsi: il piano senza identificativo breve non entra, e il CAP
+        # non si aggancia.
+        testo = "Residente in Via Roma 12 piano nobile, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_lo_span_col_piano_si_ferma_al_comune(self):
+        # il gruppo nuovo non deve aprire la strada oltre il comune, esattamente
+        # come quello dell'interno
+        testo = "Residente in Via Roma 12 piano 2, 10121 Torino presso lo studio Bianchi"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 piano 2, 10121 Torino"
+        ]
+
+    def test_il_piano_di_una_frase_che_segue_l_indirizzo_resta_fuori(self):
+        # il piano sta *fra* civico e CAP, non dopo il comune: una frase che
+        # segue l'indirizzo e contiene "piano 2" non deve riaprire lo span già
+        # chiuso sul comune
+        testo = "Residente in Via Roma 12, 10121 Torino, piano 2 del progetto"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12, 10121 Torino"]
+
+    def test_il_piano_da_solo_non_produce_un_indirizzo(self):
+        # invariante dei giri precedenti: il toponimo resta obbligatorio, e il
+        # vocabolario allargato non lo aggira
+        assert Category.INDIRIZZO not in categorie(
+            "Il piano 2 del progetto misura 12 metri"
+        )
+
+
 class TestTelefonoAGruppi:
     """Ruling I2: la spec §6 elenca i separatori senza limitarne il numero, ma
     le due forme nazionali ne ammettevano una e due, quindi i numeri scritti a
