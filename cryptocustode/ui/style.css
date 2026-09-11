@@ -135,3 +135,125 @@ p.estratto {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   overflow-wrap: anywhere;
 }
+
+/* --- Revisione (issue #4) -------------------------------------------------- */
+
+.categorie {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  margin: 0.9rem 0 0;
+}
+
+label.interruttore {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pastiglia {
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+article.documento {
+  margin-top: 1.2rem;
+}
+
+article.documento h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+  color: var(--tenue);
+  font-weight: 600;
+}
+
+p.testo-originale {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  background: var(--sfondo);
+  border: 1px solid var(--bordo);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.88rem;
+}
+
+/* `mark` porta di suo un fondo giallo del browser: qui il fondo lo decide la
+   categoria, e il giallo di default confonderebbe due categorie diverse. */
+mark.evidenza {
+  background: transparent;
+  color: inherit;
+  border-radius: 3px;
+  padding: 0.05rem 0.15rem;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Uno span spento resta riconoscibile ma smette di sembrare mascherato: il
+   colore se ne va e resta il contorno tratteggiato. Senza questa regola
+   l'unica differenza fra «verrà mascherato» e «resterà in chiaro» sarebbe
+   invisibile, che è esattamente la decisione che l'utente deve poter vedere. */
+mark.evidenza.spenta {
+  background: transparent;
+  color: var(--tenue);
+  outline: 1px dashed var(--tenue);
+  text-decoration: line-through;
+}
+
+/* Un colore per categoria: sono le classi che `app.js` scrive come
+   `cat-${categoria}`, quindi ce n'è una per ogni voce dell'enum `Category` del
+   dominio. Una categoria senza regola qui verrebbe riconosciuta e disegnata
+   senza evidenziazione: un dato personale invisibile a chi deve rivederlo. */
+.cat-PERSONA {
+  background: #ffd9d9;
+}
+
+.cat-AZIENDA {
+  background: #ffe4c2;
+}
+
+.cat-INDIRIZZO {
+  background: #fff3b0;
+}
+
+.cat-EMAIL {
+  background: #e2f5c4;
+}
+
+.cat-TELEFONO {
+  background: #c9efd6;
+}
+
+.cat-CF {
+  background: #bfe9e4;
+}
+
+.cat-PIVA {
+  background: #c6e6f7;
+}
+
+.cat-IBAN {
+  background: #cdd9fb;
+}
+
+.cat-DATA {
+  background: #ddd2fb;
+}
+
+.cat-IMPORTO {
+  background: #f2ccf3;
+}
+
+.cat-PRATICA {
+  background: #f8cde3;
+}
+
+.cat-CATASTO {
+  background: #e6ded2;
+}
