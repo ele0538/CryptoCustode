@@ -172,9 +172,10 @@ class TestMaiuscoleObbligatorie:
         assert Category.INDIRIZZO not in categorie("Contattato via email dal cliente")
 
     def test_azienda_con_suffisso_societario(self):
-        # il \b finale esclude il punto di chiusura della sigla
+        # il punto di chiusura della sigla sta dentro lo span: `\b` lo
+        # lasciava fuori e l'esportato diventava "[AZIENDA_1]." (issue #35)
         testo = "Fattura emessa da Alfa Costruzioni S.r.l. per il servizio"
-        assert valori(testo, Category.AZIENDA) == ["Alfa Costruzioni S.r.l"]
+        assert valori(testo, Category.AZIENDA) == ["Alfa Costruzioni S.r.l."]
 
     def test_parola_comune_spa_non_e_un_azienda(self):
         assert Category.AZIENDA not in categorie("Il nuovo centro benessere spa apre domani")
@@ -207,7 +208,7 @@ class TestConnettiviNelNome:
         testo = "Fattura da Banca di Fontechiara S.p.A. per il servizio"
         trovati = valori(testo, Category.AZIENDA)
         assert len(trovati) == 1
-        assert trovati[0].endswith("Banca di Fontechiara S.p.A")
+        assert trovati[0].endswith("Banca di Fontechiara S.p.A.")
 
     def test_via_email_non_produce_alcuno_span(self):
         # i connettivi non bastano da soli: senza una parola maiuscola nella
@@ -216,6 +217,163 @@ class TestConnettiviNelNome:
 
     def test_centro_benessere_spa_non_produce_alcuno_span(self):
         assert trova_per_regole("Il nuovo centro benessere spa apre domani", "d1") == []
+
+
+class TestRagioneSociale:
+    """Issue #35: lo span dell'azienda cominciava *dopo* la `&` di
+    "Rossi & C. S.a.s." — `C. S.a.s` entrava nel dizionario delle entità e il
+    test anti-fuga confermava che *quel* valore non compariva nell'output,
+    mentre "Rossi &" usciva in chiaro. È una classe di difetto peggiore della
+    fuga per mancato riconoscimento: lì l'anti-fuga è cieco per costruzione
+    (il valore non è nel dizionario), qui è **attivamente rassicurante su un
+    dato che sta fuggendo**. Ogni span che comincia tardi o finisce presto ha
+    la stessa proprietà, e per questo i test qui sotto fissano i *confini*
+    dello span, non la sola presenza della categoria.
+    """
+
+    def test_la_e_commerciale_non_tronca_la_ragione_sociale(self):
+        # `&` non è una parola con l'iniziale maiuscola, quindi la sequenza di
+        # nomi si spezzava lì e lo span ripartiva da "C."
+        testo = "Contratto con Rossi & C. S.a.s. per la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Rossi & C. S.a.s."]
+
+    def test_il_nome_prima_della_e_commerciale_non_resta_in_chiaro(self):
+        # la stessa cosa detta come la vede l'anti-fuga: non basta che *uno*
+        # span esista, deve coprire il nome per intero
+        testo = "Contratto con Rossi & C. S.a.s. per la fornitura."
+        trovati = valori(testo, Category.AZIENDA)
+        assert len(trovati) == 1
+        assert "Rossi" in trovati[0]
+
+    def test_la_congiunzione_non_tronca_la_ragione_sociale(self):
+        # "e" non è fra i connettivi, quindi "Rossi e Figli S.r.l." dava
+        # "Figli S.r.l" e lasciava in chiaro il cognome: stessa classe di "&"
+        testo = "Contratto con Rossi e Figli S.r.l. per la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Rossi e Figli S.r.l."]
+
+    def test_il_trattino_non_tronca_la_ragione_sociale(self):
+        # il trattino non era fra i caratteri ammessi dentro una parola, quindi
+        # "Rossi-Bianchi S.r.l." dava "Bianchi S.r.l"
+        testo = "Contratto con Rossi-Bianchi S.r.l. per la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Rossi-Bianchi S.r.l."]
+
+    def test_la_ragione_sociale_lunga_non_perde_la_prima_parola(self):
+        # il tetto delle ripetizioni era 3, cioè quattro parole prima della
+        # sigla: alla quinta lo span cominciava in ritardo di una parola
+        testo = (
+            "Contratto con Consorzio Nazionale Imprese Edili Riunite S.p.A. "
+            "per la fornitura."
+        )
+        assert valori(testo, Category.AZIENDA) == [
+            "Consorzio Nazionale Imprese Edili Riunite S.p.A."
+        ]
+
+    def test_il_punto_finale_della_sigla_entra_nello_span(self):
+        # `\b` in coda alla sigla escludeva il punto di chiusura, e il testo
+        # esportato restava "[AZIENDA_1]." — testo residuo attaccato a un
+        # segnaposto
+        testo = "Contratto con Rossi Impianti S.r.l. per il servizio"
+        assert valori(testo, Category.AZIENDA) == ["Rossi Impianti S.r.l."]
+
+    def test_la_sigla_srls_entra_intera_nello_span(self):
+        # `s.r.l.` messa davanti nell'alternanza nascondeva `s.r.l.s.`: lo span
+        # si fermava a "S.r.l." e l'esportato diventava "[AZIENDA_1]s."
+        testo = "Contratto con Rossi Impianti S.r.l.s. per il servizio"
+        assert valori(testo, Category.AZIENDA) == ["Rossi Impianti S.r.l.s."]
+
+    def test_la_sigla_nuda_non_inghiotte_il_punto_della_frase(self):
+        # il rovescio del difetto qui sopra, e il suo prezzo se lo si corregge
+        # alla larga: dopo "Srl", che i punti non li ha, il punto che segue è
+        # quello della frase e non appartiene alla sigla. Prenderlo lascerebbe
+        # il testo esportato senza il punto fermo — lo stesso testo spostato
+        # dalla parte sbagliata di un segnaposto
+        testo = "Fornitura conclusa con Alfa Srl."
+        assert valori(testo, Category.AZIENDA) == ["Alfa Srl"]
+
+    def test_soc_coop_abbreviata_e_un_suffisso_societario(self):
+        testo = "Contratto con Cooperativa Il Girasole Soc. Coop. per la manutenzione."
+        assert valori(testo, Category.AZIENDA) == [
+            "Cooperativa Il Girasole Soc. Coop."
+        ]
+
+    def test_societa_cooperativa_per_esteso_e_un_suffisso_societario(self):
+        testo = "Contratto con Il Girasole Societa Cooperativa per la manutenzione."
+        assert valori(testo, Category.AZIENDA) == ["Il Girasole Societa Cooperativa"]
+
+    def test_societa_cooperativa_con_accento_e_un_suffisso_societario(self):
+        testo = "Contratto con Il Girasole Società Cooperativa per la manutenzione."
+        assert valori(testo, Category.AZIENDA) == ["Il Girasole Società Cooperativa"]
+
+    def test_societa_semplice_e_un_suffisso_societario(self):
+        testo = "Contratto con Azienda Agricola Bianchi S.S. per la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Azienda Agricola Bianchi S.S."]
+
+
+class TestSiglaCortaNonVorace:
+    """Issue #35, il prezzo dei suffissi corti. `S.S.` (società semplice) è una
+    sigla di due lettere e coincide con l'abbreviazione di "Strada Statale",
+    che è un toponimo; `s.n.c.` scritto `snc` coincide con "senza numero
+    civico", che nell'indirizzo italiano sta al posto del numero. Ammetterle
+    nude farebbe rubare indirizzi ad AZIENDA — e siccome AZIENDA e INDIRIZZO
+    hanno la stessa priorità e a parità vince lo span più lungo, l'indirizzo
+    perderebbe davvero, tornando al ripristino come ragione sociale.
+
+    Ogni guardia qui sotto è falsificabile: **togliendola il test diventa
+    rosso**, perché senza di lei la sigla c'è e il match si forma davvero.
+    """
+
+    def test_la_strada_statale_abbreviata_non_diventa_azienda(self):
+        # senza la guardia: span AZIENDA "Raccordo S.S"
+        testo = "Il cantiere sul Raccordo S.S. 24 prosegue."
+        assert Category.AZIENDA not in categorie(testo)
+
+    def test_la_strada_statale_senza_punti_non_diventa_azienda(self):
+        # senza la guardia: span AZIENDA "Bivio SS"
+        testo = "Incrocio al Bivio SS 231 km 4."
+        assert Category.AZIENDA not in categorie(testo)
+
+    def test_la_sigla_a_inizio_frase_non_diventa_azienda(self):
+        # senza la guardia: span AZIENDA "Lungo S.S"
+        testo = "Lungo S.S. 24 il traffico rallenta."
+        assert Category.AZIENDA not in categorie(testo)
+
+    def test_la_societa_semplice_resta_riconosciuta(self):
+        # la guardia guarda ciò che *segue* la sigla, non la sigla: un numero
+        # di strada dopo, e allora è una strada; prosa dopo, ed è un'azienda
+        testo = "Contratto con Azienda Agricola Bianchi S.S. per la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Azienda Agricola Bianchi S.S."]
+
+    def test_il_civico_assente_non_diventa_azienda(self):
+        # "snc" = senza numero civico: l'indirizzo prendeva un segnaposto
+        # [AZIENDA_1] e al ripristino tornava come ragione sociale
+        testo = "Residente in Via Roma snc, 10121 Torino"
+        assert Category.AZIENDA not in categorie(testo)
+
+    def test_la_sigla_snc_con_i_punti_resta_un_suffisso(self):
+        # la guardia è ristretta alla forma nuda tutta minuscola: la sigla
+        # societaria vera, che i punti ce li ha, non la incontra nemmeno
+        testo = "Contratto con Rossi Impianti S.n.c. per la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Rossi Impianti S.n.c."]
+
+    def test_la_sigla_snc_maiuscola_resta_un_suffisso(self):
+        testo = "Contratto con Rossi Impianti SNC per la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Rossi Impianti SNC"]
+
+    def test_la_congiunzione_non_attraversa_una_parola_minuscola(self):
+        # il prezzo di ammettere "e" fra due nomi è la voracità a sinistra:
+        # resta limitata dalla maiuscola obbligatoria, che "firmato" non ha
+        testo = "Contratto firmato e Alfa S.r.l. accetta la fornitura."
+        assert valori(testo, Category.AZIENDA) == ["Alfa S.r.l."]
+
+    def test_la_forma_professionale_senza_suffisso_resta_al_ner(self):
+        # "Studio Legale ... e Associati" non ha suffisso societario affatto:
+        # non è una voce mancante in SUFFISSI_SOCIETARI ma un'altra forma di
+        # riconoscimento — la qualifica sta *in testa* al nome, non in coda —
+        # e ammettere "e Associati" come terminatore renderebbe azienda
+        # qualunque "X e Associati". La regola deterministica non lo prende:
+        # resta al NER, che mappa ORG su Category.AZIENDA.
+        testo = "Contratto con Studio Legale Bianchi e Associati per l'assistenza."
+        assert Category.AZIENDA not in categorie(testo)
 
 
 class TestCivicoECap:
@@ -326,13 +484,13 @@ class TestConnettiviAlleESul:
         testo = "Fattura da Cooperativa alle Ginestre S.r.l. per il servizio"
         trovati = valori(testo, Category.AZIENDA)
         assert len(trovati) == 1
-        assert trovati[0].endswith("Cooperativa alle Ginestre S.r.l")
+        assert trovati[0].endswith("Cooperativa alle Ginestre S.r.l.")
 
     def test_azienda_con_connettivo_sul(self):
         testo = "Fattura da Albergo sul Lago S.p.A. per il soggiorno"
         trovati = valori(testo, Category.AZIENDA)
         assert len(trovati) == 1
-        assert trovati[0].endswith("Albergo sul Lago S.p.A")
+        assert trovati[0].endswith("Albergo sul Lago S.p.A.")
 
 
 class TestSuffissoDelCivico:

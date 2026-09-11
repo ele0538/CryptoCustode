@@ -15,8 +15,53 @@ TOPONIMI = (
     r"strada|contrada|localit[àa]|borgo|salita|lungomare"
 )
 
+# Le sigle delle forme societarie italiane. L'alternanza è **ordinata**: una
+# forma corta messa davanti a una lunga la nasconderebbe, ed è quello che
+# faceva `s.r.l.` davanti a `s.r.l.s.` — lo span si fermava a "S.r.l." e
+# l'esportato diventava "[AZIENDA_1]s.", con la coda della sigla in chiaro
+# attaccata al segnaposto (issue #35).
+#
+# Due sigle corte portano una guardia, perché da sole coincidono con qualcosa
+# che appartiene all'indirizzo. Senza guardia l'indirizzo perde davvero:
+# AZIENDA e INDIRIZZO hanno la stessa priorità (spec §6) e a parità vince lo
+# span più lungo, quindi l'indirizzo prende un segnaposto `[AZIENDA_1]` e al
+# ripristino torna come ragione sociale.
+#
+#   - `snc` nudo, tutto minuscolo e senza punti, è "senza numero civico" e sta
+#     al posto del numero in "Via Roma snc". La guardia è ristretta a *quella*
+#     forma — `S.n.c.`, `SNC`, `Snc` restano suffissi societari — e guarda il
+#     caso, non il separatore: la sigla societaria i punti ce li ha, oppure è
+#     in maiuscolo. Resta fuori "VIA ROMA SNC" tutto maiuscolo, dove le due
+#     letture sono indistinguibili; lì però l'indirizzo vince lo stesso, perché
+#     `SNC` è una parola maiuscola e finisce *dentro* lo span INDIRIZZO, che
+#     risulta il più lungo.
+#   - `s.s.` è la società semplice, ma anche l'abbreviazione di "Strada
+#     Statale", che `TOPONIMI` copre per esteso. A distinguerle è ciò che
+#     *segue*: la strada porta il proprio numero ("S.S. 24", "SS 231"), la
+#     società no. La guardia ammette solo spazio orizzontale e punto prima
+#     della cifra, e non `\s`: un a capo dell'estrazione da PDF fra la ragione
+#     sociale e la riga dell'indirizzo non deve far scartare l'azienda.
 SUFFISSI_SOCIETARI = (
-    r"s\.?r\.?l\.?|s\.?p\.?a\.?|s\.?n\.?c\.?|s\.?a\.?s\.?|s\.?c\.?a\.?r\.?l\.?"
+    # **Sigle puntate.** Il punto di chiusura è parte della sigla e la coda
+    # `\.?` se lo prende: è quello che `\b`, in fondo alla voce AZIENDA,
+    # costringeva a restituire.
+    r"s\.r\.l\.s\.?|s\.r\.l\.?|s\.p\.a\.?|s\.a\.s\.?|"
+    r"s\.c\.a\.r\.l\.?|s\.n\.c\.?|"
+    r"s\.s\.?(?![ \t.]*\d)|"
+    # **Sigle nude.** Nessun punto da prendere: quello che le segue è il punto
+    # della *frase*. Tenerle separate dalle puntate è tutto il motivo per cui
+    # esistono due elenchi — una sola forma `s\.?r\.?l\.?` prende il punto
+    # anche dopo "Srl", e il testo esportato resta senza il punto fermo. Il
+    # prezzo è che le forme mezze puntate ("s.rl", "sr.l") non sono più
+    # rappresentabili: non le scrive nessuno, e ammetterle è ciò che confondeva
+    # le due letture del punto finale.
+    r"srls|srl|spa|sas|scarl|"
+    r"(?!(?-i:snc)(?!\w))snc|"
+    r"ss(?![ \t.]*\d)|"
+    # Cooperative. "Coop." è un'abbreviazione e il punto è suo; "Cooperativa"
+    # è una parola intera, quindi il punto che la segue è della frase.
+    r"soc(?:iet[àa]'?)?\.?\s*cooperativa|"
+    r"soc(?:iet[àa]'?)?\.?\s*coop\.?"
 )
 
 # Articoli e preposizioni che stanno *dentro* un odonimo o una ragione sociale
@@ -55,7 +100,19 @@ _CONNETTIVO = rf"(?:{CONNETTIVI})(?:\s+|(?<=')\s*)"
 # U+00D7 è il segno di moltiplicazione, non una lettera, e `À-Þ` lo includerebbe.
 _INIZIALE_MAIUSCOLA = r"(?-i:[A-ZÀ-ÖØ-Þ])"
 _PAROLA_INDIRIZZO = rf"{_INIZIALE_MAIUSCOLA}[\w'À-ÿ]*"
-_PAROLA_AZIENDA = rf"{_INIZIALE_MAIUSCOLA}[\w'À-ÿ&.]*"
+# Il trattino sta *dentro* una parola della ragione sociale ("Rossi-Bianchi
+# S.r.l."): senza di lui la sequenza di nomi si spezzava lì, lo span ripartiva
+# da "Bianchi" e il primo cognome restava in chiaro (issue #35).
+_PAROLA_AZIENDA = rf"{_INIZIALE_MAIUSCOLA}[\w'À-ÿ&.\-]*"
+
+# La congiunzione fra due parole del nome ("Rossi & C.", "Rossi e Figli"): non
+# è un connettivo — non introduce un complemento — e non ha l'iniziale
+# maiuscola, quindi senza una voce propria spezzava la sequenza di nomi. Come
+# `_CONNETTIVO`, si porta dietro lo spazio che la separa dalla parola seguente.
+# Sta solo *fra* due parole maiuscole, ed è quella la sua misura: "Contratto
+# firmato e Alfa S.r.l." non allunga lo span a sinistra, perché "firmato" non
+# ha l'iniziale maiuscola.
+_CONGIUNZIONE_AZIENDA = r"(?:&|e)\s+"
 
 PATTERN: dict[Category, Pattern[str]] = {
     Category.CF: re.compile(
@@ -290,10 +347,32 @@ PATTERN: dict[Category, Pattern[str]] = {
     # La ragione sociale parte da una parola maiuscola e i connettivi stanno
     # solo tra due parole maiuscole: così "Banca di Roma S.p.A." resta intera
     # invece di ridursi a "Roma S.p.A".
+    #
+    # Fra due parole del nome può stare anche una congiunzione, e senza di lei
+    # la sequenza si spezzava e lo span **ripartiva dopo**: "Rossi & C. S.a.s."
+    # dava "C. S.a.s" e lasciava "Rossi &" in chiaro (issue #35). È il difetto
+    # peggiore della famiglia, perché uno span *c'è*: il test anti-fuga
+    # verifica che il valore finito nel dizionario delle entità non compaia
+    # nell'output, lo trova assente e passa verde mentre il nome dell'azienda
+    # esce in chiaro. Un anti-fuga cieco non vede la fuga; questo la copre.
+    #
+    # Il tetto delle ripetizioni sale da 3 a 5 per lo stesso motivo: a quattro
+    # parole prima della sigla lo span cominciava in ritardo di una parola
+    # ("Consorzio Nazionale Imprese Edili Riunite S.p.A." dava "Nazionale
+    # Imprese Edili Riunite S.p.A"). Resta un tetto: nessuna sequenza
+    # illimitata.
+    #
+    # In coda alla sigla `(?!\w)` ha preso il posto di `\b`. `\b` pretende un
+    # carattere di parola dopo il confine, quindi costringeva `\.?` a
+    # restituire il punto di chiusura: lo span finiva a "S.r.l" e l'esportato
+    # diventava "[AZIENDA_1].", testo residuo attaccato a un segnaposto.
+    # `(?!\w)` ammette il punto e tiene fuori le parole che continuano, che è
+    # l'unica cosa per cui `\b` serviva qui ("Spagna" non passa per `s.p.a.`).
     Category.AZIENDA: re.compile(
         rf"\b{_PAROLA_AZIENDA}"
-        rf"(?:\s+(?:{_CONNETTIVO}){{0,2}}{_PAROLA_AZIENDA}){{0,3}}"
-        rf"\s+(?:{SUFFISSI_SOCIETARI})\b",
+        rf"(?:\s+(?:{_CONGIUNZIONE_AZIENDA}|{_CONNETTIVO}){{0,2}}"
+        rf"{_PAROLA_AZIENDA}){{0,5}}"
+        rf"\s+(?:{SUFFISSI_SOCIETARI})(?!\w)",
         re.IGNORECASE,
     ),
 }
