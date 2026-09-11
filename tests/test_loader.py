@@ -20,6 +20,20 @@ def documento(indice: int):
     return costruisci_documento(f"doc{indice}.txt", b"Testo di prova.")
 
 
+@pytest.fixture
+def fascicolo_pieno():
+    # Fascicolo al tetto, per i test in cui riempire è il preambolo e la tesi
+    # è il rifiuto dell'undicesimo. Il documento in eccesso resta nel test: è la
+    # mossa sotto esame, non il setup.
+    # Il tetto non è cablato, così la fixture segue MAX_DOCUMENTI se cambia. E
+    # se `aggiungi_documento` smettesse di accettare i primi dieci, la fixture
+    # andrebbe in errore invece di nascondere il rifiuto che dovrebbe preparare.
+    fascicolo = fascicolo_vuoto("f1")
+    for indice in range(Fascicolo.MAX_DOCUMENTI):
+        aggiungi_documento(fascicolo, documento(indice))
+    return fascicolo
+
+
 def test_txt_viene_riconosciuto_dall_estensione():
     doc = costruisci_documento("contratto.txt", "Torino".encode("utf-8"))
     assert doc.text == "Torino"
@@ -85,27 +99,24 @@ def test_il_txt_ha_un_solo_offset_di_pagina():
 
 
 def test_dieci_documenti_entrano():
+    # Non usa la fixture `fascicolo_pieno` di proposito: qui il ciclo è la tesi
+    # e non il preambolo. La claim è proprio che dieci `aggiungi_documento` di
+    # fila riescono, e spostarla nel setup la renderebbe invisibile a chi legge.
     fascicolo = fascicolo_vuoto("f1")
     for indice in range(Fascicolo.MAX_DOCUMENTI):
         aggiungi_documento(fascicolo, documento(indice))
     assert len(fascicolo.documents) == 10
 
 
-def test_l_undicesimo_documento_viene_rifiutato():
-    fascicolo = fascicolo_vuoto("f1")
-    for indice in range(Fascicolo.MAX_DOCUMENTI):
-        aggiungi_documento(fascicolo, documento(indice))
+def test_l_undicesimo_documento_viene_rifiutato(fascicolo_pieno):
     with pytest.raises(FascicoloFull, match="10"):
-        aggiungi_documento(fascicolo, documento(99))
+        aggiungi_documento(fascicolo_pieno, documento(99))
 
 
-def test_il_rifiuto_non_lascia_il_fascicolo_alterato():
-    fascicolo = fascicolo_vuoto("f1")
-    for indice in range(Fascicolo.MAX_DOCUMENTI):
-        aggiungi_documento(fascicolo, documento(indice))
+def test_il_rifiuto_non_lascia_il_fascicolo_alterato(fascicolo_pieno):
     with pytest.raises(FascicoloFull):
-        aggiungi_documento(fascicolo, documento(99))
-    assert len(fascicolo.documents) == 10
+        aggiungi_documento(fascicolo_pieno, documento(99))
+    assert len(fascicolo_pieno.documents) == 10
 
 
 def test_un_secondo_file_con_lo_stesso_nome_viene_rifiutato():
