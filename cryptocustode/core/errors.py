@@ -36,9 +36,9 @@ class FascicoloNotFound(CryptoCustodeError):
     """Fascicolo chiesto allo store con un id che non vi corrisponde.
 
     Esiste perché lo store non lasci uscire il `KeyError` del dizionario che lo
-    indicizza: quel KeyError non è un `CryptoCustodeError`, attraversa il gate
-    dell'export prima dei due controlli della §8 senza che nessuno lo
-    riconosca, e il layer HTTP lo tradurrebbe in un 500 al posto del 404 della
+    indicizza: quel KeyError non è un `CryptoCustodeError`, esce dal primo dei
+    tre controlli della §8 e attraversa il gate dell'export senza che nessuno
+    lo riconosca; il layer HTTP lo tradurrebbe in un 500 al posto del 404 della
     §13 (issue #16).
     """
 

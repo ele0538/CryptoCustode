@@ -470,7 +470,7 @@ un segnaposto e sostituita con dati veri, corrompendo il testo.
 | Password del vault errata o file corrotto | `VaultUnreadable` | 422 | "password errata o file danneggiato" |
 | Vault scritto in un formato più recente | `VaultVersionNotSupported` | 422 | il formato trovato, il massimo leggibile e l'invito ad aggiornare |
 
-**Perché 404, e perché un errore di dominio.** Un id sconosciuto arriva prima dei due
+**Perché 404, e perché un errore di dominio.** Un id sconosciuto fallisce il primo dei tre
 controlli della §8: `export_sanitized_text` chiede il fascicolo allo store, e finché lo
 store si limitava a indicizzare il suo dizionario ne usciva un `KeyError` nudo, che non è
 un `CryptoCustodeError` e attraversa il gate dell'export senza che nessuno lo riconosca.
