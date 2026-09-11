@@ -89,7 +89,7 @@ class TestAggregazione:
         f = fascicolo_vuoto("f1")
         analizza_documento(
             f,
-            documento("d1", "Email mario@esempio.it e anna@esempio.it."),
+            documento("d1", "Email mario@example.com e anna@example.com."),
             usa_ner=False,
         )
         email = sorted(
