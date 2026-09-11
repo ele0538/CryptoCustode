@@ -99,9 +99,10 @@ class SessionStore:
 
         Il `KeyError` del dizionario non esce di qui. Non è un
         `CryptoCustodeError`, quindi attraverserebbe il gate di
-        `export_sanitized_text` prima dei suoi due controlli senza che nessuno
-        lo riconosca, e il layer HTTP lo tradurrebbe in un 500 — un difetto del
-        server — invece del 404 della spec §13 (issue #16).
+        `export_sanitized_text`, di cui questa risoluzione è il primo dei tre
+        controlli, senza che nessuno lo riconosca, e il layer HTTP lo
+        tradurrebbe in un 500 — un difetto del server — invece del 404 della
+        spec §13 (issue #16).
         """
         try:
             return self._fascicoli[fascicolo_id]
@@ -114,9 +115,11 @@ class SessionStore:
 def export_sanitized_text(fascicolo_id: str, store: SessionStore) -> dict[str, str]:
     """L'unico punto da cui esce il testo mascherato (spec §8).
 
-    Due controlli, in ordine: lo stato deve essere APPROVED, e il testo
-    mascherato corrente deve ancora produrre l'hash approvato. Il secondo
-    intercetta le mutazioni che non sono passate da `registra_mutazione`.
+    Tre controlli, in ordine: `fascicolo_id` deve risolversi contro lo store,
+    lo stato deve essere APPROVED, e il testo mascherato corrente deve ancora
+    produrre l'hash approvato. Il primo lo esegue `prendi`, ed è la prima cosa
+    che può fallire; il terzo intercetta le mutazioni che non sono passate da
+    `registra_mutazione`.
 
     Il payload contiene esclusivamente `{nome_file: testo_mascherato}`: nessun
     testo originale, nessun dizionario, nessuno span.

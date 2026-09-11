@@ -231,10 +231,27 @@ def test_il_fascicolo_inesistente_lo_dice_in_italiano_e_cita_l_id():
 
 def test_dal_gate_dell_export_esce_un_errore_di_dominio():
     # È il motivo per cui la issue #16 esiste: il KeyError nudo dello store
-    # attraversava `export_sanitized_text` prima dei due controlli della §8, e
-    # il layer HTTP lo tradurrebbe in un 500 invece del 404 della §13.
+    # usciva dalla risoluzione dell'id, oggi il primo dei tre controlli della
+    # §8, e attraversava `export_sanitized_text` senza che nessuno lo
+    # riconoscesse; il layer HTTP lo tradurrebbe in un 500 invece del 404
+    # della §13.
     with pytest.raises(FascicoloNotFound):
         export_sanitized_text("f-ignoto", SessionStore())
+
+
+def test_il_docstring_del_gate_elenca_i_tre_controlli_nell_ordine_reale():
+    # Guardia della issue #25. Il docstring enumerava due controlli mentre la
+    # funzione ne fa tre, e quello taciuto era il primo che può fallire: chi
+    # leggeva la funzione dal suo docstring non sapeva che la risoluzione
+    # dell'id fa parte del gate. Un'enumerazione che non conta come il corpo è
+    # peggio di nessuna enumerazione, perché sembra completa.
+    docstring = export_sanitized_text.__doc__
+    assert "Tre controlli" in docstring
+    ordine = [docstring.index(voce) for voce in ("fascicolo_id", "APPROVED", "hash")]
+    assert ordine == sorted(ordine), (
+        "il docstring deve nominare risoluzione dell'id, stato e hash in "
+        "quest'ordine, che è quello in cui il corpo li esegue"
+    )
 
 
 def test_lo_store_dice_di_non_avere_un_fascicolo_che_non_ha():
