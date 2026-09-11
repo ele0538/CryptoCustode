@@ -134,6 +134,22 @@
             <p id="conteggio" class="tenue"></p>
           </section>
 
+          <section class="riquadro revisione" aria-labelledby="titolo-revisione">
+            <h2 id="titolo-revisione" class="etichetta-sezione">Rivedi il testo</h2>
+            <p class="suggerimento tenue">
+              L'analisi evidenzia i dati personali trovati, con un colore per
+              categoria. Tutto &egrave; mascherato di default, date e importi
+              compresi: spegni una categoria intera con il suo interruttore, o una
+              singola occorrenza cliccandoci sopra. Il testo non si modifica
+              &mdash; si decide soltanto che cosa verr&agrave; sostituito con un
+              segnaposto.
+            </p>
+            <button type="button" id="avvia-analisi" class="pillola scura">Analizza i documenti</button>
+            <p id="stato-analisi" class="tenue" aria-live="polite"></p>
+            <div id="categorie" class="categorie"></div>
+            <div id="documenti" class="documenti"></div>
+          </section>
+
           <section class="esiti-sezione" aria-labelledby="titolo-esiti">
             <h2 id="titolo-esiti" class="etichetta-sezione">Esiti, un file per riga</h2>
             <ul id="esiti" class="esiti" aria-live="polite"></ul>

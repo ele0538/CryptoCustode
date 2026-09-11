@@ -28,6 +28,13 @@ function elementoFinto(nome) {
     textContent: "",
     files: [],
     value: "",
+    // `dataset`, `checked` e `replaceChildren` sono arrivati con la revisione
+    // (issue #4): gli interruttori sono caselle di spunta, gli span portano il
+    // proprio identificativo in `data-span-id`, e ogni toggle ridisegna da capo
+    // la pagina invece di ritoccarla. Sono aggiunte: nessuno scenario del
+    // caricamento le usa, e il loro comportamento non è cambiato.
+    dataset: {},
+    checked: false,
     figli: [],
     gestori: {},
     // `classList` come nel DOM: la card di caricamento la usa per lo stato
@@ -44,6 +51,9 @@ function elementoFinto(nome) {
     },
     appendChild(figlio) {
       this.figli.push(figlio);
+    },
+    replaceChildren(...figli) {
+      this.figli = figli;
     },
     addEventListener(evento, gestore) {
       this.gestori[evento] = gestore;
@@ -89,8 +99,55 @@ const CARICATO = {
   },
 };
 
+// --- Revisione (issue #4) ---------------------------------------------------
+//
+// Il testo e gli offset sono quelli che la route servirebbe davvero: i segmenti
+// concatenati ricompongono `TESTO_REVISIONE` carattere per carattere, che è la
+// proprietà su cui poggia tutta la revisione (spec §2 decisione 2).
+const TESTO_REVISIONE = "Il sig. Mario Rossi paga 1.200,00 euro.";
+const SPAN_PERSONA = "d_uno:8-19:PERSONA";
+const SPAN_IMPORTO = "d_uno:25-38:IMPORTO";
+
+function revisioneFinta({ persona = true, importo = true } = {}) {
+  return {
+    stato: "PENDING_REVIEW",
+    categorie: [
+      { categoria: "PERSONA", attiva: persona, quanti: 1 },
+      { categoria: "IMPORTO", attiva: importo, quanti: 1 },
+    ],
+    ambiguita: { totale: 1, bloccanti: 1 },
+    documenti: [
+      {
+        doc_id: "d_uno",
+        filename: "uno.txt",
+        segmenti: [
+          { testo: "Il sig. ", span_id: null, categoria: null, mascherato: false, segnaposto: null },
+          {
+            testo: "Mario Rossi", span_id: SPAN_PERSONA, categoria: "PERSONA",
+            mascherato: persona, segnaposto: "[PERSONA_1]",
+          },
+          { testo: " paga ", span_id: null, categoria: null, mascherato: false, segnaposto: null },
+          {
+            testo: "1.200,00 euro", span_id: SPAN_IMPORTO, categoria: "IMPORTO",
+            mascherato: importo, segnaposto: "[IMPORTO_1]",
+          },
+          { testo: ".", span_id: null, categoria: null, mascherato: false, segnaposto: null },
+        ],
+      },
+    ],
+  };
+}
+
 // `json` assente significa: la risposta non ha un corpo JSON, e `risposta.json()`
 // rigetta. È il caso del 500 non gestito, servito come testo.
+//
+// Gli scenari del caricamento (issue #3) sono **liste** di risposte e guidano
+// l'invio del modulo. Quelli della revisione (issue #4) sono **oggetti** con un
+// campo `eventi`, perché la revisione non ha un modulo da inviare ma bottoni e
+// interruttori da premere in sequenza. I due tipi di valore sono il modo in cui
+// il driver in fondo al file sa quale dei due giri eseguire, e nessuno dei due
+// vede l'altro: aggiungere uno scenario di revisione non può cambiare quello
+// che i sette test del caricamento osservano.
 const SCENARI = {
   // Due caricamenti con numeri diversi: le metriche del fascicolo devono
   // sommare pagine, caratteri e avvisi, e prendere i documenti dal payload.
@@ -138,19 +195,69 @@ const SCENARI = {
     },
   ],
   "server-chiuso": [{ rete: false }],
+
+  "revisione-analisi": {
+    risposte: [{ stato: 200, json: revisioneFinta() }],
+    eventi: [{ su: "avvia-analisi", tipo: "click" }],
+  },
+  "revisione-categoria-spenta": {
+    risposte: [
+      { stato: 200, json: revisioneFinta() },
+      { stato: 200, json: revisioneFinta({ persona: false }) },
+    ],
+    eventi: [
+      { su: "avvia-analisi", tipo: "click" },
+      // Il bersaglio non è inventato: viene cercato fra gli elementi che la
+      // pagina ha appena disegnato, quindi il test fallisce anche se
+      // l'interruttore c'è ma non porta la categoria nel suo `dataset`.
+      {
+        su: "categorie", tipo: "change",
+        cerca: { categoria: "PERSONA" }, imposta: { checked: false },
+      },
+    ],
+  },
+  "revisione-span-spento": {
+    risposte: [
+      { stato: 200, json: revisioneFinta() },
+      { stato: 200, json: revisioneFinta({ importo: false }) },
+    ],
+    eventi: [
+      { su: "avvia-analisi", tipo: "click" },
+      { su: "documenti", tipo: "click", cerca: { spanId: SPAN_IMPORTO } },
+    ],
+  },
+  "revisione-analisi-rifiutata": {
+    risposte: [{ stato: 422, json: { errore: "non c'è nessun documento da analizzare" } }],
+    eventi: [{ su: "avvia-analisi", tipo: "click" }],
+  },
 };
 
-const programmate = SCENARI[scenario];
-if (programmate === undefined) {
+const copione = SCENARI[scenario];
+if (copione === undefined) {
   console.error(`scenario sconosciuto: ${scenario}`);
   process.exit(2);
 }
 
+// Gli scenari del caricamento sono liste di risposte; quelli della revisione
+// portano le risposte in `risposte` e gli eventi da premere in `eventi`.
+const programmate = Array.isArray(copione) ? copione : copione.risposte;
+
 const tentativi = [];
 let indice = 0;
 globalThis.fetch = async (url, opzioni) => {
-  const parte = opzioni.body.parti.find(([nome]) => nome === "file");
-  tentativi.push({ url, campo: parte === undefined ? null : parte[0], file: parte?.[1]?.name });
+  // Il caricamento manda un `FormData`, la revisione una stringa JSON: la
+  // ricerca della parte vale solo per il primo, e il ramo che segue lascia
+  // intatto quello che i sette test del caricamento leggono.
+  const corpo = opzioni.body;
+  const parti = corpo === undefined || typeof corpo === "string" ? undefined : corpo.parti;
+  const parte = parti === undefined ? undefined : parti.find(([nome]) => nome === "file");
+  tentativi.push({
+    url,
+    metodo: opzioni.method,
+    campo: parte === undefined ? null : parte[0],
+    file: parte?.[1]?.name,
+    corpo: typeof corpo === "string" ? corpo : null,
+  });
   const risposta = programmate[Math.min(indice++, programmate.length - 1)];
   if (risposta.rete === false) {
     throw new TypeError("fetch failed");
@@ -169,32 +276,32 @@ globalThis.fetch = async (url, opzioni) => {
 
 runInThisContext(readFileSync(join(radice, "cryptocustode", "ui", "app.js"), "utf8"));
 
-const modulo = document.getElementById("modulo-caricamento");
-const scelta = document.getElementById("scelta-file");
-scelta.files = ["uno.txt", "due.txt", "tre.txt"]
-  .slice(0, Math.max(programmate.length, 1))
-  .map((name) => ({ name }));
+async function eseguiCaricamento() {
+  const modulo = document.getElementById("modulo-caricamento");
+  const scelta = document.getElementById("scelta-file");
+  scelta.files = ["uno.txt", "due.txt", "tre.txt"]
+    .slice(0, Math.max(programmate.length, 1))
+    .map((name) => ({ name }));
 
-// Il conteggio dei file scelti si aggiorna al `change` dell'input, prima del submit.
-if (scelta.gestori.change !== undefined) {
-  scelta.gestori.change({ target: scelta });
-}
-const fileSceltiDopoLaScelta = document.getElementById("file-scelti").textContent;
+  // Il conteggio dei file scelti si aggiorna al `change` dell'input, prima del submit.
+  if (scelta.gestori.change !== undefined) {
+    scelta.gestori.change({ target: scelta });
+  }
+  const fileSceltiDopoLaScelta = document.getElementById("file-scelti").textContent;
 
-if (scenario === "trascinamento") {
-  // Niente submit: i file arrivano lasciati cadere sulla card di caricamento.
-  const card = document.getElementById("card-caricamento");
-  await card.gestori.drop({
-    preventDefault() {},
-    dataTransfer: { files: scelta.files },
-  });
-} else {
-  await modulo.gestori.submit({ preventDefault() {} });
-}
+  if (scenario === "trascinamento") {
+    // Niente submit: i file arrivano lasciati cadere sulla card di caricamento.
+    const card = document.getElementById("card-caricamento");
+    await card.gestori.drop({
+      preventDefault() {},
+      dataTransfer: { files: scelta.files },
+    });
+  } else {
+    await modulo.gestori.submit({ preventDefault() {} });
+  }
 
-const esiti = document.getElementById("esiti");
-console.log(
-  JSON.stringify({
+  const esiti = document.getElementById("esiti");
+  return {
     righe: esiti.figli.map((riga) => ({
       classe: riga.className,
       testo: riga.textContent,
@@ -210,5 +317,89 @@ console.log(
       caratteri: document.getElementById("metrica-caratteri").textContent,
       avvisi: document.getElementById("metrica-avvisi").textContent,
     },
-  })
+  };
+}
+
+// --- Revisione (issue #4) ---------------------------------------------------
+
+function* discendenti(elemento) {
+  for (const figlio of elemento.figli) {
+    yield figlio;
+    yield* discendenti(figlio);
+  }
+}
+
+function cerca(radiceElemento, criteri) {
+  for (const nodo of discendenti(radiceElemento)) {
+    if (Object.entries(criteri).every(([chiave, valore]) => nodo.dataset[chiave] === valore)) {
+      return nodo;
+    }
+  }
+  return undefined;
+}
+
+async function eseguiRevisione() {
+  for (const evento of copione.eventi) {
+    const contenitore = document.getElementById(evento.su);
+    const gestore = contenitore.gestori[evento.tipo];
+    if (gestore === undefined) {
+      console.error(`nessun gestore "${evento.tipo}" su "${evento.su}"`);
+      process.exit(3);
+    }
+    // Senza `cerca` il bersaglio è il contenitore stesso (è il caso del
+    // bottone). Con `cerca`, il bersaglio va **trovato fra i nodi che la
+    // pagina ha disegnato**: un rendering che non porta l'identificativo
+    // dello span o il nome della categoria nel `dataset` fa fallire qui,
+    // invece di lasciar passare un evento sintetico che nessun utente
+    // potrebbe produrre.
+    let bersaglio = contenitore;
+    if (evento.cerca !== undefined) {
+      bersaglio = cerca(contenitore, evento.cerca);
+      if (bersaglio === undefined) {
+        console.error(
+          `nessun elemento in "${evento.su}" con ${JSON.stringify(evento.cerca)}`
+        );
+        process.exit(3);
+      }
+    }
+    Object.assign(bersaglio, evento.imposta ?? {});
+    await gestore({ target: bersaglio, preventDefault() {} });
+  }
+
+  const documenti = document.getElementById("documenti");
+  return {
+    stato: document.getElementById("stato-analisi").textContent,
+    testo_atteso: TESTO_REVISIONE,
+    // L'ultimo payload servito dalla `fetch` programmata, riportato tale e
+    // quale: è quello che un test Python confronta, per forma, con il payload
+    // che la rotta vera manda. Senza quel confronto uno scenario invecchiato
+    // eserciterebbe la UI contro una forma immaginaria restando verde.
+    payload_servito: programmate.at(-1).json ?? null,
+    interruttori: [...discendenti(document.getElementById("categorie"))]
+      .filter((nodo) => nodo.dataset.categoria !== undefined)
+      .map((nodo) => ({ categoria: nodo.dataset.categoria, acceso: nodo.checked })),
+    documenti: documenti.figli.map((riquadro) => {
+      const nodi = [...discendenti(riquadro)];
+      const titolo = nodi.find((nodo) => nodo.dataset.filename !== undefined);
+      const corpo = nodi.find((nodo) =>
+        nodo.className.split(" ").includes("testo-originale")
+      );
+      return {
+        filename: titolo === undefined ? null : titolo.textContent,
+        segmenti: (corpo === undefined ? [] : corpo.figli).map((nodo) => ({
+          tag: nodo.nome,
+          classe: nodo.className,
+          testo: nodo.textContent,
+          span_id: nodo.dataset.spanId ?? null,
+          categoria: nodo.dataset.categoria ?? null,
+          mascherato: nodo.dataset.mascherato ?? null,
+        })),
+      };
+    }),
+    tentativi,
+  };
+}
+
+console.log(
+  JSON.stringify(Array.isArray(copione) ? await eseguiCaricamento() : await eseguiRevisione())
 );

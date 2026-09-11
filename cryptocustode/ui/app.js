@@ -190,3 +190,168 @@ card.addEventListener("drop", async (evento) => {
   card.classList.remove("trascinando");
   await caricaTutti(evento.dataTransfer.files);
 });
+
+// --- Revisione: testo evidenziato e interruttori (issue #4) -----------------
+//
+// Il testo arriva dal server **già spezzato in segmenti** sugli offset degli
+// span, e qui non si fa aritmetica su nessun offset: tagliare da questa parte
+// significherebbe tenere una seconda copia di quel calcolo, che diverge alla
+// prima differenza fra il modo in cui Python e JavaScript contano i caratteri.
+//
+// Il testo non è modificabile in nessun punto, ed è la decisione 2 della spec
+// §2: l'utente agisce solo sugli span. Ogni segmento è un nodo di solo testo,
+// scritto con `textContent` e senza alcun attributo di modifica; gli unici
+// campi della pagina sono la scelta dei file e le caselle di spunta degli
+// interruttori.
+
+const ROTTA_ANALISI = "/api/fascicolo/analisi";
+const ROTTA_CATEGORIA = "/api/fascicolo/categoria";
+const ROTTA_SPAN = "/api/fascicolo/span";
+
+const avvio = document.getElementById("avvia-analisi");
+const statoAnalisi = document.getElementById("stato-analisi");
+const categorie = document.getElementById("categorie");
+const documenti = document.getElementById("documenti");
+
+// Le tre richieste della revisione hanno lo stesso corpo di errore del
+// caricamento — `errore` della tabella §13, `detail` di FastAPI, o niente —
+// quindi riusano `messaggioDiErrore`. Restituisce `null` quando la richiesta
+// non è andata: chi chiama non ridisegna, e il motivo resta scritto in pagina
+// invece di sparire in una console che l'utente non guarda.
+async function chiedi(rotta, corpo) {
+  const opzioni = { method: "POST" };
+  if (corpo !== undefined) {
+    opzioni.headers = { "Content-Type": "application/json" };
+    opzioni.body = JSON.stringify(corpo);
+  }
+
+  let risposta;
+  try {
+    risposta = await fetch(rotta, opzioni);
+  } catch (errore) {
+    statoAnalisi.textContent = "L'applicazione non risponde: è ancora avviata?";
+    return null;
+  }
+
+  let esito = null;
+  try {
+    esito = await risposta.json();
+  } catch (errore) {
+    esito = null;
+  }
+
+  if (!risposta.ok) {
+    statoAnalisi.textContent = messaggioDiErrore(esito, risposta.status);
+    return null;
+  }
+  return esito;
+}
+
+function disegnaInterruttori(elenco) {
+  categorie.replaceChildren();
+  for (const voce of elenco) {
+    const etichetta = document.createElement("label");
+    etichetta.className = "interruttore";
+
+    const casella = document.createElement("input");
+    casella.type = "checkbox";
+    casella.checked = voce.attiva;
+    casella.dataset.categoria = voce.categoria;
+    etichetta.appendChild(casella);
+
+    const nome = document.createElement("span");
+    nome.className = `pastiglia cat-${voce.categoria}`;
+    nome.textContent = `${voce.categoria} (${voce.quanti})`;
+    etichetta.appendChild(nome);
+
+    categorie.appendChild(etichetta);
+  }
+}
+
+function disegnaDocumenti(elenco) {
+  documenti.replaceChildren();
+  for (const documento of elenco) {
+    const riquadro = document.createElement("article");
+    riquadro.className = "documento";
+
+    const titolo = document.createElement("h3");
+    titolo.textContent = documento.filename;
+    titolo.dataset.filename = documento.filename;
+    riquadro.appendChild(titolo);
+
+    const corpo = document.createElement("p");
+    corpo.className = "testo-originale";
+    for (const segmento of documento.segmenti) {
+      // Il tag è scelto fra due letterali e non costruito: `mark` porta
+      // l'evidenziazione anche a chi non distingue i colori, e restare su due
+      // nomi scritti per esteso è ciò che rende verificabile che questa pagina
+      // non costruisca mai un elemento modificabile.
+      if (segmento.span_id === null) {
+        const pezzo = document.createElement("span");
+        pezzo.textContent = segmento.testo;
+        corpo.appendChild(pezzo);
+        continue;
+      }
+      const pezzo = document.createElement("mark");
+      pezzo.textContent = segmento.testo;
+      pezzo.className =
+        `evidenza cat-${segmento.categoria}` + (segmento.mascherato ? "" : " spenta");
+      pezzo.dataset.spanId = segmento.span_id;
+      pezzo.dataset.categoria = segmento.categoria;
+      pezzo.dataset.mascherato = segmento.mascherato ? "1" : "0";
+      pezzo.title = segmento.mascherato
+        ? `${segmento.categoria}: diventerà ${segmento.segnaposto}. Clicca per lasciarlo in chiaro.`
+        : `${segmento.categoria}: resterà in chiaro. Clicca per mascherarlo.`;
+      corpo.appendChild(pezzo);
+    }
+    riquadro.appendChild(corpo);
+
+    documenti.appendChild(riquadro);
+  }
+}
+
+// Ogni toggle ridisegna la pagina dal payload che il server restituisce, invece
+// di ritoccare il nodo che è stato cliccato. Ritoccarlo significherebbe tenere
+// nella pagina una seconda copia dello stato del fascicolo, e quella che
+// l'utente vede sarebbe la copia che non decide che cosa viene mascherato.
+function disegna(revisione) {
+  if (revisione === null) {
+    return;
+  }
+  const coda = revisione.ambiguita;
+  statoAnalisi.textContent =
+    `Stato del fascicolo: ${revisione.stato}. ` +
+    `Ambiguità in coda: ${coda.totale}, di cui ${coda.bloccanti} ` +
+    `${coda.bloccanti === 1 ? "blocca" : "bloccano"} l'approvazione.`;
+  disegnaInterruttori(revisione.categorie);
+  disegnaDocumenti(revisione.documenti);
+}
+
+avvio.addEventListener("click", async () => {
+  statoAnalisi.textContent = "Analisi in corso…";
+  disegna(await chiedi(ROTTA_ANALISI));
+});
+
+// Un gestore solo sul contenitore, e non uno per interruttore: gli
+// interruttori vengono ricreati a ogni ridisegno, quindi agganciarli
+// singolarmente lascerebbe i gestori attaccati a nodi che non sono più in
+// pagina, e dal secondo toggle in poi non succederebbe più niente.
+categorie.addEventListener("change", async (evento) => {
+  const categoria = evento.target.dataset.categoria;
+  if (categoria === undefined) {
+    return;
+  }
+  disegna(await chiedi(ROTTA_CATEGORIA, { categoria, attiva: evento.target.checked }));
+});
+
+documenti.addEventListener("click", async (evento) => {
+  const spanId = evento.target.dataset.spanId;
+  if (spanId === undefined) {
+    return;
+  }
+  // Il verso si legge da ciò che è disegnato: cliccare su un'occorrenza accesa
+  // la spegne. Tenerlo in una variabile del JavaScript lo farebbe divergere
+  // dal fascicolo appena due schede — o due ridisegni — non coincidessero.
+  const attivo = evento.target.dataset.mascherato !== "1";
+  disegna(await chiedi(ROTTA_SPAN, { span_id: spanId, attivo }));
+});
