@@ -302,6 +302,23 @@ def esito_della_ui(scenario: str) -> dict:
     return json.loads(esecuzione.stdout)
 
 
+def risolvi_token(valore: str, css: str) -> str:
+    """Il valore di una dichiarazione CSS, seguendo un eventuale `var(--x)`.
+
+    I colori delle evidenziazioni passano da token, così il restyle della UI ha
+    un solo posto in cui ritoccarli invece di dodici valori sparsi nelle
+    regole. Ma il confronto fra categorie deve restare sui colori veri: due
+    token distinti con lo stesso valore darebbero due evidenziazioni
+    indistinguibili, e un confronto sui nomi dei token le chiamerebbe diverse.
+    """
+    riferimento = re.fullmatch(r"var\(\s*(--[\w-]+)\s*\)", valore)
+    if riferimento is None:
+        return valore
+    dichiarato = re.search(rf"{re.escape(riferimento.group(1))}:\s*([^;]+);", css)
+    assert dichiarato is not None, f"il token {riferimento.group(1)} non è dichiarato"
+    return risolvi_token(dichiarato.group(1).strip(), css)
+
+
 def campi_delle_rotte() -> list[tuple[str, set[str], set[str]]]:
     """Per ogni rotta del fascicolo: il percorso, i nomi dei suoi parametri e i
     campi del modello che ne descrive il corpo.
@@ -372,6 +389,10 @@ def test_ogni_classe_di_evidenziazione_ha_un_colore_suo_nel_foglio_di_stile():
     sia se una classe non ha alcuna regola — evidenziazione invisibile — sia se
     due categorie condividono lo stesso colore.
 
+    Il confronto è sui valori **risolti**, non sui nomi delle variabili: due
+    categorie che puntassero a token diversi con lo stesso valore sarebbero
+    indistinguibili a schermo, e un confronto sui nomi non se ne accorgerebbe.
+
     Non prova che il browser dipinga: quello resta un controllo umano.
     """
     esito = esito_della_ui("revisione-analisi")
@@ -390,7 +411,7 @@ def test_ogni_classe_di_evidenziazione_ha_un_colore_suo_nel_foglio_di_stile():
         assert regola is not None, f"la classe {classe} non ha nessuna regola nel CSS"
         colore = re.search(r"background(?:-color)?:\s*([^;]+)", regola.group(1))
         assert colore is not None, f"la classe {classe} non dichiara alcun colore di fondo"
-        colori[classe] = colore.group(1).strip()
+        colori[classe] = risolvi_token(colore.group(1).strip(), css)
     assert len(set(colori.values())) == len(colori), f"colori ripetuti: {colori}"
 
 

@@ -209,51 +209,74 @@ mark.evidenza.spenta {
 /* Un colore per categoria: sono le classi che `app.js` scrive come
    `cat-${categoria}`, quindi ce n'è una per ogni voce dell'enum `Category` del
    dominio. Una categoria senza regola qui verrebbe riconosciuta e disegnata
-   senza evidenziazione: un dato personale invisibile a chi deve rivederlo. */
+   senza evidenziazione: un dato personale invisibile a chi deve rivederlo.
+
+   I dodici valori stanno in altrettanti token e non nelle regole. I sei token
+   del telaio (`--accento`, `--bordo`, `--carta`, `--inchiostro`, `--sfondo`,
+   `--tenue`) sono neutri e non possono esprimere dodici tinte distinguibili
+   fra loro, quindi questi nascono qui; ma nascono in un posto solo, così chi
+   rifà la grafica li ritocca tutti insieme invece di rincorrere dodici valori
+   sparsi nelle regole. Tutto il resto di questa sezione passa dai token del
+   telaio. */
+:root {
+  --cat-persona: #ffd9d9;
+  --cat-azienda: #ffe4c2;
+  --cat-indirizzo: #fff3b0;
+  --cat-email: #e2f5c4;
+  --cat-telefono: #c9efd6;
+  --cat-cf: #bfe9e4;
+  --cat-piva: #c6e6f7;
+  --cat-iban: #cdd9fb;
+  --cat-data: #ddd2fb;
+  --cat-importo: #f2ccf3;
+  --cat-pratica: #f8cde3;
+  --cat-catasto: #e6ded2;
+}
+
 .cat-PERSONA {
-  background: #ffd9d9;
+  background: var(--cat-persona);
 }
 
 .cat-AZIENDA {
-  background: #ffe4c2;
+  background: var(--cat-azienda);
 }
 
 .cat-INDIRIZZO {
-  background: #fff3b0;
+  background: var(--cat-indirizzo);
 }
 
 .cat-EMAIL {
-  background: #e2f5c4;
+  background: var(--cat-email);
 }
 
 .cat-TELEFONO {
-  background: #c9efd6;
+  background: var(--cat-telefono);
 }
 
 .cat-CF {
-  background: #bfe9e4;
+  background: var(--cat-cf);
 }
 
 .cat-PIVA {
-  background: #c6e6f7;
+  background: var(--cat-piva);
 }
 
 .cat-IBAN {
-  background: #cdd9fb;
+  background: var(--cat-iban);
 }
 
 .cat-DATA {
-  background: #ddd2fb;
+  background: var(--cat-data);
 }
 
 .cat-IMPORTO {
-  background: #f2ccf3;
+  background: var(--cat-importo);
 }
 
 .cat-PRATICA {
-  background: #f8cde3;
+  background: var(--cat-pratica);
 }
 
 .cat-CATASTO {
-  background: #e6ded2;
+  background: var(--cat-catasto);
 }
