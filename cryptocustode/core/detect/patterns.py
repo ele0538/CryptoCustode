@@ -80,18 +80,42 @@ PATTERN: dict[Category, Pattern[str]] = {
     # accanto (ruling I2). Il conteggio complessivo resta a
     # `_telefono_plausibile` (9-11 cifre) e il requisito di contesto resta il
     # cancello: non si apre alcuna valanga.
-    # Le ripetizioni sono pigre e chiuse da `\b`: così la corsa di cifre si
-    # ferma alla fine del numero invece di scavalcare uno spazio (o un a capo
-    # dell'estrazione PDF) e inglobare le cifre di ciò che segue — una data,
-    # per esempio — facendo sballare il conteggio e perdere del tutto il
-    # numero di telefono.
+    # Ogni ramo è chiuso da `\b`, così la corsa di cifre non si ferma in mezzo
+    # a un numero più lungo né scavalca uno spazio (o un a capo
+    # dell'estrazione PDF) finendo *dentro* la parola che segue.
+    #
+    # Il ramo dei fissi era anche pigro, e questo era un difetto: il suo
+    # prefisso è lungo 2-4 cifre ma il minimo della ripetizione è fisso a 6,
+    # quindi con un prefisso a due cifre la corsa pigra si fermava al primo
+    # `\b` utile — 8 cifre in tutto, sotto il pavimento di 9 di
+    # `_telefono_plausibile` — e i fissi di Milano e Roma scritti a gruppi
+    # corti ("02 12 34 56 78") non producevano alcuno span pur avendo la
+    # parola chiave accanto (issue #14). Ora è vorace, come quella dell'IBAN e
+    # per la stessa ragione: la regex prende il più possibile e la lunghezza
+    # esatta del valore la decide il validatore, con il ritaglio progressivo
+    # di `rules.py` che riporta indietro la coda di troppo. Il pavimento del
+    # ritaglio è per categoria proprio perché questo percorso funzioni anche
+    # per il telefono.
+    #
+    # Il ramo dei cellulari resta pigro e va bene così: il suo prefisso è di
+    # lunghezza fissa (`3\d{2}`), quindi il minimo della ripetizione fa 9
+    # cifre esatte e non può scendere sotto la soglia del validatore.
     Category.TELEFONO: re.compile(
-        r"(?:\+39|0039)[\s.\-/]?\d(?:[\s.\-/]?\d){8,9}"
+        # Il `\b` in coda vale per il prefisso internazionale quanto per gli
+        # altri due rami, e qui mancava (issue #14): la corsa vorace arrivava a
+        # dieci cifre nazionali mangiandosi la prima cifra di ciò che seguiva
+        # ("+39 340 123456 1" davanti a "14/03/2024"). Il conteggio restava nei
+        # 9-11 della spec §6, quindi il validatore accettava lo span sbagliato,
+        # e la priorità P2 del telefono faceva scartare a `risolvi` l'intero
+        # span DATA: la data restava in chiaro accanto a un numero storpiato.
+        # Con il confine la corsa torna indietro di una cifra e i due valori
+        # diventano due span distinti.
+        r"(?:\+39|0039)[\s.\-/]?\d(?:[\s.\-/]?\d){8,9}\b"
         r"|\b3\d{2}(?:[\s.\-/]?\d){6,8}?\b"
         # Il prefisso interurbano può stare fra parentesi ("(011) 1234567"):
         # `\b` non serve nella variante con la parentesi aperta, perché fra uno
         # spazio e `(` non c'è alcun confine di parola.
-        r"|(?:\(0\d{1,3}\)|\b0\d{1,3})(?:[\s.\-/]?\d){6,9}?\b"
+        r"|(?:\(0\d{1,3}\)|\b0\d{1,3})(?:[\s.\-/]?\d){6,9}\b"
     ),
     Category.CATASTO: re.compile(
         # Alternanza esplicita: la spec §6 nomina sia `foglio` sia l'abbreviazione
