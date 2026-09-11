@@ -196,8 +196,58 @@ PATTERN: dict[Category, Pattern[str]] = {
         # agganciarsi: restavano in chiaro il suffisso, il CAP *e* il comune
         # (ruling I1). Ogni alternativa ha il proprio confine a destra, così il
         # suffisso non si mangia l'inizio della parola successiva.
+        # Il ramo della lettera sola ammetteva però *lo spazio da solo* come
+        # separatore (`\s*[/\-]?\s*`), e con lui si agganciava a qualunque
+        # lettera isolata dopo il civico (issue #29): "Via Roma 12 p. 2, 10121
+        # Torino" dava "Via Roma 12 p" — civico storpiato, e CAP e comune in
+        # chiaro perché il gruppo del CAP non trovava più l'adiacenza — e "Via
+        # Roma 12 e stato approvato" dava "Via Roma 12 e", mascherando una
+        # congiunzione che non è un dato personale.
+        #
+        # Il rimedio ovvio — pretendere sempre il separatore — è stato
+        # misurato e scartato: toglie "Via Roma 12 A, 10121 Torino", che è un
+        # indirizzo italiano reale e che base copriva, e con lui CAP e comune
+        # tornano in chiaro. Chiudeva una voracità aprendo sei fughe.
+        #
+        # Quello che distingue un suffisso vero da una lettera di passaggio non
+        # è solo il separatore: è anche il *caso* della lettera e ciò che le sta
+        # a destra. I suffissi separati da spazio sono maiuscoli per
+        # convenzione ("12 A", "12 B"); `p.`, `e`, `a`, `o` sono minuscoli. Le
+        # quattro alternative, in ordine:
+        #   - `12-14`   intervallo di civici;
+        #   - `12/A`    lettera dichiarata dal separatore, qualunque caso;
+        #   - `12A`     lettera attaccata alle cifre, qualunque caso;
+        #   - `12 A`    lettera separata da spazio: maiuscola senza altre
+        #               condizioni, minuscola solo se lì l'indirizzo finisce
+        #               davvero — virgola, fine riga o del testo, oppure il CAP
+        #               subito dopo. `\d{5}` e non `\d`: con le cifre generiche
+        #               "Via Roma 12 o 14 del quartiere" tornava a dare
+        #               "Via Roma 12 o". La fine riga conta quanto la fine del
+        #               testo, perché nei documenti estratti l'indirizzo chiude
+        #               una riga molto più spesso che il documento.
+        # Ogni alternativa ha il proprio `(?!\w)`, così il suffisso non si
+        # mangia l'inizio della parola successiva.
+        #
+        # Resta scoperta una voracità, misurata e non chiusa: una maiuscola
+        # sola seguita da prosa ("VIA ROMA 12 E STATO APPROVATO", "Via Roma 12
+        # F.lli Rossi"). È indistinguibile da "Via Roma 12 A int. 3, 10121
+        # Torino" senza guardare *quale* parola segue, e la lista di quelle
+        # parole è il gruppo qui sotto: separarle è lavoro di quel gruppo, non
+        # di questo. Fra le due, tenere "12 A int. 3" vale più che chiudere
+        # "12 E STATO": la prima è una fuga di CAP e comune, la seconda
+        # maschera testo che non è un dato personale.
+        #
+        # E la correzione sta qui e non fra le parole chiave sotto: aggiungere
+        # `p` a quelle sarebbe una chiave di una lettera sola, ambigua con
+        # `pagina` e con qualunque altra iniziale, e allargherebbe la voracità
+        # invece di ridurla — oltre a non chiudere il difetto, che si presenta
+        # anche senza `p.`.
         r"(?:,?\s*n?\.?\s*\d{1,4}(?!\d)"
-        r"(?:\s*[/\-]\s*\d{1,3}(?!\d)|\s*[/\-]?\s*[a-zA-Z](?!\w)"
+        r"(?:\s*[/\-]\s*\d{1,3}(?!\d)"
+        r"|\s*[/\-]\s*[a-zA-Z](?!\w)"
+        r"|[a-zA-Z](?!\w)"
+        r"|\s+(?:(?-i:[A-Z])(?!\w)"
+        r"|(?-i:[a-z])(?!\w)(?=\s*,|[^\S\n]*(?:\n|$)|\s+\d{5}\b))"
         r"|\s+(?:bis|ter|quater)(?!\w))?)?"
         # Interno, scala e piano, facoltativi e fra il civico e il CAP ("Via
         # Roma 12 int. 3, 10121 Torino"): il gruppo del CAP pretende le cinque
