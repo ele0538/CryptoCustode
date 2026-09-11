@@ -45,6 +45,7 @@ from cryptocustode.core.errors import (
     ScannedDocumentRejected,
     UnknownPlaceholder,
     UnresolvedAmbiguities,
+    UploadTooLarge,
     VaultUnreadable,
     VaultVersionNotSupported,
 )
@@ -104,6 +105,24 @@ per chi la prenderà, verificati qui:
   sullo stream in ingresso.
 """
 
+TETTO_RICHIESTA = 32 * 1024 * 1024
+"""Quanto può pesare al massimo una richiesta di caricamento, in byte.
+
+Sta **sotto** `DIMENSIONE_MASSIMA_IN_MEMORIA`, e il rapporto fra i due numeri è
+la ragione per cui il rifiuto arriva in tempo: una richiesta ammessa resta per
+costruzione sotto la soglia oltre la quale starlette scriverebbe su disco, e
+nessuna parte può essere più grande della richiesta che la contiene. Se questo
+tetto superasse quella soglia, una richiesta ammessa potrebbe comunque rotolare
+in chiaro nella cartella temporanea: il rifiuto arriverebbe dopo la scrittura,
+cioè troppo tardi. Un test sorveglia la disuguaglianza.
+
+Limita la **richiesta**, non il singolo documento né il fascicolo, perché è
+l'unica quantità nota nel solo momento utile — prima che la form venga letta.
+Il fascicolo ha già il suo tetto di dieci documenti (§1); un tetto sui byte
+complessivi del fascicolo richiederebbe di sommare fra richieste diverse e non
+salverebbe dal caso che questo chiude, che è il singolo caricamento enorme.
+"""
+
 AlPronto = Callable[[], None]
 """Cosa fare quando l'app entra in servizio. In produzione apre il browser."""
 
@@ -131,6 +150,7 @@ STATO_HTTP: dict[type[CryptoCustodeError], int] = {
     MalformedPlaceholder: 422,
     VaultUnreadable: 422,
     VaultVersionNotSupported: 422,
+    UploadTooLarge: 413,
 }
 """La tabella della spec §13, trascritta una volta sola.
 
@@ -199,7 +219,10 @@ def rispondi_all_errore_di_dominio(richiesta: Request, errore: Exception) -> JSO
 
 
 def crea_app(
-    *, al_pronto: AlPronto | None = None, store: SessionStore | None = None
+    *,
+    al_pronto: AlPronto | None = None,
+    store: SessionStore | None = None,
+    tetto_richiesta: int = TETTO_RICHIESTA,
 ) -> FastAPI:
     """L'app HTTP: serve la pagina della UI, i suoi statici e le route del fascicolo.
 
@@ -232,6 +255,42 @@ def crea_app(
 
     app = FastAPI(title="CryptoCustode", lifespan=ciclo_di_vita)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(HOST_CONSENTITI))
+
+    @app.middleware("http")
+    async def rifiuta_i_caricamenti_troppo_grandi(richiesta: Request, chiama):
+        """Chiude la richiesta troppo grande prima che qualcuno ne legga il corpo.
+
+        È un middleware e non un controllo nella route perché quando la route
+        riceve il suo `UploadFile` i byte sono già stati scritti: starlette
+        verifica `max_part_size` solo nel ramo delle parti che non sono file
+        (`formparsers.py`, `on_part_data`), e una parte-file finisce in
+        `_file_parts_to_write` senza alcun controllo di dimensione. Qui invece
+        non è ancora stato letto niente.
+
+        `Content-Length` assente significa rifiuto, non passaggio libero: senza
+        quel numero l'unico modo di sapere quanto pesa è leggerlo, che è
+        esattamente ciò che si sta cercando di evitare. Davanti a
+        un'invariante di riservatezza il dubbio si chiude.
+        """
+        if richiesta.method == "POST" and richiesta.url.path.startswith("/api/"):
+            dichiarata = richiesta.headers.get("content-length")
+            if dichiarata is None or not dichiarata.isdigit():
+                return rispondi_all_errore_di_dominio(
+                    richiesta,
+                    UploadTooLarge(
+                        "dimensione del caricamento non dichiarata: "
+                        f"il massimo accettato e' {tetto_richiesta} byte"
+                    ),
+                )
+            if int(dichiarata) > tetto_richiesta:
+                return rispondi_all_errore_di_dominio(
+                    richiesta,
+                    UploadTooLarge(
+                        "il caricamento e' troppo grande: "
+                        f"il massimo accettato e' {tetto_richiesta} byte"
+                    ),
+                )
+        return await chiama(richiesta)
     app.mount("/static", StaticFiles(directory=UI), name="static")
     app.include_router(crea_router(store))
     app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)

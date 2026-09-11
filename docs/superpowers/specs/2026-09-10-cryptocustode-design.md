@@ -469,6 +469,7 @@ un segnaposto e sostituita con dati veri, corrompendo il testo.
 | Segnaposto alterato | `MalformedPlaceholder` | 422 | i frammenti anomali, citati letteralmente |
 | Password del vault errata o file corrotto | `VaultUnreadable` | 422 | "password errata o file danneggiato" |
 | Vault scritto in un formato più recente | `VaultVersionNotSupported` | 422 | il formato trovato, il massimo leggibile e l'invito ad aggiornare |
+| Caricamento più grande del tetto | `UploadTooLarge` | **413** | il caricamento è troppo grande, col massimo accettato in byte |
 
 **Perché 404, e perché un errore di dominio.** Un id sconosciuto fallisce il primo dei tre
 controlli della §8: `export_sanitized_text` chiede il fascicolo allo store, e finché lo
@@ -477,6 +478,29 @@ un `CryptoCustodeError` e attraversa il gate dell'export senza che nessuno lo ri
 Il layer HTTP lo tradurrebbe in un 500 — un difetto del server — mentre la richiesta è
 semplicemente per una risorsa che non c'è: 404. Non è un conflitto di stato come il 409
 delle due righe qui sotto, perché non c'è alcuno stato da conciliare (issue #16).
+
+**Perché 413, e perché il controllo non sta nella route.** Un caricamento più grande del
+tetto è l'unico errore di questa tabella che nasce fuori dal core, e non per comodità.
+Starlette verifica `max_part_size` soltanto nel ramo delle parti che **non** sono file
+(`formparsers.py`, `on_part_data`): una parte-file viene accodata senza alcun controllo di
+dimensione, quindi quando la route riceve il suo `UploadFile` i byte sono già stati scritti
+nella cartella temporanea — in chiaro, fuori dal vault, contro l'invariante della §10. Un
+`if len(contenuto) > TETTO` dopo la lettura sarebbe un rifiuto a danno già fatto. Il
+controllo vive perciò in un middleware che guarda `Content-Length` **prima** che la form
+venga letta, e 413 è il codice che descrive esattamente questo: la richiesta è troppo
+grande per essere servita. L'errore resta di dominio, così attraversa il gate di questa
+sezione come tutti gli altri e l'utente riceve un messaggio in italiano invece di un 500
+(issue #27).
+
+**Cosa limita il tetto, e perché la richiesta.** Limita la singola **richiesta**, non il
+documento né il fascicolo: prima che la form sia letta l'unica quantità nota è
+`Content-Length`, e ogni altra scelta richiederebbe di leggere per contare, cioè la cosa
+che si sta evitando. Il tetto sta **sotto** la soglia oltre la quale starlette scrive su
+disco, e la disuguaglianza è sorvegliata da un test: nessuna parte può essere più grande
+della richiesta che la contiene, quindi una richiesta ammessa non rotola mai in chiaro. Se
+i due numeri si invertissero, il rifiuto arriverebbe dopo la scrittura. Una richiesta senza
+`Content-Length` viene rifiutata invece che ammessa: davanti a un'invariante di
+riservatezza il dubbio si chiude.
 
 **Perché 409 e non 403.** Le specifiche di partenza indicavano 403 per l'export negato,
 ma 403 significa "non hai il permesso", mentre qui la risorsa è nello stato sbagliato,
