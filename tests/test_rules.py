@@ -298,20 +298,27 @@ class TestSuffissoDelCivico:
 
 
 class TestSuffissoDelCivicoNonSiAggancia:
-    """Issue #29: il suffisso a lettera sola del ruling I1 ammetteva lo spazio
-    come separatore, quindi si agganciava a *qualunque* lettera isolata dopo il
-    civico — una parola di una lettera, una congiunzione, una preposizione — e
+    """Issue #29: il suffisso a lettera sola del ruling I1 ammetteva *lo spazio
+    da solo* come separatore, quindi si agganciava a qualunque lettera isolata
+    dopo il civico — un'abbreviazione, una congiunzione, una preposizione — e
     non solo alla lettera che del civico fa davvero parte.
 
-    Le forme reali del suffisso sono attaccate ("12A") o separate da barra o
-    trattino ("12/A", "12-A"): la lettera sta col numero, non a distanza di
-    spazio. La correzione è qui, sul separatore, e non fra le parole chiave
-    dell'interno: `p` è una chiave di una lettera sola, ambigua con qualunque
-    altra iniziale, e ammetterla allargherebbe la voracità invece di ridurla —
-    oltre a non chiudere il difetto, che si presenta anche senza `p.`.
+    Il rimedio ovvio, pretendere sempre il separatore, è stato misurato e
+    scartato: toglie "Via Roma 12 A, 10121 Torino", indirizzo italiano reale
+    che prima funzionava, e con lui CAP e comune tornano in chiaro. Chiudeva
+    una voracità aprendo sei fughe, e nessun test lo mostrava — è il motivo per
+    cui `test_il_suffisso_maiuscolo_separato_da_spazio_resta` esiste.
 
-    Le guardie in coda sono la metà che tiene: restringere il separatore
-    troppo toglierebbe le forme per cui il suffisso esiste."""
+    Quello che distingue un suffisso vero da una lettera di passaggio non è
+    solo il separatore: è anche il caso della lettera e ciò che le sta a
+    destra. Separata da spazio, la maiuscola vale per convenzione ("12 A"); la
+    minuscola vale solo se lì l'indirizzo finisce davvero — virgola, fine riga
+    o del testo, o il CAP subito dopo.
+
+    La correzione sta sul suffisso e non fra le parole chiave dell'interno: `p`
+    è una chiave di una lettera sola, ambigua con `pagina` e con qualunque
+    altra iniziale, e ammetterla allargherebbe la voracità invece di ridurla —
+    oltre a non chiudere il difetto, che si presenta anche senza `p.`."""
 
     def test_una_lettera_isolata_seguita_da_punto_non_entra_nello_span(self):
         # `p.` è un'abbreviazione di "piano": lo span si mangiava la `p`
@@ -338,10 +345,62 @@ class TestSuffissoDelCivicoNonSiAggancia:
             "Via Roma 12"
         ]
 
+    def test_la_minuscola_seguita_da_un_numero_breve_non_e_un_suffisso(self):
+        # è il test che tiene fermo `\d{5}` invece di `\d` nel contesto a
+        # destra: con le cifre generiche "12 o 14" tornerebbe a dare
+        # "Via Roma 12 o". Dopo un suffisso vero vengono le cinque cifre del
+        # CAP, non un secondo civico.
+        testo = "Via Roma 12 o 14 del quartiere"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
     # --- guardie: le forme reali del suffisso non devono regredire -----------
     # è il motivo per cui il suffisso esiste (ruling I1): se la restrizione le
     # togliesse, il gruppo del CAP tornerebbe a non agganciarsi e resterebbero
     # in chiaro suffisso, CAP e comune — il difetto che I1 aveva chiuso.
+
+    def test_il_suffisso_maiuscolo_separato_da_spazio_resta(self):
+        # LA guardia che mancava. "Via Roma 12 A" è un indirizzo italiano
+        # reale, nessun test lo copriva, e per questo una correzione che lo
+        # rompeva lasciava la suite verde.
+        testo = "Residente in Via Roma 12 A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 A, 10121 Torino"]
+
+    def test_il_suffisso_maiuscolo_separato_da_spazio_senza_virgola(self):
+        testo = "Residente in Via Roma 12 A 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 A 10121 Torino"]
+
+    def test_il_suffisso_maiuscolo_separato_da_spazio_con_l_interno(self):
+        # la forma composta: il suffisso separato da spazio *e* un complemento
+        # fra civico e CAP. È qui che si vede perché la maiuscola vale da sola,
+        # senza pretendere anche il contesto a destra: pretendendolo, questa
+        # riga perde CAP e comune.
+        testo = "Residente in Via Roma 12 A int. 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 A int. 3, 10121 Torino"
+        ]
+
+    def test_il_suffisso_maiuscolo_in_un_documento_tutto_maiuscolo(self):
+        # i documenti estratti da PDF sono spesso tutti maiuscoli, e il repo ha
+        # già test su indirizzi così ("VIA GARIBALDI 42")
+        testo = "RESIDENTE IN VIA ROMA 12 A, 10121 TORINO"
+        assert valori(testo, Category.INDIRIZZO) == ["VIA ROMA 12 A, 10121 TORINO"]
+
+    def test_il_suffisso_minuscolo_separato_da_spazio_prima_della_virgola(self):
+        # la minuscola non è esclusa: le si chiede solo che lì l'indirizzo
+        # finisca davvero
+        testo = "Residente in Via Roma 12 a, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 a, 10121 Torino"]
+
+    def test_il_suffisso_minuscolo_separato_da_spazio_prima_del_cap(self):
+        testo = "Residente in Via Roma 12 a 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 a 10121 Torino"]
+
+    def test_il_suffisso_minuscolo_a_fine_riga(self):
+        # nei documenti estratti l'indirizzo chiude una riga molto più spesso
+        # che il documento: se "fine indirizzo" fosse solo la fine del testo,
+        # questa riga perderebbe il suffisso
+        testo = "Residente in Via Roma 12 a\nTorino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 a"]
 
     def test_il_suffisso_attaccato_al_civico_resta(self):
         testo = "Residente in Via Roma 12A, 10121 Torino"
@@ -352,11 +411,10 @@ class TestSuffissoDelCivicoNonSiAggancia:
         assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12/A, 10121 Torino"]
 
     def test_il_suffisso_dopo_la_barra_spaziata_resta(self):
-        # lo spazio non è vietato: è vietato lo spazio *da solo*. Con la barra
-        # davanti la lettera è dichiarata parte del civico da chi ha scritto il
-        # documento, e l'ambiguità che la #29 chiude non c'è.
-        testo = "Residente in Via Roma 12 / A, 10121 Torino"
-        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 / A, 10121 Torino"]
+        # con la barra la lettera è dichiarata parte del civico da chi ha
+        # scritto il documento: né il caso né il contesto a destra contano
+        testo = "Residente in Via Roma 12 / a, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 / a, 10121 Torino"]
 
     def test_il_suffisso_dopo_il_trattino_resta(self):
         testo = "Residente in Via Roma 12-A, 10121 Torino"
@@ -364,7 +422,7 @@ class TestSuffissoDelCivicoNonSiAggancia:
 
     def test_il_suffisso_a_parola_resta(self):
         # "bis" ha il proprio ramo e lo spazio gli è indispensabile: la
-        # restrizione sul separatore non deve toccarlo
+        # restrizione sul suffisso a lettera sola non deve toccarlo
         testo = "Residente in Via Roma 12 bis, 10121 Torino"
         assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 bis, 10121 Torino"]
 
