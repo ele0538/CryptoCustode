@@ -21,9 +21,47 @@ MESI = (
 # nella forma ma nella parola.
 MESI_ABBREVIATI = "gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic"
 
+# Il toponimo è obbligatorio e sta in *testa* allo span: ogni forma che manca
+# qui è un indirizzo che non produce alcuno span di regola, e poiché solo la
+# regola sa mascherare civico e CAP è civico e CAP in chiaro nel testo
+# esportato. Il NER non fa da rete: quando la regola non si aggancia riprende al
+# massimo la via e il comune, e su "Rotonda Diaz 2, 80132 Napoli" mascherava il
+# solo comune — la parte meno identificante — lasciando odonimo, civico e CAP
+# (issue #34).
+# Allungare la lista è a basso rischio proprio perché queste sono parole intere
+# e obbligatorie in testa: la guardia anti-vorace del gruppo non è il toponimo
+# ma la parola con l'iniziale davvero maiuscola che deve seguirlo, ed è lei che
+# tiene fuori la prosa dove questi sono nomi comuni ("una passeggiata in
+# centro", "la galleria d'arte", "una frazione del capitale").
+# Le abbreviazioni sono alternative a sé, come `v.le` e `c.so` che c'erano già:
+# in `str\.` il punto fa parte dell'alternativa ed è obbligatorio, altrimenti
+# `str` sarebbe una sigla di tre lettere e qualunque acronimo seguito da un nome
+# proprio diventerebbe un indirizzo.
+# `vicolo` precede `vico` per la stessa alternanza ordinata dei connettivi: una
+# forma corta messa davanti alla lunga la nasconderebbe.
+# `frazione` è ammessa per la forma in cui si scrive davvero, accanto
+# all'odonimo e senza civico proprio ("Via Roma 7, Frazione Pieve, 06055
+# Perugia"): lì il gruppo del CAP non si agganciava e la coda usciva tutta in
+# chiaro. Il timore che la muove — che senza civico la catena dei nomi corra
+# nella prosa che segue — è stato misurato e vale identico per `via`
+# ("Via Mazzini Il Consiglio Comunale"): è una proprietà della catena, non di
+# questa voce, e si chiude là dove la catena è definita.
+# `rotonda` è stata misurata e **scartata**: è l'unico candidato che non è un
+# sostantivo ma un aggettivo, quindi si aggancia al secondo membro di un
+# sintagma la cui testa è un'altra parola ("tavola rotonda Aperta" dà lo span
+# "rotonda Aperta", che comincia a metà), e "tavola rotonda" è comunissima nel
+# registro amministrativo che questo programma tratta. Il guadagno è stretto,
+# perché la forma canonica "Piazza della Rotonda" la copre già `piazza`. Un
+# lookbehind negativo l'avrebbe salvata, ma `re` li vuole a larghezza fissa: la
+# lista dei nomi da escludere andrebbe scritta una voce per volta e resterebbe
+# aperta, con test verdi perché scelti sulla lista e non perché il confine
+# regge. Il caso resta aperto di proposito: chiuderlo vuole un confine sulla
+# catena dei nomi, non una voce in più qui.
 TOPONIMI = (
-    r"via|viale|v\.le|piazza|p\.zza|piazzale|corso|c\.so|largo|vicolo|"
-    r"strada|contrada|localit[àa]|borgo|salita|lungomare"
+    r"via|viale|v\.le|piazza|p\.zza|piazzetta|piazzale|corso|c\.so|largo|"
+    r"vicolo|vico|strada|str\.|contrada|frazione|localit[àa]|borgo|salita|"
+    r"lungomare|lungotevere|lungarno|passeggiata|traversa|circonvallazione|"
+    r"galleria|calle"
 )
 
 SUFFISSI_SOCIETARI = (
