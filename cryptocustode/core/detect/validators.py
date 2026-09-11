@@ -20,6 +20,38 @@ _FORMA_CF = re.compile(
     r"[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\Z"
 )
 
+# I separatori che nei documenti veri stanno *fra i gruppi* di un codice con
+# checksum: lo spazio di qualunque forma e il trattino (issue #37).
+_SEPARATORE_DI_GRUPPO = re.compile(r"[\s\-]")
+
+
+def _codice_normalizzato(valore: str) -> str | None:
+    """Il codice senza i separatori fra i gruppi e in maiuscolo, oppure `None`
+    se il valore comincia o finisce con un separatore.
+
+    Qui sta l'invariante che regge tutta la issue #37: il checksum si calcola
+    sul valore **normalizzato**, così le regex possono ammettere le forme
+    spaziate dei documenti veri — "IT60-X054-...", "IT60  X054  ...",
+    "RSSMRA 85M01 H501Q" — senza che la verifica si allenti di un bit.
+    Allargare il riconoscimento perdendo il controllo sarebbe lo scambio
+    peggiore possibile.
+
+    Il rifiuto ai *bordi* è la seconda metà, e non è pignoleria: è ciò che
+    tiene lo span esattamente sul codice. `rules.py` accorcia un candidato
+    troppo lungo tagliandolo all'**ultimo** separatore, quindi davanti a una
+    coppia di spazi ("... 456  PRESSO") il candidato intermedio è "... 456 ",
+    con uno spazio rimasto in fondo — e la *lunghezza* del candidato accettato
+    è ciò che fissa la fine dello span. Se il validatore accettasse quel
+    candidato, lo span coprirebbe un carattere che nel codice non c'è e il
+    segnaposto finirebbe attaccato alla parola dopo. Rifiutandolo, il ritaglio
+    fa un passo in più e si ferma sul codice.
+    """
+    if not valore:
+        return None
+    if _SEPARATORE_DI_GRUPPO.search(valore[0] + valore[-1]):
+        return None
+    return _SEPARATORE_DI_GRUPPO.sub("", valore).upper()
+
 
 def cin_atteso(primi_quindici: str) -> str:
     """Calcola il carattere di controllo dai primi 15 caratteri del codice fiscale.
@@ -40,8 +72,11 @@ def cin_atteso(primi_quindici: str) -> str:
 
 
 def cf_valido(valore: str) -> bool:
-    codice = valore.strip().upper()
-    if not _FORMA_CF.match(codice):
+    """Il CIN sul valore normalizzato: il codice fiscale dei moduli a caselle
+    arriva a gruppi ("RSSMRA 85M01 H501Q") e deve superare lo stesso controllo
+    della forma compatta, né più né meno (issue #37)."""
+    codice = _codice_normalizzato(valore)
+    if codice is None or not _FORMA_CF.match(codice):
         return False
     try:
         return cin_atteso(codice[:15]) == codice[15]
@@ -68,9 +103,14 @@ def piva_valida(valore: str) -> bool:
 
 def iban_valido(valore: str) -> bool:
     """ISO 7064 MOD 97-10: sposta i primi 4 caratteri in coda, converte le lettere
-    in numeri (A=10 ... Z=35) e verifica che il resto modulo 97 sia 1."""
-    codice = re.sub(r"\s+", "", valore).upper()
-    if not re.fullmatch(r"[A-Z]{2}\d{2}[0-9A-Z]{11,30}", codice):
+    in numeri (A=10 ... Z=35) e verifica che il resto modulo 97 sia 1.
+
+    La normalizzazione toglie anche i trattini, non solo gli spazi: è la forma
+    in cui gestionali e home banking mostrano l'IBAN, e il checksum non deve
+    accorgersene (issue #37).
+    """
+    codice = _codice_normalizzato(valore)
+    if codice is None or not re.fullmatch(r"[A-Z]{2}\d{2}[0-9A-Z]{11,30}", codice):
         return False
     riordinato = codice[4:] + codice[:4]
     resto = 0

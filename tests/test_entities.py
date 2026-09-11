@@ -8,6 +8,7 @@ from cryptocustode.core.entities import (
     normalizza,
     prossimo_placeholder,
 )
+from cryptocustode.core.mask import maschera_documento
 from cryptocustode.core.models import (
     AmbiguityKind,
     Category,
@@ -16,6 +17,7 @@ from cryptocustode.core.models import (
     Source,
     fascicolo_vuoto,
 )
+from cryptocustode.core.unmask import ripristina
 
 
 def documento(doc_id: str, testo: str) -> Document:
@@ -173,6 +175,109 @@ class TestAggregazione:
         assert {s.source for s in f.spans} >= {Source.NER, Source.RULE}
         for span in f.spans:
             assert span.entity_id in f.entities
+
+
+class TestRipristinoDeiCodiciSpaziati:
+    """Issue #37: cosa finisce nel dizionario quando il codice nel testo è
+    spaziato o col trattino, e perché.
+
+    Lo span e il valore dell'entità **non** coincidono per costruzione, quindi
+    la scelta va dichiarata invece che subita. Qui è dichiarata così: lo span
+    copre il codice *come appare nel testo*, separatori compresi, e il valore
+    dell'entità è il testo che lo span copre — `_assegna` legge
+    `documento.text[span.start:span.end]` e non ha altra fonte. Nel dizionario
+    finisce quindi la **forma originale**, non quella normalizzata; la
+    normalizzazione vive tutta dentro il validatore, dove serve a calcolare il
+    checksum, e da lì non esce.
+
+    È la scelta che rende esatto il giro completo, ed è il motivo per cui è
+    quella giusta qui: `ripristina` sostituisce il segnaposto col valore
+    canonico, quindi mascherare e ripristinare restituisce il documento
+    carattere per carattere. Con un valore normalizzato nel dizionario il
+    ripristino rimetterebbe "IT60X0542811101000000123456" dove il testo aveva
+    "IT60-X054-2811-1010-0000-0123-456": non una fuga, ma un documento
+    alterato in silenzio da un ripristino che si dichiara fedele.
+
+    Lo span che copre la forma originale è l'altra metà della stessa scelta: se
+    coprisse solo la parte normalizzabile, il mascheramento lascerebbe in
+    chiaro i frammenti scoperti — ed è esattamente la fuga che la issue chiude.
+    """
+
+    @pytest.mark.parametrize(
+        "codice",
+        [
+            "IT60-X054-2811-1010-0000-0123-456",
+            "IT60  X054  2811 1010 0000 0123 456",
+            "IT60 X054 2811 1010 0000 0123 456",
+            "IT60X0542811101000000123456",
+        ],
+    )
+    def test_il_giro_completo_dell_iban_restituisce_il_codice_com_era(self, codice):
+        f = fascicolo_vuoto("f1")
+        testo = "Bonifico su " + codice + " presso la banca."
+        doc = documento("d1", testo)
+        analizza_documento(f, doc, usa_ner=False)
+        mascherato = maschera_documento(f, doc)
+        assert mascherato == "Bonifico su [IBAN_1] presso la banca."
+        assert codice not in mascherato
+        assert ripristina(mascherato, f.entities) == testo
+
+    def test_il_giro_completo_del_cf_a_gruppi_restituisce_il_codice_com_era(self):
+        f = fascicolo_vuoto("f1")
+        testo = "Codice fiscale RSSMRA 85M01 H501Q del contribuente."
+        doc = documento("d1", testo)
+        analizza_documento(f, doc, usa_ner=False)
+        mascherato = maschera_documento(f, doc)
+        assert mascherato == "Codice fiscale [CF_1] del contribuente."
+        assert "RSSMRA" not in mascherato
+        assert ripristina(mascherato, f.entities) == testo
+
+    def test_due_forme_dello_stesso_iban_restano_due_entita(self):
+        # La conseguenza dichiarata della scelta, pinnata qui perché non passi
+        # inosservata: la chiave di confronto di `normalizza` collassa gli
+        # spazi ma non toglie i trattini, quindi la forma col trattino e
+        # quella a gruppi finiscono in due entità con due segnaposto diversi.
+        # Non è una fuga — nessuno dei due valori resta in chiaro — ed è il
+        # default sicuro della spec §7: separare per errore degrada la
+        # risposta dell'IA, fondere per errore corrompe i dati. Unificarle
+        # vorrebbe una chiave di confronto per categoria in `entities.py`, che
+        # è un altro modulo e un'altra decisione.
+        f = fascicolo_vuoto("f1")
+        doc = documento(
+            "d1",
+            "Bonifico su IT60-X054-2811-1010-0000-0123-456 e su "
+            "IT60 X054 2811 1010 0000 0123 456 entro il termine.",
+        )
+        analizza_documento(f, doc, usa_ner=False)
+        iban = [e for e in f.entities.values() if e.category is Category.IBAN]
+        assert sorted(e.placeholder for e in iban) == ["[IBAN_1]", "[IBAN_2]"]
+        assert sorted(e.canonical_value for e in iban) == [
+            "IT60 X054 2811 1010 0000 0123 456",
+            "IT60-X054-2811-1010-0000-0123-456",
+        ]
+
+    def test_il_doppio_spazio_e_lo_spazio_singolo_sono_la_stessa_entita(self):
+        # Rovescio del test precedente: `normalizza` collassa le corse di
+        # spazi, quindi le due forme che differiscono solo per il numero di
+        # spazi condividono un segnaposto, e ogni forma resta nelle varianti.
+        # Il limite è noto e non nasce qui: quando le due forme convivono, il
+        # ripristino rimette ovunque il valore canonico e non può restituire
+        # il documento carattere per carattere. È il prezzo
+        # dell'unificazione per chiave normalizzata, che vale per ogni
+        # categoria e non solo per i codici spaziati.
+        f = fascicolo_vuoto("f1")
+        doc = documento(
+            "d1",
+            "Bonifico su IT60  X054  2811 1010 0000 0123 456 e su "
+            "IT60 X054 2811 1010 0000 0123 456 entro il termine.",
+        )
+        analizza_documento(f, doc, usa_ner=False)
+        iban = [e for e in f.entities.values() if e.category is Category.IBAN]
+        assert [e.placeholder for e in iban] == ["[IBAN_1]"]
+        assert iban[0].variants == {
+            "IT60  X054  2811 1010 0000 0123 456",
+            "IT60 X054 2811 1010 0000 0123 456",
+        }
 
 
 class TestAggiungiSpanManuale:

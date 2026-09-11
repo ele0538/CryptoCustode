@@ -40,6 +40,127 @@ class TestChecksum:
         assert valori(testo, Category.IBAN) == ["IT60 X054 2811 1010 0000 0123 456"]
 
 
+class TestCodiciSpaziati:
+    """Issue #37: IBAN e codice fiscale come appaiono nei documenti veri.
+
+    Tre forme, un'unica radice: il separatore ammesso fra i gruppi. L'IBAN col
+    trattino è come lo mostrano gestionali e home banking; l'IBAN col doppio
+    spazio è quello che produce un copia-incolla da un PDF o da una tabella
+    allineata; il CF a gruppi è la forma dei moduli a caselle, dove ogni gruppo
+    sta in un riquadro e l'estrazione restituisce spazi. Nessuna delle tre
+    produceva alcuno span, e IBAN e CF restavano interi in chiaro nel testo
+    mandato all'IA — la fuga con la conseguenza più diretta fra quelle aperte.
+
+    Due invarianti reggono la correzione e sono provate qui sotto:
+
+    - il **checksum resta il cancello**, calcolato sul valore normalizzato
+      (senza spazi né trattini): allargare il riconoscimento senza allargare
+      la verifica sarebbe lo scambio peggiore possibile;
+    - lo **span copre il codice come appare nel testo**, separatori compresi,
+      altrimenti il mascheramento lascerebbe in chiaro i frammenti che lo span
+      non copre. Cosa finisca nel dizionario è deciso e provato in
+      `tests/test_entities.py::TestRipristinoDeiCodiciSpaziati`.
+    """
+
+    def test_iban_col_trattino_riconosciuto(self):
+        testo = "Bonifico su IT60-X054-2811-1010-0000-0123-456 presso la banca."
+        assert valori(testo, Category.IBAN) == ["IT60-X054-2811-1010-0000-0123-456"]
+
+    def test_iban_col_doppio_spazio_riconosciuto(self):
+        testo = "Bonifico su IT60  X054  2811 1010 0000 0123 456 presso la banca."
+        assert valori(testo, Category.IBAN) == ["IT60  X054  2811 1010 0000 0123 456"]
+
+    def test_cf_a_gruppi_riconosciuto(self):
+        testo = "Codice fiscale RSSMRA 85M01 H501Q del contribuente."
+        assert valori(testo, Category.CF) == ["RSSMRA 85M01 H501Q"]
+
+    def test_iban_a_gruppo_unico_resta_riconosciuto(self):
+        # controprova della issue: la forma che già funzionava non regredisce
+        testo = "Bonifico su IT60 X0542811101000000123456 presso la banca."
+        assert valori(testo, Category.IBAN) == ["IT60 X0542811101000000123456"]
+
+
+class TestIlChecksumRestaIlCancelloSuiCodiciSpaziati:
+    """Il controllo si sposta sul valore normalizzato, non sparisce: nelle
+    forme nuove un codice con una cifra alterata deve restare fuori esattamente
+    come nella forma compatta."""
+
+    def test_iban_col_trattino_e_cifra_alterata_scartato(self):
+        testo = "Bonifico su IT60-X054-2811-1010-0000-0123-457 presso la banca."
+        assert Category.IBAN not in categorie(testo)
+
+    def test_iban_col_doppio_spazio_e_cifra_alterata_scartato(self):
+        testo = "Bonifico su IT60  X054  2811 1010 0000 0123 457 presso la banca."
+        assert Category.IBAN not in categorie(testo)
+
+    def test_cf_a_gruppi_col_cin_errato_scartato(self):
+        # TC-02 della consegna, nella forma del modulo a caselle
+        testo = "Codice fiscale RSSMRA 85M01 H501Z del contribuente."
+        assert Category.CF not in categorie(testo)
+
+
+class TestVoracitaDeiCodiciSpaziati:
+    """Una guardia per ogni forma aggiunta. Ammettere il trattino fra gruppi
+    alfanumerici apre la regex a codici che IBAN non sono, e ammettere il
+    doppio spazio apre un modo nuovo di sbagliare il *confine* dello span: il
+    ritaglio di `rules.py` taglia all'ultimo separatore, quindi su una coppia
+    di spazi lascerebbe il primo attaccato in fondo al valore."""
+
+    def test_lo_span_col_trattino_si_ferma_al_codice(self):
+        # la coda vorace ingloba "-BENEFICIARIO": il ritaglio guidato dal
+        # checksum deve restituire il solo IBAN, non scartare tutto il match
+        testo = "IBAN IT60-X054-2811-1010-0000-0123-456-BENEFICIARIO ROSSI"
+        assert valori(testo, Category.IBAN) == ["IT60-X054-2811-1010-0000-0123-456"]
+
+    def test_lo_span_col_doppio_spazio_non_si_porta_dietro_il_separatore(self):
+        # il ritaglio taglia *all'ultimo* separatore, quindi il candidato
+        # intermedio qui è "...456 " con uno spazio in fondo, e il suo valore
+        # normalizzato è un IBAN valido. È `iban_valido` a rifiutare un valore
+        # che comincia o finisce con un separatore: senza quel rifiuto lo span
+        # coprirebbe un carattere che nel codice non c'è e il segnaposto
+        # finirebbe attaccato alla parola dopo.
+        testo = "IBAN IT60  X054  2811 1010 0000 0123 456  PRESSO BANCA"
+        assert valori(testo, Category.IBAN) == ["IT60  X054  2811 1010 0000 0123 456"]
+
+    def test_un_codice_col_trattino_che_iban_non_e_non_produce_span(self):
+        testo = "Il lotto AB12-CDEF-3456-7890-1234 è stato spedito."
+        assert Category.IBAN not in categorie(testo)
+
+    def test_il_separatore_del_cf_sta_solo_fra_i_tre_gruppi(self):
+        # la guardia più importante del CF. Se il separatore fosse ammesso fra
+        # un carattere e l'altro invece che fra i tre gruppi del modulo a
+        # caselle, questo supererebbe il checksum — il valore normalizzato
+        # *è* un codice fiscale valido — e lo span coprirebbe diciassette
+        # caratteri che codice fiscale non sono.
+        testo = "Codice fiscale RSSMRA85M0 1H501Q del contribuente."
+        assert Category.CF not in categorie(testo)
+
+    def test_il_primo_gruppo_del_cf_non_si_aggancia_alla_parola_precedente(self):
+        # il separatore dopo le prime sei lettere apre la regex a partire da
+        # qualunque parola di sei maiuscole: se una di quelle partenze
+        # producesse un match, essendo più a sinistra vincerebbe su `finditer`
+        # e il codice fiscale vero resterebbe senza span.
+        testo = "MODULO RSSMRA85M01H501Q depositato."
+        assert valori(testo, Category.CF) == ["RSSMRA85M01H501Q"]
+
+    def test_il_separatore_e_limitato_a_due_spazi(self):
+        # Il confine scelto, col suo costo dichiarato. Uno spazio, due (il
+        # copia-incolla da PDF) o un trattino sono raggruppamento; oltre è
+        # impaginazione, e incollare due celle diverse di una tabella
+        # produrrebbe uno span che copre anche il vuoto fra loro. Il costo è
+        # che un codice separato da tre spazi resta in chiaro: allargare
+        # ancora è una decisione che vuole le sue misure, non un ritocco.
+        # L'a capo dentro un codice è un'altra famiglia (issue #36, il loader)
+        # e qui non si tocca: il separatore ammette al più *un* a capo, come
+        # prima della correzione.
+        assert Category.IBAN not in categorie(
+            "Bonifico su IT60   X054   2811 1010 0000 0123 456 presso la banca."
+        )
+        assert Category.CF not in categorie(
+            "Codice fiscale RSSMRA   85M01 H501Q del contribuente."
+        )
+
+
 class TestRequisitoDiContesto:
     def test_piva_con_parola_chiave_riconosciuta(self):
         assert valori("P. IVA 12345678903", Category.PIVA) == ["12345678903"]
