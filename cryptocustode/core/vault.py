@@ -3,8 +3,6 @@
 Fuori dal vault il fascicolo vive solo nella RAM del processo.
 """
 
-from __future__ import annotations
-
 import json
 import os
 from datetime import datetime, timezone

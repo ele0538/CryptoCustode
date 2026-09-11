@@ -1,6 +1,5 @@
 """Checksum deterministici. Un valore che non supera il controllo non diventa
 uno span della sua categoria: al più resta materiale per il NER (spec §6)."""
-from __future__ import annotations
 
 import re
 

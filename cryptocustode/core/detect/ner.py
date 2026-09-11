@@ -3,7 +3,6 @@
 Il modello è generalista: non offre garanzie di completezza. Serve ad assistere
 la revisione umana, non a sostituirla.
 """
-from __future__ import annotations
 
 import re
 from functools import lru_cache

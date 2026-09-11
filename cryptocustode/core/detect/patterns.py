@@ -1,5 +1,4 @@
 """Le regex per categoria e le parole chiave che fanno da contesto obbligatorio."""
-from __future__ import annotations
 
 import re
 from re import Pattern

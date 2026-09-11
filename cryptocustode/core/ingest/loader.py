@@ -1,7 +1,5 @@
 """Facciata dell'ingresso: da byte a `Document`, e da `Document` a fascicolo."""
 
-from __future__ import annotations
-
 import hashlib
 import uuid
 

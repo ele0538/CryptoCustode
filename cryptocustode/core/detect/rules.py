@@ -4,7 +4,6 @@ di qualunque priorità.
 Gli span nascono con `entity_id` vuoto: l'assegnazione delle entità è compito
 di `core/entities.py`.
 """
-from __future__ import annotations
 
 import re
 from datetime import date
