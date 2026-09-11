@@ -28,8 +28,10 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.formparsers import MultiPartParser
 
 from cryptocustode.api.routes_fascicolo import crea_router
 from cryptocustode.core.errors import (
@@ -37,6 +39,7 @@ from cryptocustode.core.errors import (
     DuplicateFilename,
     ExportNotAllowed,
     FascicoloFull,
+    FascicoloNotFound,
     IntegrityError,
     InvalidEncoding,
     MalformedPlaceholder,
@@ -44,6 +47,7 @@ from cryptocustode.core.errors import (
     UnknownPlaceholder,
     UnresolvedAmbiguities,
     VaultUnreadable,
+    VaultVersionNotSupported,
 )
 from cryptocustode.state.session import SessionStore
 
@@ -53,6 +57,38 @@ INDIRIZZO = f"http://{HOST}:{PORTA}/"
 
 UI = Path(__file__).resolve().parents[1] / "ui"
 PAGINA = UI / "index.html"
+
+HOST_CONSENTITI = ("127.0.0.1", "localhost")
+"""Gli unici valori accettati nell'intestazione `Host`.
+
+Il bind sul loopback impedisce che l'app sia raggiungibile dalla rete, non che
+una pagina ostile aperta nel browser dell'utente le parli: un form cross-origin
+in `multipart/form-data` è una richiesta "semplice", quindi il browser la
+manda senza preflight. La risposta resta opaca a chi attacca, ma col DNS
+rebinding — un nome che risolve a 127.0.0.1 — smetterebbe di esserlo, e
+diventerebbe leggibile appena esisterà una route che restituisce il testo
+originale. Controllare l'`Host` chiude il rebinding, e costa una riga adesso
+contro una riprogettazione dopo. L'autenticazione resta fuori ambito
+(spec §17): questo non la sostituisce, chiude solo la strada che il bind sul
+loopback lascia aperta.
+"""
+
+DIMENSIONE_MASSIMA_IN_MEMORIA = 64 * 1024 * 1024
+"""Quanto di un caricamento resta in RAM prima che starlette lo scriva su disco.
+
+Il valore predefinito di `MultiPartParser.spool_max_size` è 1 MiB: oltre
+quella soglia il `SpooledTemporaryFile` che regge il file caricato rotola in un
+file vero nella cartella temporanea del sistema, **in chiaro**. Per un PDF di
+qualche megabyte — il caso normale, non il limite — vorrebbe dire scrivere su
+disco il documento che la spec §10 promette di tenere solo nella RAM del
+processo. La §16.9 concede lo swap del sistema operativo, che è un
+fatto del sistema; questa sarebbe una scrittura scelta dall'applicazione.
+
+Non è un tetto: un caricamento più grande di così non viene
+rifiutato, viene tenuto in memoria. Un tetto vero è un rifiuto, quindi un
+errore di dominio e una riga nella tabella della §13: va deciso là, non
+qui.
+"""
 
 AlPronto = Callable[[], None]
 """Cosa fare quando l'app entra in servizio. In produzione apre il browser."""
@@ -73,12 +109,14 @@ STATO_HTTP: dict[type[CryptoCustodeError], int] = {
     ScannedDocumentRejected: 422,
     FascicoloFull: 422,
     DuplicateFilename: 422,
+    FascicoloNotFound: 404,
     ExportNotAllowed: 409,
     IntegrityError: 409,
     UnresolvedAmbiguities: 409,
     UnknownPlaceholder: 422,
     MalformedPlaceholder: 422,
     VaultUnreadable: 422,
+    VaultVersionNotSupported: 422,
 }
 """La tabella della spec §13, trascritta una volta sola.
 
@@ -94,6 +132,29 @@ contratto che le issue dell'approvazione e dell'esportazione erediteranno.
 """
 
 
+def stato_http_di(errore: BaseException) -> int | None:
+    """Il primo stato dichiarato risalendo la gerarchia dell'errore.
+
+    Risalire invece di guardare il tipo esatto serve a un caso che esiste
+    già: `VaultVersionNotSupported` è sottoclasse di `VaultUnreadable`
+    perché la §13 vuole che chi cattura il genitore continui a
+    funzionare. Col confronto esatto un discendente senza riga propria
+    diventerebbe un 500 — un difetto del server per una richiesta che il server
+    ha capito benissimo.
+
+    Il test di esaustività pretende comunque una riga per ogni discendente,
+    e le due difese coprono cose diverse: il test impedisce che una riga
+    mancante arrivi fino a un utente, la risalita impedisce che, se ci
+    arrivasse, il danno sia un 500. E la risalita copre il buco del test:
+    `__subclasses__` vede solo le classi già importate, quindi un errore
+    definito in un modulo che nessun test importa gli sfuggirebbe.
+    """
+    for classe in type(errore).__mro__:
+        if classe in STATO_HTTP:
+            return STATO_HTTP[classe]
+    return None
+
+
 def rispondi_all_errore_di_dominio(richiesta: Request, errore: Exception) -> JSONResponse:
     """Traduce un errore di dominio nella sua risposta HTTP (spec §13).
 
@@ -102,10 +163,17 @@ def rispondi_all_errore_di_dominio(richiesta: Request, errore: Exception) -> JSO
     numero di pagina della scansione, l'offset del byte invalido, il nome del
     file duplicato. Riscriverli qui significherebbe averne due versioni che
     divergono.
+
+    Se nemmeno la gerarchia dichiara uno stato, l'errore viene
+    **rilanciato**: finisce in `ServerErrorMiddleware`, che lo registra col
+    suo traceback. Servirlo come 500 col messaggio di dominio lo renderebbe
+    invisibile nei log e indistinguibile, per chi guarda, da una risposta
+    voluta.
     """
-    return JSONResponse(
-        status_code=STATO_HTTP.get(type(errore), 500), content={"errore": str(errore)}
-    )
+    stato = stato_http_di(errore)
+    if stato is None:
+        raise errore
+    return JSONResponse(status_code=stato, content={"errore": str(errore)})
 
 
 def crea_app(
@@ -133,7 +201,15 @@ def crea_app(
             al_pronto()
         yield
 
+    # Soglia di processo, non dell'app: `spool_max_size` è un attributo
+    # di classe che starlette legge a ogni parsing. Sta qui e non a livello
+    # di modulo perché l'import di `api.app` non deve avere effetti
+    # collaterali su una libreria di terze parti; creare l'app sì, è
+    # il momento in cui questo processo diventa l'applicazione.
+    MultiPartParser.spool_max_size = DIMENSIONE_MASSIMA_IN_MEMORIA
+
     app = FastAPI(title="CryptoCustode", lifespan=ciclo_di_vita)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(HOST_CONSENTITI))
     app.mount("/static", StaticFiles(directory=UI), name="static")
     app.include_router(crea_router(store))
     app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)

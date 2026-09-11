@@ -7,20 +7,72 @@
 //
 // Qui non si maschera niente e non si mostra alcuna anteprima del mascherato:
 // l'invariante 3 della spec §4 vuole che il testo mascherato esca solo dal gate
-// di esportazione.
+// di esportazione. L'estratto che si vede è il testo originale del documento,
+// che la §4 autorizza esplicitamente a servire in revisione.
 
 const ROTTA = "/api/fascicolo/documenti";
+const AVVISI_MOSTRATI = 5;
+const CARATTERI_DI_ESTRATTO = 140;
 
 const modulo = document.getElementById("modulo-caricamento");
 const scelta = document.getElementById("scelta-file");
 const esiti = document.getElementById("esiti");
 const conteggio = document.getElementById("conteggio");
 
-function aggiungi(classe, testo) {
+function aggiungi(classe, testo, dettaglio) {
   const riga = document.createElement("li");
   riga.className = classe;
   riga.textContent = testo;
+  if (dettaglio) {
+    const secondaRiga = document.createElement("p");
+    secondaRiga.className = "estratto";
+    secondaRiga.textContent = dettaglio;
+    riga.appendChild(secondaRiga);
+  }
   esiti.appendChild(riga);
+}
+
+// Tre forme possibili per un rifiuto, e la terza è quella che faceva danni:
+// `errore` è la tabella della spec §13; `detail` è la validazione di FastAPI,
+// che si incontra per esempio con una richiesta senza la parte `file`; e un 500
+// non gestito arriva come testo, senza alcun corpo JSON.
+function messaggioDiErrore(esito, stato) {
+  if (esito && typeof esito.errore === "string") {
+    return esito.errore;
+  }
+  if (esito && typeof esito.detail === "string") {
+    return esito.detail;
+  }
+  if (esito && esito.detail) {
+    return "richiesta non valida";
+  }
+  return `errore ${stato}: l'applicazione non ha spiegato perché`;
+}
+
+function estrattoDi(testo) {
+  const unaRiga = (testo || "").replace(/\s+/g, " ").trim();
+  if (unaRiga === "") {
+    return "nessun testo estratto: controlla il file";
+  }
+  if (unaRiga.length <= CARATTERI_DI_ESTRATTO) {
+    return unaRiga;
+  }
+  return unaRiga.slice(0, CARATTERI_DI_ESTRATTO) + "…";
+}
+
+function mostraAvvisi(nome, segnaposto) {
+  for (const avviso of segnaposto.slice(0, AVVISI_MOSTRATI)) {
+    aggiungi(
+      "avviso",
+      `${nome} — attenzione: il testo contiene già ${avviso.segnaposto} alla ` +
+        `posizione ${avviso.posizione}. Al ripristino verrebbe confuso con un ` +
+        `segnaposto nostro e sostituito con dati veri: controllalo prima di approvare.`
+    );
+  }
+  const restanti = segnaposto.length - AVVISI_MOSTRATI;
+  if (restanti > 0) {
+    aggiungi("avviso", `${nome} — e altri ${restanti} segnaposto già presenti nel testo.`);
+  }
 }
 
 async function carica(file) {
@@ -36,28 +88,32 @@ async function carica(file) {
     return;
   }
 
-  const esito = await risposta.json();
+  // Fuori dal `try` questa riga uccideva il ciclo: su una risposta senza corpo
+  // JSON la promessa veniva rigettata, i file successivi non venivano nemmeno
+  // tentati, e l'unica traccia restava in una console che l'utente non guarda.
+  let esito = null;
+  try {
+    esito = await risposta.json();
+  } catch (errore) {
+    esito = null;
+  }
 
   if (!risposta.ok) {
-    aggiungi("rifiutato", `${file.name} — ${esito.errore}`);
+    aggiungi("rifiutato", `${file.name} — ${messaggioDiErrore(esito, risposta.status)}`);
     return;
   }
 
   aggiungi(
     "caricato",
-    `${file.name} — caricato: ${esito.caratteri} caratteri, ${esito.pagine} pagine`
+    `${file.name} — caricato: ${esito.caratteri} caratteri, ` +
+      `${esito.pagine} ${esito.pagine === 1 ? "pagina" : "pagine"}`,
+    estrattoDi(esito.testo)
   );
+  mostraAvvisi(file.name, esito.segnaposto_preesistenti);
 
-  for (const avviso of esito.segnaposto_preesistenti) {
-    aggiungi(
-      "avviso",
-      `${file.name} — attenzione: il testo contiene già ${avviso.segnaposto} ` +
-        `alla posizione ${avviso.posizione}. Al ripristino verrebbe confuso con ` +
-        `un segnaposto nostro e sostituito con dati veri: controllalo prima di approvare.`
-    );
-  }
-
-  conteggio.textContent = `Documenti nel fascicolo: ${esito.documenti_nel_fascicolo} di 10.`;
+  conteggio.textContent =
+    `Documenti nel fascicolo: ${esito.documenti_nel_fascicolo} ` +
+    `di ${esito.massimo_documenti}.`;
 }
 
 modulo.addEventListener("submit", async (evento) => {
