@@ -27,9 +27,25 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+from cryptocustode.api.routes_fascicolo import crea_router
+from cryptocustode.core.errors import (
+    CryptoCustodeError,
+    DuplicateFilename,
+    ExportNotAllowed,
+    FascicoloFull,
+    IntegrityError,
+    InvalidEncoding,
+    MalformedPlaceholder,
+    ScannedDocumentRejected,
+    UnknownPlaceholder,
+    UnresolvedAmbiguities,
+    VaultUnreadable,
+)
+from cryptocustode.state.session import SessionStore
 
 HOST = "127.0.0.1"
 PORTA = 8765
@@ -52,14 +68,64 @@ class PortaOccupata(RuntimeError):
     """La porta locale è già in uso: un altro programma, o un'altra istanza."""
 
 
-def crea_app(al_pronto: AlPronto | None = None) -> FastAPI:
-    """L'app HTTP: serve la pagina della UI e i suoi file statici.
+STATO_HTTP: dict[type[CryptoCustodeError], int] = {
+    InvalidEncoding: 422,
+    ScannedDocumentRejected: 422,
+    FascicoloFull: 422,
+    DuplicateFilename: 422,
+    ExportNotAllowed: 409,
+    IntegrityError: 409,
+    UnresolvedAmbiguities: 409,
+    UnknownPlaceholder: 422,
+    MalformedPlaceholder: 422,
+    VaultUnreadable: 422,
+}
+"""La tabella della spec §13, trascritta una volta sola.
+
+Sta qui e non dentro le route perché è un contratto dell'applicazione, non di
+un endpoint: ripetuta in ogni handler divergerebbe al primo che dimentica una
+riga. `tests/test_caricamento.py` fa rispettare che ogni errore di dominio
+abbia la sua riga, così un errore nuovo non può arrivare all'utente come 500.
+
+Il 409 al posto del 403 per l'export negato è lo scostamento consapevole
+dichiarato dalla §13: la risorsa è nello stato sbagliato, non manca un
+permesso. Le righe del 409 non hanno ancora una route che le solleva — sono il
+contratto che le issue dell'approvazione e dell'esportazione erediteranno.
+"""
+
+
+def rispondi_all_errore_di_dominio(richiesta: Request, errore: Exception) -> JSONResponse:
+    """Traduce un errore di dominio nella sua risposta HTTP (spec §13).
+
+    Il messaggio dell'errore arriva all'utente così com'è: i messaggi del core
+    sono già in italiano e già portano il dettaglio che serve a rimediare — il
+    numero di pagina della scansione, l'offset del byte invalido, il nome del
+    file duplicato. Riscriverli qui significherebbe averne due versioni che
+    divergono.
+    """
+    return JSONResponse(
+        status_code=STATO_HTTP.get(type(errore), 500), content={"errore": str(errore)}
+    )
+
+
+def crea_app(
+    *, al_pronto: AlPronto | None = None, store: SessionStore | None = None
+) -> FastAPI:
+    """L'app HTTP: serve la pagina della UI, i suoi statici e le route del fascicolo.
 
     `al_pronto` viene chiamato quando l'app entra in servizio, non quando viene
     creata: è l'aggancio con cui `avvia` apre la scheda del browser soltanto a
     server pronto. Chi crea l'app per interrogarla — i test, e in futuro altre
     route — lo lascia assente e non apre nulla.
+
+    `store` è il secondo seme: in produzione ogni avvio parte da uno store
+    vuoto, e chi costruisce l'app per interrogarla passa il proprio così da
+    poter guardare il fascicolo invece di credere alla risposta HTTP sulla
+    parola. Non è un singleton di modulo di proposito: due app dello stesso
+    processo non devono condividere il fascicolo.
     """
+    if store is None:
+        store = SessionStore()
 
     @asynccontextmanager
     async def ciclo_di_vita(app: FastAPI):
@@ -69,6 +135,8 @@ def crea_app(al_pronto: AlPronto | None = None) -> FastAPI:
 
     app = FastAPI(title="CryptoCustode", lifespan=ciclo_di_vita)
     app.mount("/static", StaticFiles(directory=UI), name="static")
+    app.include_router(crea_router(store))
+    app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)
 
     @app.get("/", include_in_schema=False)
     def pagina() -> FileResponse:

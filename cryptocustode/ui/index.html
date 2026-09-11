@@ -17,15 +17,32 @@
 
     <main>
       <section class="riquadro">
-        <h2>Ossatura attiva</h2>
+        <h2>Carica i documenti</h2>
         <p>
-          Il server ascolta solo su <code>127.0.0.1</code>, quindi questa pagina
-          non è raggiungibile dagli altri computer della rete.
+          TXT con codifica UTF-8 e PDF con testo estraibile. I PDF scansionati
+          vengono rifiutati per intero, perché senza testo non c'è niente da
+          mascherare. Massimo 10 documenti per fascicolo.
         </p>
+        <form id="modulo-caricamento">
+          <input
+            type="file"
+            id="scelta-file"
+            name="file"
+            multiple
+            accept=".txt,.pdf,text/plain,application/pdf"
+          />
+          <button type="submit">Carica</button>
+        </form>
+        <p id="conteggio" class="tenue"></p>
+        <ul id="esiti" class="esiti"></ul>
+      </section>
+
+      <section class="riquadro">
+        <h2>Poi</h2>
         <p>
-          Caricamento dei documenti, revisione degli span, approvazione ed
-          esportazione arrivano nelle slice successive: qui non c'è ancora nulla
-          da caricare, e non c'è nulla di finto che finga di funzionare.
+          Revisione del testo evidenziato, selezione manuale, approvazione ed
+          esportazione arrivano nelle slice successive. Qui non c'è nulla di
+          finto che finga di funzionare.
         </p>
       </section>
     </main>
