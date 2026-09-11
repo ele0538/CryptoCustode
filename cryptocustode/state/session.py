@@ -81,6 +81,19 @@ class SessionStore:
     def salva(self, fascicolo: Fascicolo) -> None:
         self._fascicoli[fascicolo.fascicolo_id] = fascicolo
 
+    def contiene(self, fascicolo_id: str) -> bool:
+        """Se lo store ha quel fascicolo, senza sollevare nulla.
+
+        Esiste perché "crealo se manca" sia una domanda esplicita e non un
+        `except` sull'errore di `prendi`: un'eccezione usata come segnale di
+        controllo si rompe in silenzio ogni volta che cambia la gerarchia degli
+        errori, e il chiamante non ha modo di accorgersene (issue #3).
+
+        Lo store resta l'indice e basta: quale sia il fascicolo attivo, e con
+        quale id crearlo, resta una decisione di chi chiama.
+        """
+        return fascicolo_id in self._fascicoli
+
     def prendi(self, fascicolo_id: str) -> Fascicolo:
         """Il fascicolo con quell'id, o `FascicoloNotFound` se non c'è.
 

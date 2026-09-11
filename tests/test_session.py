@@ -235,3 +235,17 @@ def test_dal_gate_dell_export_esce_un_errore_di_dominio():
     # il layer HTTP lo tradurrebbe in un 500 invece del 404 della §13.
     with pytest.raises(FascicoloNotFound):
         export_sanitized_text("f-ignoto", SessionStore())
+
+
+def test_lo_store_dice_di_non_avere_un_fascicolo_che_non_ha():
+    # Chiedere "c'è?" non deve costare un'eccezione: chi decide se creare il
+    # fascicolo al primo caricamento ha bisogno di una lettura, non di un
+    # segnale di controllo travestito da errore (issue #3).
+    assert SessionStore().contiene("f-ignoto") is False
+
+
+def test_lo_store_dice_di_avere_il_fascicolo_che_ha_salvato():
+    store = SessionStore()
+    store.salva(fascicolo_vuoto("f1"))
+    assert store.contiene("f1") is True
+
