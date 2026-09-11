@@ -40,11 +40,11 @@ Con la presente scrittura privata, redatta in data 14/03/2024 in Orbassano,
 
 il locatore Alberto Ferrante, nato il 12/05/1974, codice fiscale
 FRRLBR74E12C627I, residente in Via delle Betulle 12/A, 10043 Orbassano,
-tel. 011 123 45 67, indirizzo di posta elettronica alberto.ferrante@posta-esempio.it,
+tel. 011 123 45 67, indirizzo di posta elettronica alberto.ferrante@posta-esempio.example.com,
 
 e la conduttrice Marta Lorusso, codice fiscale LRSMRT86P55L219A,
 domiciliata in Via all'Aeroporto 3, 10121 Torino, cell. 340 1234 567,
-posta elettronica marta.lorusso@posta-esempio.it,
+posta elettronica marta.lorusso@posta-esempio.example.com,
 
 con l'intermediazione di Cooperativa alle Ginestre S.r.l., partita IVA
 03456789019, con sede in Corso della Repubblica 118, 10098 Rivoli,
@@ -78,8 +78,8 @@ VALORI_ATTESI = (
     "Corso della Repubblica 118",
     "Via sul Mare 8",
     # EMAIL
-    "alberto.ferrante@posta-esempio.it",
-    "marta.lorusso@posta-esempio.it",
+    "alberto.ferrante@posta-esempio.example.com",
+    "marta.lorusso@posta-esempio.example.com",
     # TELEFONO
     "011 123 45 67",
     "340 1234 567",
