@@ -1,12 +1,22 @@
+import hashlib
+
 import pytest
 
 from cryptocustode.core.detect.ner import (
     MAPPA_LABEL,
     carica_modello,
     solo_parole_di_struttura,
+    tronca_al_primo_a_capo,
     trova_per_ner,
 )
-from cryptocustode.core.models import Category, Source
+from cryptocustode.core.entities import analizza_documento
+from cryptocustode.core.models import Category, Document, Source, fascicolo_vuoto
+from cryptocustode.state.session import (
+    SessionStore,
+    analisi_completata,
+    approva,
+    export_sanitized_text,
+)
 
 # Il marcatore vale per tutto il file: anche i test che non chiamano il modello
 # pagano l'import di spaCy, che questo modulo fa all'import.
@@ -100,3 +110,113 @@ class TestScartoDelleStopword:
         assert any("Ferrante" in v for v in trovati), (
             "il filtro non deve far cadere il nome vero"
         )
+
+
+BUSTA_PAGA = """AZIENDA ESEMPIO S.R.L.
+Prospetto paga - marzo 2024
+
+Dipendente: FERRANTE ALBERTO
+Matricola 0012345 - Qualifica: impiegato 5 livello
+Residenza: Via delle Betulle 12/A lotto 3, 10043 Orbassano
+Assunto con decorrenza 1 marzo 2024.
+
+Cognome e nome: LORUSSO MARTA
+QUALIFICA: quadro
+Residente in Frazione Tetti Neirotti 8, 10098 Rivoli
+Luogo di nascita: Torino
+"""
+
+
+def _esporta_mascherato(testo: str) -> str:
+    """Il testo mascherato che esce dal gate vero (spec §8).
+
+    Passa dalla catena completa — `analizza_documento` -> `analisi_completata`
+    -> `approva` -> `export_sanitized_text` — e non da `maschera_documento`
+    diretto: il difetto della #36 si vede sul prodotto, cioè sul testo che
+    l'IA riceve, e non sugli span.
+    """
+    fascicolo = fascicolo_vuoto("f36")
+    documento = Document(
+        doc_id="d36", filename="busta.pdf", text=testo, page_offsets=[0],
+        sha256=hashlib.sha256(testo.encode()).hexdigest(),
+    )
+    fascicolo.documents.append(documento)
+    analizza_documento(fascicolo, documento)
+    analisi_completata(fascicolo)
+    approva(fascicolo)
+    store = SessionStore()
+    store.salva(fascicolo)
+    return export_sanitized_text("f36", store)["busta.pdf"]
+
+
+class TestSpanCheAttraversanoLAcapo:
+    """Issue #36: lo span del NER attraversa l'a capo e si porta dentro
+    l'etichetta del campo successivo, così due campi interi della busta paga
+    spariscono dentro un segnaposto e due righe si fondono."""
+
+    def test_nessuno_span_del_ner_contiene_un_a_capo(self):
+        attraversano = [
+            BUSTA_PAGA[s.start:s.end]
+            for s in trova_per_ner(BUSTA_PAGA, "d36")
+            if "\n" in BUSTA_PAGA[s.start:s.end]
+        ]
+        assert attraversano == [], f"span che attraversano l'a capo: {attraversano}"
+
+    def test_il_testo_mascherato_non_fonde_due_righe(self):
+        mascherato = _esporta_mascherato(BUSTA_PAGA)
+        assert mascherato.count("\n") == BUSTA_PAGA.count("\n"), (
+            f"il numero di righe deve restare quello dell'originale:\n{mascherato}"
+        )
+
+    def test_i_campi_inghiottiti_sopravvivono_nel_testo_mascherato(self):
+        """Matricola e qualifica non devono sparire dentro un `[PERSONA_n]`."""
+        mascherato = _esporta_mascherato(BUSTA_PAGA)
+        for atteso in ("Matricola 0012345", "Qualifica", "Assunto con decorrenza",
+                       "Luogo di nascita"):
+            assert atteso in mascherato, (
+                f"{atteso!r} è stato inghiottito da un segnaposto:\n{mascherato}"
+            )
+
+    def test_il_nome_prima_dell_a_capo_resta_mascherato(self):
+        """Troncare non deve far fuggire quello che il NER aveva preso: è la
+        ragione per cui si tronca invece di scartare."""
+        mascherato = _esporta_mascherato(BUSTA_PAGA)
+        for segreto in ("ALBERTO", "Orbassano", "Rivoli"):
+            assert segreto not in mascherato, (
+                f"{segreto!r} è rimasto in chiaro:\n{mascherato}"
+            )
+
+    @pytest.mark.parametrize(
+        ("valore", "atteso"),
+        [
+            ("ALBERTO\nMatricola 0012345 - Qualifica", "ALBERTO"),
+            ("Orbassano\nAssunto", "Orbassano"),
+            ("Rivoli\nLuogo", "Rivoli"),
+            ("0012345\nQUALIFICA", "0012345"),
+            # il taglio porta via anche gli spazi rimasti in coda
+            ("Torino   \nVia Roma", "Torino"),
+            ("Marta\r\nLorusso", "Marta"),
+            # senza a capo il valore non viene toccato
+            ("Mario Rossi", "Mario Rossi"),
+            ("Via delle Betulle 12/A", "Via delle Betulle 12/A"),
+        ],
+    )
+    def test_il_taglio_tiene_la_parte_prima_del_primo_a_capo(self, valore, atteso):
+        assert tronca_al_primo_a_capo(valore) == atteso
+
+    def test_il_resto_del_taglio_fatto_di_sola_struttura_viene_scartato(self):
+        """Composizione con `2c61c8f`: il troncamento viene *prima* dello
+        scarto delle parole di struttura, così un resto come 'Residente in'
+        non diventa un segnaposto."""
+        resto = tronca_al_primo_a_capo("Residente in\nFrazione Tetti Neirotti 8")
+        assert resto == "Residente in"
+        assert solo_parole_di_struttura(resto) is True
+
+    def test_il_taglio_non_spezza_mai_una_parola(self):
+        """Si taglia su un a capo, che è per costruzione un confine di token:
+        il resto non è mai mezzo nome tranne quando l'estrazione stessa aveva
+        già spezzato la parola."""
+        for valore in ("ALBERTO\nMatricola", "Orbassano\nAssunto"):
+            resto = tronca_al_primo_a_capo(valore)
+            assert valore.startswith(resto)
+            assert resto == resto.strip()

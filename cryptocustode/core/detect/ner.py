@@ -100,6 +100,53 @@ def solo_parole_di_struttura(valore: str) -> bool:
     return True
 
 
+def tronca_al_primo_a_capo(valore: str) -> str:
+    """La parte di `valore` che precede il primo a capo, senza spazi in coda.
+
+    Un a capo separa due campi del documento, non due parti dello stesso dato:
+    l'a capo è il confine, e qui è dove lo span si ferma (issue #36).
+
+    **Si tronca, non si scarta.** Sullo span vorace il troncamento dà la
+    risposta giusta e basta — `'ALBERTO\\nMatricola 0012345 - Qualifica'`
+    diventa `'ALBERTO'`, `'Orbassano\\nAssunto'` diventa `'Orbassano'` — perché
+    il modello parte dall'entità vera e poi dilaga oltre il confine. Ma la
+    ragione per cui si tronca vale anche quando il troncamento *non* dà la
+    risposta giusta, ed è il caso che segue.
+
+    **Cosa viene sacrificato: il nome legittimamente spezzato a capo
+    dall'estrazione PDF.** Se il testo estratto contiene `'Alberto\\nFerrante'`
+    e il modello lo riconosce come una persona sola, da qui esce `'Alberto'` e
+    il cognome resta in chiaro. È una perdita reale e dichiarata, ed è la stessa
+    famiglia del limite già noto per cui un codice fiscale spezzato a capo non
+    viene rilevato. La si accetta perché le due direzioni non sono simmetriche:
+
+    - troncare fa fuggire `'Ferrante'`;
+    - scartare lo span farebbe fuggire `'Alberto Ferrante'`, cioè tutto.
+
+    La fuga del troncamento è un sottoinsieme stretto della fuga dello scarto,
+    quindi troncare domina su ogni testo. È la stessa asimmetria che governa
+    `solo_parole_di_struttura` (commit `2c61c8f`): scartare uno span del NER è
+    la direzione che fa fuggire i dati, e non la si prende senza necessità.
+
+    All'obiezione che mezzo nome mascherato sia peggio di niente, perché dà
+    falsa sicurezza, la risposta sta nella spec §16.7: la gamba statistica è
+    dichiaratamente inaffidabile e assiste la revisione umana invece di
+    sostituirla. Quello che resta in chiaro resta *visibile* a chi rivede, che
+    può marcarlo a mano; quello che si scarta è in chiaro esattamente allo
+    stesso modo, solo con un segnaposto in meno accanto. Nessuna delle due
+    scelte è una garanzia, e fra le due si prende quella che maschera di più.
+
+    Si taglia solo sull'a capo, che è un confine di campo. Non si taglia sulle
+    corse di spazi (`'Alberto   Luogo'`, colonne di un PDF): uno spazio sta
+    dentro i nomi veri, quindi lì il confine non è deterministico e la regola
+    smetterebbe di essere verificabile.
+    """
+    testa, a_capo, _ = valore.partition("\n")
+    if not a_capo:
+        return valore
+    return testa.rstrip()
+
+
 def trova_per_ner(testo: str, doc_id: str) -> list[Span]:
     """Span ricavati dal NER, senza risoluzione delle sovrapposizioni."""
     documento = carica_modello()(testo)
