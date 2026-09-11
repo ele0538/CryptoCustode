@@ -217,7 +217,9 @@ il pavimento vecchio: non un rischio di merge, ma lavoro che nasce già da rifar
 Verificata al merge della #14, il ritaglio si applica **solo** alle categorie che hanno un
 validatore (`rules.py`, `_accettato` ritorna il valore intatto quando il validatore manca),
 e l'insieme dei validatori — CF, DATA, IBAN, PIVA, TELEFONO — coincide con quello dei
-pavimenti dichiarati: il ripiego `.get(categoria, 0)` non è raggiungibile e INDIRIZZO non
+pavimenti dichiarati: il ripiego `.get(categoria, 0)` non è raggiungibile **oggi** — ed è
+lì apposta per la prossima categoria che avrà un validatore, non è codice morto da
+rimuovere — e INDIRIZZO non
 entra mai nel ciclo. Il suo comportamento è identico a prima e la #22 non avrebbe dovuto
 rifare niente.
 
