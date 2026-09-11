@@ -452,6 +452,7 @@ un segnaposto e sostituita con dati veri, corrompendo il testo.
 | Segnaposto estraneo al fascicolo | `UnknownPlaceholder` | 422 | elenco dei segnaposto non riconosciuti |
 | Segnaposto alterato | `MalformedPlaceholder` | 422 | i frammenti anomali, citati letteralmente |
 | Password del vault errata o file corrotto | `VaultUnreadable` | 422 | "password errata o file danneggiato" |
+| Vault scritto in un formato più recente | `VaultVersionNotSupported` | 422 | il formato trovato, il massimo leggibile e l'invito ad aggiornare |
 
 **Perché 409 e non 403.** Le specifiche di partenza indicavano 403 per l'export negato,
 ma 403 significa "non hai il permesso", mentre qui la risorsa è nello stato sbagliato,
@@ -461,6 +462,15 @@ reversibile in una riga.
 **Perché il vault non distingue i due casi di errore.** La verifica del tag GCM fallisce
 identicamente per password errata e per file manomesso. Distinguerli comunicherebbe a chi
 ci prova che la password è l'unico ostacolo rimasto.
+
+**L'unica eccezione, e perché non è una falla.** `VaultVersionNotSupported` è il solo
+fallimento del vault con un messaggio proprio, ed è una sottoclasse di `VaultUnreadable`
+così chi cattura il genitore continua a funzionare. Il numero di versione vive **dentro**
+il payload cifrato: per arrivare a leggerlo servono già la password giusta e il file
+integro, quindi il messaggio distinto non rivela nulla a chi è ancora fuori. La guardia
+chiude solo in avanti — un formato più vecchio resta leggibile, altrimenti aggiornare
+l'applicazione butterebbe via il lavoro dell'utente — e un `vault_version` che non sia un
+intero vale come payload corrotto, col messaggio indistinguibile degli altri (issue #17).
 
 ## 14. Strategia di test
 

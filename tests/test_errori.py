@@ -18,6 +18,7 @@ NOMI_ATTESI = {
     "UnknownPlaceholder",
     "MalformedPlaceholder",
     "VaultUnreadable",
+    "VaultVersionNotSupported",
 }
 
 

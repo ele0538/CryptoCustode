@@ -54,3 +54,18 @@ class MalformedPlaceholder(CryptoCustodeError):
 
 class VaultUnreadable(CryptoCustodeError):
     """Password errata o file danneggiato: i due casi non si distinguono."""
+
+
+class VaultVersionNotSupported(VaultUnreadable):
+    """Vault scritto da una versione più recente dell'applicazione.
+
+    Sottoclasse e non fratello di `VaultUnreadable`: un vault che non si sa
+    leggere *è* illeggibile, quindi chi cattura il genitore continua a
+    funzionare, e chi vuole distinguere il caso può prenderlo per nome.
+
+    È l'unico fallimento del vault con un messaggio proprio, e non contraddice
+    la regola della §13 sul messaggio indistinguibile: il numero di versione
+    vive dentro il payload cifrato, quindi per arrivare a leggerlo servono già
+    la password giusta e il file integro. Dirlo a quel punto non rivela nulla a
+    chi è ancora fuori (issue #17).
+    """
