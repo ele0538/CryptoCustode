@@ -903,6 +903,153 @@ class TestAltreCategorie:
         assert valori("Pratica 2024/ABC-77.", Category.PRATICA) == ["Pratica 2024/ABC-77"]
 
 
+class TestPraticaECatasto:
+    """Issue #38: il limite §16.2 riguarda i formati *privi* delle parole
+    chiave. Questi casi non sono quelli: la parola chiave c'è, e il valore
+    resta comunque in chiaro perché la *forma* attorno non è contemplata —
+    parole fra la chiave e l'identificativo, sigle non elencate, ordine
+    invertito.
+
+    Ogni sigla corta ammessa porta con sé la propria guardia anti-vorace, e la
+    guardia è scelta perché diventa rossa se si toglie il confine che
+    sorveglia: `RG` senza punti è una targa, `F24` senza punto è un modello
+    fiscale, `Rif.` finisce per `f.`. Le parole ammesse fra chiave e
+    identificativo sono un'alternanza chiusa, mai `.{0,N}`: la strada del
+    testo qualunque è quella che #15 e #22 hanno misurato e scartato per gli
+    indirizzi."""
+
+    # --- PRATICA: parole fra la parola chiave e l'identificativo ---
+
+    def test_pratica_qualificata_da_sfratto(self):
+        testo = "La pratica di sfratto n. 2024/318 e depositata."
+        assert valori(testo, Category.PRATICA) == ["pratica di sfratto n. 2024/318"]
+
+    def test_pratica_qualificata_da_esecuzione(self):
+        testo = "La pratica di esecuzione n. 2024/318 e depositata."
+        assert valori(testo, Category.PRATICA) == ["pratica di esecuzione n. 2024/318"]
+
+    def test_pratica_edilizia(self):
+        testo = "La pratica edilizia n. 2024/318 e stata protocollata."
+        assert valori(testo, Category.PRATICA) == ["pratica edilizia n. 2024/318"]
+
+    def test_fra_la_chiave_e_l_identificativo_non_passa_testo_qualunque(self):
+        # Guardia dell'alternanza chiusa. Con un ponte generico — `.{0,N}` o
+        # `(?:\s+\w+){0,3}` — questa frase produce lo span "pratica va chiusa
+        # entro 300", che maschera prosa comune e un termine di giorni: uno
+        # span vorace su testo che non gli appartiene, il difetto peggiore di
+        # quello chiuso qui.
+        testo = "La pratica va chiusa entro 300 giorni dalla notifica."
+        assert valori(testo, Category.PRATICA) == []
+
+    # --- PRATICA: R.G., il numero di ruolo generale ---
+
+    def test_ruolo_generale(self):
+        testo = "Procedimento iscritto al n. R.G. 1234/2024 del Tribunale."
+        assert valori(testo, Category.PRATICA) == ["R.G. 1234/2024"]
+
+    def test_ruolo_generale_con_le_lettere_staccate(self):
+        testo = "Iscritto al R. G. 1234/2024 del Tribunale."
+        assert valori(testo, Category.PRATICA) == ["R. G. 1234/2024"]
+
+    def test_la_sigla_senza_punti_non_e_un_ruolo_generale(self):
+        # Guardia anti-vorace del punto obbligatorio: `RG` nudo davanti a delle
+        # cifre è la sigla di provincia di una vecchia targa, non un numero di
+        # ruolo. Ammettere `RG` senza punti rende questa frase uno span.
+        testo = "Targa RG 123456 rilevata dall'autovelox."
+        assert valori(testo, Category.PRATICA) == []
+
+    def test_la_sigla_non_si_aggancia_alla_coda_di_una_parola(self):
+        # Guardia anti-vorace del confine `\b`: senza di lui la sigla si
+        # trova dentro qualunque parola che finisce per `r` seguita da un
+        # punto — `cfr.`, `nr.`, `corr.` — e lo span diventa "r. G. 2024",
+        # cioè una citazione bibliografica mascherata come pratica.
+        testo = "Si veda cfr. G. 2024 nel paragrafo precedente."
+        assert valori(testo, Category.PRATICA) == []
+
+    def test_le_iniziali_di_un_nome_non_sono_un_ruolo_generale(self):
+        # La guardia già presente in `trova_per_regole` (il gruppo 1 deve
+        # contenere almeno una cifra) regge anche la sigla nuova: dopo le
+        # iniziali di una persona viene un cognome, non un identificativo.
+        testo = "Il condominio di Via R. Gandolfi 12 e stato ristrutturato."
+        assert valori(testo, Category.PRATICA) == []
+
+    # --- PRATICA: la polizza ---
+
+    def test_polizza_assicurativa(self):
+        testo = "Polizza assicurativa n. 123456789 con scadenza annuale."
+        assert valori(testo, Category.PRATICA) == [
+            "Polizza assicurativa n. 123456789"
+        ]
+
+    # --- CATASTO: le abbreviazioni estreme F. e P.lla ---
+
+    def test_foglio_e_particella_abbreviati_al_massimo(self):
+        testo = "Immobile censito al F. 24 P.lla 318 sub 7."
+        assert valori(testo, Category.CATASTO) == ["F. 24 P.lla 318 sub 7"]
+
+    def test_la_lettera_sola_senza_punto_non_e_un_foglio(self):
+        # Guardia anti-vorace del punto obbligatorio dopo `F`: senza di lui
+        # `F24` — il modello di pagamento più diffuso d'Italia — apre uno span
+        # che arriva fino alla particella e si mangia la frase in mezzo.
+        testo = "Il modello F24 va pagato, particella 318 del terreno."
+        assert valori(testo, Category.CATASTO) == []
+
+    def test_la_lettera_sola_non_si_aggancia_alla_coda_di_una_parola(self):
+        # Guardia anti-vorace del confine `\b`: senza di lui la `f.` si trova
+        # dentro `Rif.`, `cfr.`, `prof.`, e lo span parte in mezzo a una
+        # parola inghiottendo il testo fino alla particella.
+        testo = "Rif. 24 del contratto, particella 318 del terreno."
+        assert valori(testo, Category.CATASTO) == []
+
+    def test_la_particella_da_sola_non_e_un_riferimento_catastale(self):
+        # Le due metà restano obbligatorie: un'abbreviazione corta non diventa
+        # mai da sola un innesco.
+        testo = "Il fabbricato alla P.lla 318 sub 7 e accatastato."
+        assert valori(testo, Category.CATASTO) == []
+
+    # --- CATASTO: ordine invertito ---
+
+    def test_ordine_invertito(self):
+        testo = "Immobile censito alla particella 318 del foglio 24."
+        assert valori(testo, Category.CATASTO) == ["particella 318 del foglio 24"]
+
+    def test_ordine_invertito_con_il_sub(self):
+        testo = "Immobile censito alla particella 318 sub 7 del foglio 24."
+        assert valori(testo, Category.CATASTO) == [
+            "particella 318 sub 7 del foglio 24"
+        ]
+
+    def test_ordine_invertito_pretende_comunque_le_due_meta(self):
+        # Il ramo invertito è simmetrico a quello diretto, non più permissivo:
+        # senza il foglio non produce nulla.
+        testo = "Immobile censito alla particella 318 del catasto fabbricati."
+        assert valori(testo, Category.CATASTO) == []
+
+    # --- controprove: le forme già coperte non regrediscono ---
+
+    def test_la_pratica_semplice_resta_coperta(self):
+        assert valori("Pratica n. 2024/318 aperta.", Category.PRATICA) == [
+            "Pratica n. 2024/318"
+        ]
+
+    def test_il_protocollo_resta_coperto(self):
+        assert valori("Prot. n. 12345/2024 del registro.", Category.PRATICA) == [
+            "Prot. n. 12345/2024"
+        ]
+
+    def test_foglio_e_particella_per_esteso_restano_coperti(self):
+        testo = "Immobile al foglio 24 particella 318 sub 7."
+        assert valori(testo, Category.CATASTO) == ["foglio 24 particella 318 sub 7"]
+
+    def test_foglio_e_mappale_abbreviati_col_punto_restano_coperti(self):
+        testo = "Immobile al Fg. 24 Mapp. 318 sub 7."
+        assert valori(testo, Category.CATASTO) == ["Fg. 24 Mapp. 318 sub 7"]
+
+    def test_foglio_e_mappale_separati_da_virgole_restano_coperti(self):
+        testo = "Immobile al fg 24, mapp 318, sub 7."
+        assert valori(testo, Category.CATASTO) == ["fg 24, mapp 318, sub 7"]
+
+
 class TestImportoSeguitoDalSimbolo:
     """Ruling C2: `\\b` stava dopo tutta l'alternanza della valuta, quindi il
     ramo del simbolo pretendeva un carattere di parola subito dopo `€`, che è

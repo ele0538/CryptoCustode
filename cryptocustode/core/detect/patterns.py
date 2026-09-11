@@ -116,16 +116,77 @@ PATTERN: dict[Category, Pattern[str]] = {
         # spazio e `(` non c'è alcun confine di parola.
         r"|(?:\(0\d{1,3}\)|\b0\d{1,3})(?:[\s.\-/]?\d){6,9}\b"
     ),
+    # Alternanza esplicita: la spec §6 nomina sia `foglio` sia l'abbreviazione
+    # `fg`, che una forma con la `l` obbligatoria non potrebbe mai matchare.
+    #
+    # `f\.` e `p\.lla` sono le abbreviazioni estreme dei documenti notarili
+    # ("Immobile censito al F. 24 P.lla 318 sub 7"), e senza di loro il
+    # riferimento restava in chiaro pur avendo la parola chiave (issue #38).
+    # `f` è una lettera sola, quindi porta due confini che la #22 ha insegnato
+    # a pretendere da ogni sigla corta:
+    #   - il punto è **obbligatorio**. Senza, `F24` — il modello di pagamento
+    #     più diffuso d'Italia — diventa un foglio e apre uno span che corre
+    #     fino alla particella mangiandosi la frase in mezzo.
+    #   - `\b` davanti a tutta l'alternanza. Senza, la `f.` si trova dentro
+    #     `Rif.`, `cfr.`, `prof.`: lo span parte in mezzo a una parola. Il
+    #     confine vale anche per le forme lunghe, dove toglie solo match che
+    #     cominciavano dentro un'altra parola e che nessuno voleva.
+    # La guardia strutturale resta comunque la più forte: nessuna delle due
+    # metà, per quanto abbreviata, produce uno span da sola.
+    #
+    # Il ramo invertito ("particella 318 del foglio 24") è simmetrico al
+    # diretto — stesse due metà obbligatorie, stesso tetto di 40 caratteri fra
+    # loro — e non allenta nulla: è l'ordine, non la permissività, a cambiare.
+    # Le due metà sono ripetute per esteso invece di stare in una costante di
+    # modulo perché la correzione deve restare dentro questa voce.
+    #
+    # Misurato e scartato: allargare il `.{0,40}?` per coprire
+    # "foglio 24 del Comune di Orbassano, sezione urbana, particella 318"
+    # (42 caratteri fra le due metà). Alzare il tetto è ammettere testo
+    # qualunque nel mezzo, la strada che #15 e #22 hanno scartato per gli
+    # indirizzi, e qui è peggio: con `re.DOTALL` il divario attraversa gli a
+    # capo, quindi uno span più largo può saldare due frasi diverse e
+    # mascherare la prosa in mezzo. La forma resta al tagging manuale della
+    # §16.2.
     Category.CATASTO: re.compile(
-        # Alternanza esplicita: la spec §6 nomina sia `foglio` sia l'abbreviazione
-        # `fg`, che una forma con la `l` obbligatoria non potrebbe mai matchare.
-        r"(?:foglio|fogli|fog|fg)[\s.:n°]*\d{1,4}.{0,40}?"
-        r"(?:part(?:icella)?|mapp(?:ale)?)[\s.:n°]*\d{1,5}"
-        r"(?:[\s,]*sub\.?[\s.:n°]*\d{1,4})?",
+        r"\b(?:foglio|fogli|fog|fg|f\.)[\s.:n°]*\d{1,4}.{0,40}?"
+        r"\b(?:part(?:icella)?|p\.lla|mapp(?:ale)?)[\s.:n°]*\d{1,5}"
+        r"(?:[\s,]*sub\.?[\s.:n°]*\d{1,4})?"
+        r"|\b(?:part(?:icella)?|p\.lla|mapp(?:ale)?)[\s.:n°]*\d{1,5}"
+        r"(?:[\s,]*sub\.?[\s.:n°]*\d{1,4})?.{0,40}?"
+        r"\b(?:foglio|fogli|fog|fg|f\.)[\s.:n°]*\d{1,4}",
         re.IGNORECASE | re.DOTALL,
     ),
+    # `\b` davanti all'alternanza delle parole chiave: senza di lui `r\.g\.` si
+    # aggancia alla coda di qualunque parola che finisce per `r` seguita da un
+    # punto — `cfr.`, `nr.`, `corr.` — e "Si veda cfr. G. 2024" diventa uno
+    # span (issue #38).
+    #
+    # `r\.\s?g\.?` è il numero di ruolo generale, l'identificativo con cui un
+    # procedimento è iscritto a ruolo. Il punto dopo la `R` è **obbligatorio**:
+    # `RG` nudo davanti a delle cifre è la sigla di provincia di una vecchia
+    # targa, non un numero di ruolo, e ammetterlo mascherebbe le targhe di
+    # mezza Sicilia. Il punto finale invece è facoltativo, perché "R.G 1234" si
+    # scrive.
+    #
+    # `polizza` è una posizione assicurativa: un identificativo che presso la
+    # compagnia risale a un contraente con nome e cognome. Non è nell'elenco
+    # della §6, ma è la stessa famiglia — un numero che individua una pratica —
+    # e la parola è lunga e non ambigua, quindi non porta i rischi di una sigla.
+    #
+    # Fra la parola chiave e l'identificativo i documenti infilano un
+    # qualificatore ("pratica di sfratto n. 2024/318", "polizza assicurativa
+    # n. 123456789") e la classe di separatori, che ammette solo punteggiatura,
+    # rompeva il match lasciando il numero in chiaro. Il gruppo che li ammette è
+    # un'**alternanza chiusa** di forme intere, mai `.{0,N}` né `\w+`: con un
+    # ponte generico "La pratica va chiusa entro 300 giorni" diventa lo span
+    # "pratica va chiusa entro 300", cioè prosa mascherata — lo stesso difetto
+    # che #15 e #22 hanno rifiutato di introdurre negli indirizzi. Una forma
+    # nuova si aggiunge a questa lista, non allentando il confine.
     Category.PRATICA: re.compile(
-        r"(?:pratica|fascicolo|prot(?:ocollo)?|rif(?:erimento)?)"
+        r"\b(?:pratica|fascicolo|polizza|prot(?:ocollo)?|rif(?:erimento)?"
+        r"|r\.\s?g\.?)"
+        r"(?:\s+(?:di\s+(?:sfratto|esecuzione)|edilizia|assicurativa))?"
         # L'identificativo non può chiudersi con punteggiatura: altrimenti il
         # punto che termina la frase entra nello span e il masking se lo mangia.
         r"[\s.:n°/\-]{0,6}([A-Za-z0-9][A-Za-z0-9/._\-]{1,19}[A-Za-z0-9])",
