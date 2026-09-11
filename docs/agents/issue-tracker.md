@@ -192,9 +192,24 @@ proprietà del modulo e non si rinegozia a ogni ticket.
 Nel caso #14/#22 la divisione per righe è stata proposta e poi scartata, per una ragione
 tecnica prima che di etichetta: la #14 trasforma `_LUNGHEZZA_MINIMA_RITAGLIO` in
 `rules.py` da valore unico tarato sull'IBAN a pavimento *per categoria*, e quel pavimento
-governa il ritaglio di tutte le categorie, INDIRIZZO compresa. Un agente che avesse
-fissato in parallelo i confini dello span dell'indirizzo li avrebbe fissati contro il
-pavimento vecchio: non un rischio di merge, ma lavoro che nasce già da rifare.
+sembrava governare il ritaglio di tutte le categorie, INDIRIZZO compresa. Un agente che
+avesse fissato in parallelo i confini dello span dell'indirizzo li avrebbe fissati contro
+il pavimento vecchio: non un rischio di merge, ma lavoro che nasce già da rifare.
+
+**Epilogo, perché la lezione non poggi su un fatto falso: l'interazione non esisteva.**
+Verificata al merge della #14, il ritaglio si applica **solo** alle categorie che hanno un
+validatore (`rules.py`, `_accettato` ritorna il valore intatto quando il validatore manca),
+e l'insieme dei validatori — CF, DATA, IBAN, PIVA, TELEFONO — coincide con quello dei
+pavimenti dichiarati: il ripiego `.get(categoria, 0)` non è raggiungibile e INDIRIZZO non
+entra mai nel ciclo. Il suo comportamento è identico a prima e la #22 non avrebbe dovuto
+rifare niente.
+
+Questo **non** riabilita la divisione per righe, la rafforza al contrario: al momento della
+decisione l'accoppiamento era plausibile e nessuno dei due poteva escluderlo senza fondere
+prima. Rinviare è costato qualche ora di attesa su un ticket non urgente; parallelizzare
+avrebbe potuto costare il lavoro di un agente intero. **Si rinvia sull'accoppiamento
+sospetto e si verifica all'integrazione** — ed è lì che il sospetto va sciolto per
+iscritto, come qui, invece di restare nella memoria di chi c'era.
 
 La regola non è calata dall'alto, è il residuo di un disaccordo, e conviene saperlo:
 la divisione per righe l'aveva proposta `9c` — e per quei due ticket sarebbe stata
