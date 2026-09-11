@@ -159,6 +159,14 @@ il racconto di un'altra sessione invecchia senza avvisare — un fatto non annun
 essere scaduto. E la pratica che l'ha fermato vale per conto suo: leggere il diff di
 un'altra sessione mentre si scrive, invece di aspettarne il risultato.
 
+**Guardare un pezzo e concludere sull'intero è più insidioso del non guardare affatto**,
+perché lascia la sensazione di aver controllato. Nessuno dei tre errori del 2026-09-11 è
+stato pigrizia: un diff letto con `tail -25`, da cui si conclude quanti hunk contiene;
+un «`git add` a tappeto» dedotto invece che verificato nel commit; un «non raggiungibile»
+scritto dopo aver controllato il valore di ripiego ma non il commento accanto che ne
+spiegava lo scopo. In tutti e tre la verifica *sembrava* fatta. Quando verifichi, verifica
+la cosa di cui stai per affermare l'estensione — non un suo campione.
+
 ### Prima di prendere una issue
 
 1. `glab issue view <n> --comments` e leggi **le note**, non solo assegnatario e label:
@@ -217,11 +225,13 @@ il pavimento vecchio: non un rischio di merge, ma lavoro che nasce già da rifar
 Verificata al merge della #14, il ritaglio si applica **solo** alle categorie che hanno un
 validatore (`rules.py`, `_accettato` ritorna il valore intatto quando il validatore manca),
 e l'insieme dei validatori — CF, DATA, IBAN, PIVA, TELEFONO — coincide con quello dei
-pavimenti dichiarati: il ripiego `.get(categoria, 0)` non è raggiungibile e INDIRIZZO non
+pavimenti dichiarati: il ripiego `.get(categoria, 0)` non è raggiungibile **oggi** — ed è
+lì apposta per la prossima categoria che avrà un validatore, non è codice morto da
+rimuovere — e INDIRIZZO non
 entra mai nel ciclo. Il suo comportamento è identico a prima e la #22 non avrebbe dovuto
 rifare niente.
 
-Questo **non** riabilita la divisione per righe, la rafforza al contrario: al momento della
+Questo **non** riabilita la divisione per righe: semmai rafforza la regola, perché al momento della
 decisione l'accoppiamento era plausibile e nessuno dei due poteva escluderlo senza fondere
 prima. Rinviare è costato qualche ora di attesa su un ticket non urgente; parallelizzare
 avrebbe potuto costare il lavoro di un agente intero. **Si rinvia sull'accoppiamento
