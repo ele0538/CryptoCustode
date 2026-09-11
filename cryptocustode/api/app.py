@@ -84,10 +84,25 @@ disco il documento che la spec §10 promette di tenere solo nella RAM del
 processo. La §16.9 concede lo swap del sistema operativo, che è un
 fatto del sistema; questa sarebbe una scrittura scelta dall'applicazione.
 
-Non è un tetto: un caricamento più grande di così non viene
-rifiutato, viene tenuto in memoria. Un tetto vero è un rifiuto, quindi un
-errore di dominio e una riga nella tabella della §13: va deciso là, non
-qui.
+**Alzare la soglia non chiude l'invariante della §10, la sposta.** I
+documenti reali non toccano più il disco, ma un caricamento oltre questa
+soglia rotola ancora in un file in chiaro nella cartella temporanea, e niente
+lo rifiuta: la promessa «fuori dal vault il fascicolo vive solo nella RAM del
+processo» resta violabile con un input più grande, e quel file sopravvive al
+processo in un posto che nessuno pulisce.
+
+Chiuderla davvero vuole un tetto, cioè un rifiuto, cioè un errore di
+dominio e una riga nella tabella della §13: è la issue #27. Due vincoli
+per chi la prenderà, verificati qui:
+
+- il tetto deve stare **sotto** questa soglia, altrimenti il rifiuto arriva
+  dopo la scrittura e non serve a niente;
+- il controllo non può stare nel corpo della route. Starlette applica
+  `max_part_size` solo alle parti che **non** sono file
+  (`formparsers.on_part_data`), quindi un file caricato non ha alcun limite, e
+  quando la route riceve il suo `UploadFile` i byte sono già stati scritti.
+  L'unico punto utile precede la lettura: `Content-Length`, o un conteggio
+  sullo stream in ingresso.
 """
 
 AlPronto = Callable[[], None]
@@ -149,6 +164,14 @@ def stato_http_di(errore: BaseException) -> int | None:
     `__subclasses__` vede solo le classi già importate, quindi un errore
     definito in un modulo che nessun test importa gli sfuggirebbe.
     """
+    # Attenzione a chi tocca il test di esaustività: questa risalita
+    # **sposta** la rete, non la aggiunge. Col confronto sul tipo esatto
+    # una riga mancante era rumorosa a runtime (un 500); risalendo, un
+    # errore nuovo sotto una classe già mappata eredita in silenzio il
+    # codice del padre, che potrebbe non essere il suo. Ciò che rende
+    # sicura questa scelta è soltanto quel test: la protezione è
+    # passata dal runtime al tempo di test, e indebolire il test riapre la
+    # classe di difetto in silenzio.
     for classe in type(errore).__mro__:
         if classe in STATO_HTTP:
             return STATO_HTTP[classe]
