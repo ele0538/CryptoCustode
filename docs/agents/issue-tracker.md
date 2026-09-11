@@ -221,7 +221,7 @@ pavimenti dichiarati: il ripiego `.get(categoria, 0)` non è raggiungibile e IND
 entra mai nel ciclo. Il suo comportamento è identico a prima e la #22 non avrebbe dovuto
 rifare niente.
 
-Questo **non** riabilita la divisione per righe, la rafforza al contrario: al momento della
+Questo **non** riabilita la divisione per righe: semmai rafforza la regola, perché al momento della
 decisione l'accoppiamento era plausibile e nessuno dei due poteva escluderlo senza fondere
 prima. Rinviare è costato qualche ora di attesa su un ticket non urgente; parallelizzare
 avrebbe potuto costare il lavoro di un agente intero. **Si rinvia sull'accoppiamento
