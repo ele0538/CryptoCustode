@@ -18,7 +18,6 @@ esportazione. Entrambe sono accettabili soltanto perché l'ascolto è sul solo
 loopback: il giorno in cui questa app venisse esposta, vanno chiuse.
 """
 
-from __future__ import annotations
 
 import socket
 import webbrowser

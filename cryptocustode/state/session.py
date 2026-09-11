@@ -3,8 +3,6 @@
 `state/` può importare `core/`; l'invariante 1 vieta il verso opposto.
 """
 
-from __future__ import annotations
-
 from cryptocustode.core.entities import risolvi_ambiguita_omonimia, suggerisci_fusioni
 from cryptocustode.core.errors import (
     ExportNotAllowed,
