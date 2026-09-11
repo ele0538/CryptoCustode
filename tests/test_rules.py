@@ -297,6 +297,89 @@ class TestSuffissoDelCivico:
         ]
 
 
+class TestInternoDelCivico:
+    """Issue #15: fra il civico e il CAP l'indirizzo italiano infila
+    spessissimo l'interno ("Via Roma 12 int. 3, 10121 Torino"). Il gruppo del
+    CAP pretende le cinque cifre subito dopo il civico: con l'interno in mezzo
+    non si agganciava e, essendo facoltativo, si arrendeva senza consumare
+    nulla. Lo span si fermava a "Via Roma 12" e CAP e comune restavano in
+    chiaro nel testo esportato."""
+
+    def test_interno_abbreviato_include_cap_e_comune(self):
+        testo = "Residente in Via Roma 12 int. 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. 3, 10121 Torino"]
+
+    def test_interno_scritto_per_intero_include_cap_e_comune(self):
+        testo = "Residente in Via Roma 12 interno 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 interno 3, 10121 Torino"
+        ]
+
+    def test_interno_senza_virgola_prima_del_cap(self):
+        testo = "Residente in Via Roma 12 int. 3 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. 3 10121 Torino"]
+
+    def test_interno_con_lettera_al_posto_del_numero(self):
+        testo = "Residente in Via Roma 12 int. B, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. B, 10121 Torino"]
+
+    def test_interno_senza_cap_resta_dentro_lo_span(self):
+        # l'interno è parte dell'indirizzo anche quando il CAP non c'è: se
+        # restasse fuori sarebbe un dato personale in chiaro accanto a uno
+        # span che lo lambisce
+        assert valori("Residente in Via Roma 12 int. 3", Category.INDIRIZZO) == [
+            "Via Roma 12 int. 3"
+        ]
+
+    def test_scala_e_interno_insieme_includono_cap_e_comune(self):
+        # la forma composta "sc. B int. 3" è la stessa fuga: fra il civico e il
+        # CAP ci sono due complementi invece di uno
+        testo = "Residente in Via Roma 12 sc. B int. 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 sc. B int. 3, 10121 Torino"
+        ]
+
+    def test_scala_scritta_per_intero_include_cap_e_comune(self):
+        testo = "Residente in Via Roma 12 scala B, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 scala B, 10121 Torino"]
+
+    def test_lo_span_si_ferma_al_comune(self):
+        # un indirizzo vorace che si mangia il testo attorno è un difetto
+        # peggiore di quello corretto qui: il gruppo dell'interno non deve
+        # aprire la strada oltre il comune
+        testo = "Residente in Via Roma 12 int. 3, 10121 Torino presso lo studio Bianchi"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 int. 3, 10121 Torino"]
+
+    def test_la_parola_chiave_senza_identificativo_non_allunga_lo_span(self):
+        # "interno" è anche un aggettivo comunissimo: senza l'identificativo
+        # breve obbligatorio il gruppo si porterebbe dietro della prosa
+        testo = "Villa in Via Roma 12, interno completamente ristrutturato"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_la_parola_chiave_dell_interno_deve_essere_intera(self):
+        # `(?!\w)` dopo la parola chiave: senza di lui `sc` si aggancerebbe al
+        # prefisso di un'altra parola e lo span inghiottirebbe testo che
+        # nell'indirizzo non c'entra nulla ("Via Roma 12 sca")
+        testo = "Residente in Via Roma 12 sca 5, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_l_identificativo_dell_interno_non_mangia_le_cifre_del_cap(self):
+        # stesso confine `(?!\d)` del civico: senza di lui l'identificativo si
+        # prenderebbe quattro delle cinque cifre del CAP ("int. 1012") e
+        # l'ultima resterebbe in chiaro accanto a un indirizzo storpiato. O il
+        # CAP entra intero nello span, o non entra: mai a metà.
+        testo = "Residente in Via Roma 12 int. 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) in (
+            ["Via Roma 12"],
+            ["Via Roma 12 int. 10121 Torino"],
+        )
+
+    def test_la_parola_chiave_da_sola_non_produce_un_indirizzo(self):
+        # invariante dei giri precedenti: il toponimo resta obbligatorio, e il
+        # vocabolario allargato non lo aggira
+        assert Category.INDIRIZZO not in categorie("Il vano interno 3 misura 12 metri")
+
+
 class TestTelefonoAGruppi:
     """Ruling I2: la spec §6 elenca i separatori senza limitarne il numero, ma
     le due forme nazionali ne ammettevano una e due, quindi i numeri scritti a

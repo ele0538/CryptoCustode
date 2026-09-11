@@ -175,6 +175,24 @@ PATTERN: dict[Category, Pattern[str]] = {
         r"(?:,?\s*n?\.?\s*\d{1,4}(?!\d)"
         r"(?:\s*[/\-]\s*\d{1,3}(?!\d)|\s*[/\-]?\s*[a-zA-Z](?!\w)"
         r"|\s+(?:bis|ter|quater)(?!\w))?)?"
+        # Interno e scala, facoltativi e fra il civico e il CAP ("Via Roma 12
+        # int. 3, 10121 Torino"): il gruppo del CAP pretende le cinque cifre
+        # subito dopo il civico, quindi con l'interno in mezzo non si
+        # agganciava e — essendo facoltativo — si arrendeva senza consumare
+        # nulla. Lo span si fermava a "Via Roma 12" e CAP e comune restavano in
+        # chiaro (issue #15). `int.` è comunissimo negli indirizzi italiani.
+        # Il gruppo non può allargare l'indirizzo a testo qualunque: la parola
+        # chiave è obbligatoria e chiusa da `(?!\w)` (così "sca" non passa per
+        # `sc`), e le è obbligatorio un identificativo breve — poche cifre
+        # oppure una lettera sola con il proprio confine a destra. Le due
+        # ripetizioni ammesse coprono la forma composta ("sc. B int. 3");
+        # nessuna sequenza illimitata.
+        # `\d{1,4}(?!\d)` è lo stesso confine del civico e serve alla stessa
+        # cosa: su "Via Roma int. 10121 Torino" impedisce all'identificativo di
+        # mangiare quattro delle cinque cifre del CAP. Il gruppo, facoltativo,
+        # fallisce del tutto e lascia il CAP intero a chi viene dopo.
+        r"(?:,?\s*(?:int(?:erno)?|sc(?:ala)?)(?!\w)\.?\s*"
+        r"(?:\d{1,4}(?!\d)|[a-zA-Z](?!\w))){0,2}"
         # CAP e comune facoltativi (spec §6): il toponimo resta obbligatorio,
         # quindi un CAP da solo non genera mai uno span.
         rf"(?:,?\s*\d{{5}}\b(?:\s+{_PAROLA_INDIRIZZO})?)?",
