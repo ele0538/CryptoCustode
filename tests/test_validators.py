@@ -83,6 +83,63 @@ class TestPartitaIva:
         assert piva_valida(valore) is False
 
 
+class TestChecksumSuCodiciSpaziati:
+    """Issue #37: il checksum si calcola sul valore **normalizzato** — senza
+    spazi né trattini — così allargare i separatori ammessi dalle regex non
+    allenta la verifica. Allargare il riconoscimento perdendo il controllo
+    sarebbe lo scambio peggiore possibile, e questi test lo escludono
+    provando che nelle forme nuove un codice sbagliato resta sbagliato.
+
+    Un valore che *comincia o finisce* con un separatore, invece, non è il
+    codice e viene rifiutato anche quando la sua forma normalizzata sarebbe
+    valida. Non è pignoleria: il ritaglio progressivo di `rules.py` taglia
+    all'ultimo separatore, quindi su una coppia di spazi produce un candidato
+    con lo spazio in fondo, e la lunghezza del candidato accettato decide dove
+    finisce lo span. Accettarlo farebbe coprire allo span un carattere che nel
+    codice non c'è.
+    """
+
+    def test_iban_col_trattino_valido(self):
+        assert iban_valido("IT60-X054-2811-1010-0000-0123-456") is True
+
+    def test_iban_col_trattino_e_cifra_alterata_rifiutato(self):
+        assert iban_valido("IT60-X054-2811-1010-0000-0123-457") is False
+
+    def test_iban_col_doppio_spazio_valido(self):
+        assert iban_valido("IT60  X054  2811 1010 0000 0123 456") is True
+
+    def test_iban_col_doppio_spazio_e_cifra_alterata_rifiutato(self):
+        assert iban_valido("IT60  X054  2811 1010 0000 0123 457") is False
+
+    def test_cf_a_gruppi_valido(self):
+        assert cf_valido("RSSMRA 85M01 H501Q") is True
+
+    def test_cf_a_gruppi_col_cin_errato_rifiutato(self):
+        assert cf_valido("RSSMRA 85M01 H501Z") is False
+
+    def test_cf_col_trattino_valido(self):
+        assert cf_valido("RSSMRA-85M01-H501Q") is True
+
+    @pytest.mark.parametrize(
+        "valore",
+        [
+            "IT60 X054 2811 1010 0000 0123 456 ",
+            " IT60 X054 2811 1010 0000 0123 456",
+            "IT60-X054-2811-1010-0000-0123-456-",
+            "-IT60-X054-2811-1010-0000-0123-456",
+        ],
+    )
+    def test_iban_coi_separatori_ai_bordi_rifiutato(self, valore):
+        assert iban_valido(valore) is False
+
+    @pytest.mark.parametrize(
+        "valore",
+        ["RSSMRA85M01H501Q ", " RSSMRA85M01H501Q", "RSSMRA-85M01-H501Q-"],
+    )
+    def test_cf_coi_separatori_ai_bordi_rifiutato(self, valore):
+        assert cf_valido(valore) is False
+
+
 class TestIban:
     def test_iban_italiano_valido(self):
         assert iban_valido("IT60X0542811101000000123456") is True

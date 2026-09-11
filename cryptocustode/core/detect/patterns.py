@@ -68,16 +68,60 @@ _INIZIALE_MAIUSCOLA = r"(?-i:[A-ZÀ-ÖØ-Þ])"
 _PAROLA_INDIRIZZO = rf"{_INIZIALE_MAIUSCOLA}[\w'À-ÿ]*"
 _PAROLA_AZIENDA = rf"{_INIZIALE_MAIUSCOLA}[\w'À-ÿ&.]*"
 
+# Il separatore ammesso *fra i gruppi* dei due codici con checksum, IBAN e
+# codice fiscale (issue #37). Tre forme dei documenti veri non producevano
+# alcuno span, e il codice restava intero in chiaro nel testo mandato all'IA:
+# l'IBAN col trattino ("IT60-X054-..."), che è come lo mostrano gestionali e
+# home banking; l'IBAN col doppio spazio, che è quello che produce un
+# copia-incolla da un PDF o da una tabella allineata; il CF a gruppi
+# ("RSSMRA 85M01 H501Q"), che è la forma dei moduli a caselle, dove ogni gruppo
+# sta in un riquadro e l'estrazione restituisce spazi.
+#
+# I due spazi sono *orizzontali* (`[^\S\n]`), e il singolo `\s` che c'era prima
+# resta accanto a loro: così un a capo dentro un codice è ammesso oggi
+# esattamente come ieri, ma non si allarga a due. I codici spezzati da un a
+# capo sono un artefatto dell'estrazione PDF e una famiglia diversa (issue
+# #36): riguardano il loader, non queste regex.
+#
+# Oltre i due spazi non è più raggruppamento ma impaginazione: un copia-incolla
+# che unisce due celle diverse di una tabella produrrebbe uno span che copre
+# anche il vuoto fra loro. Il costo del confine è dichiarato e misurato — un
+# codice separato da tre spazi resta in chiaro — e allargarlo ancora è una
+# decisione che vuole le sue misure, non un ritocco.
+#
+# L'alternanza è ordinata: la coppia va provata prima del singolo `\s`, che
+# altrimenti la nasconderebbe consumandone solo metà e facendo fallire il
+# carattere successivo.
+_SEPARATORE_DI_GRUPPO = r"(?:[^\S\n]{2}|\s|-)"
+
 PATTERN: dict[Category, Pattern[str]] = {
+    # I tre gruppi del modulo a caselle (6-5-5) sono gli stessi che la forma
+    # compatta ha sempre avuto, e il separatore è ammesso **solo** ai loro due
+    # confini. È la guardia anti-vorace del codice fiscale, ed è quella che
+    # il checksum da solo non potrebbe dare: ammettere il separatore fra un
+    # carattere e l'altro farebbe passare "RSSMRA85M0 1H501Q", il cui valore
+    # normalizzato *è* un codice fiscale valido, e lo span coprirebbe
+    # diciassette caratteri che codice fiscale non sono.
     Category.CF: re.compile(
-        r"\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}"
+        rf"\b[A-Z]{{6}}{_SEPARATORE_DI_GRUPPO}?"
+        r"[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}"
+        rf"{_SEPARATORE_DI_GRUPPO}?"
         r"[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b"
     ),
-    # Lo `\s?` è voluto: i documenti reali raggruppano i caratteri dell'IBAN
-    # ("IT60 X054 2811 ...") e `iban_valido` normalizza gli spazi. La coda vorace
-    # può inglobare la parola successiva se è in maiuscolo: a disambiguare è il
-    # checksum, con il ritaglio progressivo in `rules.py`.
-    Category.IBAN: re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[0-9A-Z]){11,30}\b"),
+    # Il separatore facoltativo davanti a ogni carattere del corpo è voluto e
+    # c'era già per lo spazio: i documenti reali raggruppano i caratteri
+    # dell'IBAN ("IT60 X054 2811 ...") e `iban_valido` normalizza il valore
+    # prima di verificarlo. La coda vorace può inglobare la parola successiva
+    # se è in maiuscolo, o un token attaccato col trattino
+    # ("...-456-BENEFICIARIO"): a disambiguare è il checksum, con il ritaglio
+    # progressivo in `rules.py`, che sui separatori `.-/` tagliava già.
+    #
+    # `[A-Z]{2}\d{2}` resta invece attaccato, senza separatori al suo interno:
+    # è il confine che impedisce alla regex di partire da un codice qualunque
+    # spezzato col trattino e di trascinarsi dietro ciò che lo segue.
+    Category.IBAN: re.compile(
+        rf"\b[A-Z]{{2}}\d{{2}}(?:{_SEPARATORE_DI_GRUPPO}?[0-9A-Z]){{11,30}}\b"
+    ),
     Category.PIVA: re.compile(r"\b(?:IT)?\d{11}\b"),
     Category.EMAIL: re.compile(
         r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
