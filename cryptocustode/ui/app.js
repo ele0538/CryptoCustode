@@ -18,6 +18,20 @@ const modulo = document.getElementById("modulo-caricamento");
 const scelta = document.getElementById("scelta-file");
 const esiti = document.getElementById("esiti");
 const conteggio = document.getElementById("conteggio");
+const card = document.getElementById("card-caricamento");
+const fileScelti = document.getElementById("file-scelti");
+
+// Le quattro cifre grandi della scheda del fascicolo. I documenti li dice il
+// server a ogni risposta (è lui a sapere quanti sono); pagine, caratteri e
+// avvisi si accumulano qui, perché il payload parla di un documento alla volta.
+const metriche = {
+  documenti: document.getElementById("metrica-documenti"),
+  tetto: document.getElementById("metrica-tetto"),
+  pagine: document.getElementById("metrica-pagine"),
+  caratteri: document.getElementById("metrica-caratteri"),
+  avvisi: document.getElementById("metrica-avvisi"),
+};
+const totali = { pagine: 0, caratteri: 0, avvisi: 0 };
 
 function aggiungi(classe, testo, dettaglio) {
   const riga = document.createElement("li");
@@ -75,6 +89,25 @@ function mostraAvvisi(nome, segnaposto) {
   }
 }
 
+function aggiornaMetriche(esito) {
+  totali.pagine += esito.pagine;
+  totali.caratteri += esito.caratteri;
+  totali.avvisi += esito.segnaposto_preesistenti.length;
+  metriche.documenti.textContent = String(esito.documenti_nel_fascicolo);
+  metriche.tetto.textContent = `/ ${esito.massimo_documenti}`;
+  metriche.pagine.textContent = String(totali.pagine);
+  metriche.caratteri.textContent = String(totali.caratteri);
+  metriche.avvisi.textContent = String(totali.avvisi);
+}
+
+function descriviScelta(files) {
+  const quanti = files.length;
+  if (quanti === 0) {
+    return "Nessun file scelto";
+  }
+  return quanti === 1 ? "1 file scelto" : `${quanti} file scelti`;
+}
+
 async function carica(file) {
   const corpo = new FormData();
   corpo.append("file", file);
@@ -110,15 +143,17 @@ async function carica(file) {
     estrattoDi(esito.testo)
   );
   mostraAvvisi(file.name, esito.segnaposto_preesistenti);
+  aggiornaMetriche(esito);
 
   conteggio.textContent =
     `Documenti nel fascicolo: ${esito.documenti_nel_fascicolo} ` +
     `di ${esito.massimo_documenti}.`;
 }
 
-modulo.addEventListener("submit", async (evento) => {
-  evento.preventDefault();
-  const scelti = Array.from(scelta.files);
+// La stessa strada per il modulo e per il trascinamento: un file per richiesta,
+// in ordine, così ogni file ha il suo verdetto.
+async function caricaTutti(files) {
+  const scelti = Array.from(files);
   if (scelti.length === 0) {
     aggiungi("avviso", "Nessun file scelto.");
     return;
@@ -126,7 +161,34 @@ modulo.addEventListener("submit", async (evento) => {
   for (const file of scelti) {
     await carica(file);
   }
+}
+
+// L'input dei file è nascosto dietro un pulsante a pillola, quindi il browser
+// non mostra più da sé i nomi scelti: lo dice questa riga.
+scelta.addEventListener("change", () => {
+  fileScelti.textContent = descriviScelta(scelta.files);
+});
+
+modulo.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  await caricaTutti(scelta.files);
   scelta.value = "";
+  fileScelti.textContent = descriviScelta([]);
+});
+
+card.addEventListener("dragover", (evento) => {
+  evento.preventDefault();
+  card.classList.add("trascinando");
+});
+
+card.addEventListener("dragleave", () => {
+  card.classList.remove("trascinando");
+});
+
+card.addEventListener("drop", async (evento) => {
+  evento.preventDefault();
+  card.classList.remove("trascinando");
+  await caricaTutti(evento.dataTransfer.files);
 });
 
 // --- Revisione: testo evidenziato e interruttori (issue #4) -----------------
