@@ -18,8 +18,7 @@ from cryptocustode.core.models import (
     State,
     fascicolo_vuoto,
 )
-
-FORMATO_SEGNAPOSTO = re.compile(r"\[[A-Z]+_\d+\]")
+from cryptocustode.core.placeholders import SEGNAPOSTO
 
 
 def scenario():
@@ -59,9 +58,21 @@ class TestMascheratura:
                 assert variante not in mascherato
 
     def test_i_segnaposto_rispettano_il_formato(self):
+        # La regex arriva dal modulo che possiede il formato (issue #23). Qui
+        # non fa da guardia e non potrebbe: i segnaposto che compaiono
+        # nell'output sono i letterali che `scenario()` mette in `placeholder`,
+        # non quelli del generatore, quindi la copia locale che stava qui non
+        # ha mai potuto accorgersi di un cambio di formato. Serve solo a
+        # *riconoscere* i segnaposto per asserire altro: duplicazione, non
+        # verifica indipendente. Quella vera sta in `test_placeholders.py` e in
+        # `test_documenti_di_verifica.py`.
         f, doc = scenario()
-        for trovato in FORMATO_SEGNAPOSTO.finditer(maschera_documento(f, doc)):
-            assert trovato.group(0).startswith("[PERSONA_")
+        trovati = [t.group(0) for t in SEGNAPOSTO.finditer(maschera_documento(f, doc))]
+        # Senza questa riga il ciclo non asserirebbe niente se la regex
+        # smettesse di riconoscere i segnaposto, e il test passerebbe a vuoto.
+        assert trovati, "la regex severa non riconosce i segnaposto dell'output"
+        for trovato in trovati:
+            assert trovato.startswith("[PERSONA_")
 
     def test_span_disabilitato_non_viene_mascherato(self):
         f, doc = scenario()
