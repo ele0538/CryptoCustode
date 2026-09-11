@@ -446,6 +446,7 @@ un segnaposto e sostituita con dati veri, corrompendo il testo.
 | PDF scansionato | `ScannedDocumentRejected` | 422 | documento bloccato, con il numero di pagina |
 | Undicesimo documento | `FascicoloFull` | 422 | massimo 10 documenti per fascicolo |
 | Due file con lo stesso nome | `DuplicateFilename` | 422 | attento: hai caricato due file uguali o con lo stesso nome, col nome del file |
+| Fascicolo inesistente | `FascicoloNotFound` | **404** | il fascicolo richiesto non esiste, con l'id |
 | Export con stato diverso da `APPROVED` | `ExportNotAllowed` | **409** | il fascicolo non è approvato |
 | Hash di approvazione non corrispondente | `IntegrityError` | 409 | il testo è cambiato dopo l'approvazione |
 | Approvazione con ambiguità aperte | `UnresolvedAmbiguities` | 409 | elenco delle ambiguità da risolvere |
@@ -453,6 +454,14 @@ un segnaposto e sostituita con dati veri, corrompendo il testo.
 | Segnaposto alterato | `MalformedPlaceholder` | 422 | i frammenti anomali, citati letteralmente |
 | Password del vault errata o file corrotto | `VaultUnreadable` | 422 | "password errata o file danneggiato" |
 | Vault scritto in un formato più recente | `VaultVersionNotSupported` | 422 | il formato trovato, il massimo leggibile e l'invito ad aggiornare |
+
+**Perché 404, e perché un errore di dominio.** Un id sconosciuto arriva prima dei due
+controlli della §8: `export_sanitized_text` chiede il fascicolo allo store, e finché lo
+store si limitava a indicizzare il suo dizionario ne usciva un `KeyError` nudo, che non è
+un `CryptoCustodeError` e attraversa il gate dell'export senza che nessuno lo riconosca.
+Il layer HTTP lo tradurrebbe in un 500 — un difetto del server — mentre la richiesta è
+semplicemente per una risorsa che non c'è: 404. Non è un conflitto di stato come il 409
+delle due righe qui sotto, perché non c'è alcuno stato da conciliare (issue #16).
 
 **Perché 409 e non 403.** Le specifiche di partenza indicavano 403 per l'export negato,
 ma 403 significa "non hai il permesso", mentre qui la risorsa è nello stato sbagliato,

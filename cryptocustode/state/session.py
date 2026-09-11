@@ -8,6 +8,7 @@ from __future__ import annotations
 from cryptocustode.core.entities import risolvi_ambiguita_omonimia, suggerisci_fusioni
 from cryptocustode.core.errors import (
     ExportNotAllowed,
+    FascicoloNotFound,
     IntegrityError,
     UnresolvedAmbiguities,
 )
@@ -81,7 +82,20 @@ class SessionStore:
         self._fascicoli[fascicolo.fascicolo_id] = fascicolo
 
     def prendi(self, fascicolo_id: str) -> Fascicolo:
-        return self._fascicoli[fascicolo_id]
+        """Il fascicolo con quell'id, o `FascicoloNotFound` se non c'è.
+
+        Il `KeyError` del dizionario non esce di qui. Non è un
+        `CryptoCustodeError`, quindi attraverserebbe il gate di
+        `export_sanitized_text` prima dei suoi due controlli senza che nessuno
+        lo riconosca, e il layer HTTP lo tradurrebbe in un 500 — un difetto del
+        server — invece del 404 della spec §13 (issue #16).
+        """
+        try:
+            return self._fascicoli[fascicolo_id]
+        except KeyError as errore:
+            raise FascicoloNotFound(
+                f"il fascicolo richiesto non esiste: {fascicolo_id}"
+            ) from errore
 
 
 def export_sanitized_text(fascicolo_id: str, store: SessionStore) -> dict[str, str]:

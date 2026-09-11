@@ -32,6 +32,17 @@ class DuplicateFilename(CryptoCustodeError):
     """
 
 
+class FascicoloNotFound(CryptoCustodeError):
+    """Fascicolo chiesto allo store con un id che non vi corrisponde.
+
+    Esiste perché lo store non lasci uscire il `KeyError` del dizionario che lo
+    indicizza: quel KeyError non è un `CryptoCustodeError`, attraversa il gate
+    dell'export prima dei due controlli della §8 senza che nessuno lo
+    riconosca, e il layer HTTP lo tradurrebbe in un 500 al posto del 404 della
+    §13 (issue #16).
+    """
+
+
 class ExportNotAllowed(CryptoCustodeError):
     """Esportazione richiesta con il fascicolo in uno stato diverso da APPROVED."""
 

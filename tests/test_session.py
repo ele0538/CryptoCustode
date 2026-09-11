@@ -1,7 +1,7 @@
 import pytest
 
 from cryptocustode.core.entities import aggiungi_span_manuale
-from cryptocustode.core.errors import UnresolvedAmbiguities
+from cryptocustode.core.errors import FascicoloNotFound, UnresolvedAmbiguities
 from cryptocustode.core.models import (
     Ambiguity,
     AmbiguityKind,
@@ -14,8 +14,10 @@ from cryptocustode.core.models import (
     fascicolo_vuoto,
 )
 from cryptocustode.state.session import (
+    SessionStore,
     analisi_completata,
     approva,
+    export_sanitized_text,
     registra_mutazione,
 )
 
@@ -218,3 +220,18 @@ def test_l_analisi_popola_anche_i_suggerimenti_euristici():
     ]
     assert len(suggerimenti) == 1
     assert suggerimenti[0].blocca_approvazione is False
+
+
+def test_il_fascicolo_inesistente_lo_dice_in_italiano_e_cita_l_id():
+    # La riga della spec §13 chiede il messaggio con l'id: senza, chi legge il
+    # log sa che un fascicolo manca ma non quale.
+    with pytest.raises(FascicoloNotFound, match="non esiste: f-ignoto"):
+        SessionStore().prendi("f-ignoto")
+
+
+def test_dal_gate_dell_export_esce_un_errore_di_dominio():
+    # È il motivo per cui la issue #16 esiste: il KeyError nudo dello store
+    # attraversava `export_sanitized_text` prima dei due controlli della §8, e
+    # il layer HTTP lo tradurrebbe in un 500 invece del 404 della §13.
+    with pytest.raises(FascicoloNotFound):
+        export_sanitized_text("f-ignoto", SessionStore())
