@@ -37,6 +37,7 @@ from cryptocustode.core.errors import (
     ScannedDocumentRejected,
     UnknownPlaceholder,
     UnresolvedAmbiguities,
+    UploadTooLarge,
     VaultUnreadable,
     VaultVersionNotSupported,
 )
@@ -306,6 +307,7 @@ def test_la_tabella_degli_stati_trascrive_la_spec():
         MalformedPlaceholder: 422,
         VaultUnreadable: 422,
         VaultVersionNotSupported: 422,
+        UploadTooLarge: 413,
     }
 
 

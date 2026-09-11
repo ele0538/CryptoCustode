@@ -80,3 +80,17 @@ class VaultVersionNotSupported(VaultUnreadable):
     la password giusta e il file integro. Dirlo a quel punto non rivela nulla a
     chi è ancora fuori (issue #17).
     """
+
+
+class UploadTooLarge(CryptoCustodeError):
+    """Caricamento più grande del tetto, rifiutato prima di leggerlo.
+
+    È l'unico errore della §13 che nasce fuori dal core, e non per comodità:
+    quando la route riceve il suo `UploadFile` i byte del file sono già stati
+    scritti nella cartella temporanea, perché starlette controlla
+    `max_part_size` solo per le parti che non sono file. Un rifiuto emesso lì
+    arriverebbe a danno già fatto, quindi il controllo precede il parser e vive
+    nel layer HTTP — ma l'errore resta di dominio, così passa dal gate della
+    §13 come tutti gli altri e l'utente riceve un messaggio in italiano invece
+    di un 500.
+    """
