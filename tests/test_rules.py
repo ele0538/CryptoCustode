@@ -750,8 +750,18 @@ class TestFissoAGruppiCorti:
 
 class TestAltreCategorie:
     def test_email(self):
-        assert valori("Scrivere a mario.rossi@esempio.it subito.", Category.EMAIL) == [
-            "mario.rossi@esempio.it"
+        assert valori("Scrivere a mario.rossi@example.com subito.", Category.EMAIL) == [
+            "mario.rossi@example.com"
+        ]
+
+    def test_email_con_trattino_nel_dominio(self):
+        # Il trattino nelle etichette di dominio è ammesso dalla regex
+        # ([A-Za-z0-9.\-]+) e fino a oggi era esercitato solo di rimbalzo, da
+        # una fixture di tests/test_documenti_di_verifica.py. Una fixture però
+        # la si riscrive senza sapere che cosa stava sorvegliando: qui la
+        # copertura diventa deliberata e ha un nome che lo dice.
+        assert valori("Scrivere a info@posta-esempio.example.com subito.", Category.EMAIL) == [
+            "info@posta-esempio.example.com"
         ]
 
     def test_data_numerica(self):
