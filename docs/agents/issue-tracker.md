@@ -52,8 +52,11 @@ Infer the repo from `git remote -v`; `glab` does this automatically when run ins
 
 ## Sessioni Claude in parallelo
 
-Su questo repo lavorano più sessioni Claude insieme, ciascuna con le proprie
-worktree e i propri agenti. Due segnali che sembrano coordinamento non lo sono:
+Su questo repo lavorano più sessioni Claude insieme, ciascuna coi propri agenti. Alcune
+stanno in una worktree propria, altre scrivono direttamente nel **working tree
+principale**, che è condiviso: la prima cosa da sapere è in quale dei due casi ti trovi,
+e lo dicono `git rev-parse --show-toplevel` e `git worktree list`. Due segnali che
+sembrano coordinamento non lo sono:
 
 - **L'assegnatario GitLab non è un lock.** Tutte le sessioni agiscono come lo stesso
   utente (`emanuele.quagliotto`), quindi `glab issue update <n> --assignee @me` dice
@@ -75,6 +78,36 @@ le due sessioni si sono parlate.
 `SendMessage` con quel nome recapita, e la risposta arriva in un minuto o due. Sono
 strumenti della sessione, non comandi `glab`: su GitLab non resta traccia, quindi quello
 che viene concordato va poi scritto in una nota sulla issue.
+
+### Nel working tree principale si è in tanti
+
+Chi non lavora in una worktree propria scrive negli stessi file di chi sta scrivendo
+adesso, e l'area di staging è una sola per tutti. Da lì è venuto il danno peggiore
+finora, il 2026-09-10: mentre `cryptocustode-06` modificava `cryptocustode/core/vault.py`
+nel tree condiviso, un'altra sessione ha fatto un `git add` a tappeto e ha committato.
+Quelle modifiche sono finite dentro `d21d53e`, il cui messaggio parla delle correzioni
+alla spec per la #21 e non le nomina nemmeno: `git show --stat d21d53e` mostra `vault.py`
+accanto al file della spec, e chi cerca da dove salti fuori `VAULT_VERSION = 2` non lo
+trova dove dovrebbe. Il contenuto era giusto e la suite verde, quindi nessuno se n'è
+accorto subito — è un difetto della cronologia, non del codice, ed è per questo che dura.
+Lo stesso rischio al contrario si è presentato lo stesso giorno: un `git add` del file
+della spec ha raccolto il lavoro in corso di un'altra sessione sulla #19, e il patch è
+stato filtrato hunk per hunk prima di committare.
+
+- **`git add` sempre coi percorsi espliciti.** Mai `git add -A`, mai `git add .`, mai
+  `git add <cartella>`: ingoi il lavoro in volo di un'altra sessione e lo seppellisci
+  sotto un messaggio che parla d'altro.
+- **Prima di committare leggi `git diff --cached --stat`** e controlla che contenga solo
+  i file che hai toccato tu. Se un file condiviso — la spec, un file di test — contiene
+  sia il tuo lavoro sia quello di un altro, filtra per hunk invece di committare tutto.
+- **Un test rosso può non essere tuo**, e nemmeno un conteggio di test che cresce da
+  solo: i file cambiano sotto di te a metà task. Prima di diagnosticare un fallimento,
+  guarda con `git status` se il file rosso è fra quelli che hai toccato.
+- **Niente operazioni distruttive sul repo mentre altre sessioni sono attive**: rimuovere
+  worktree, `reset --hard`, riscrivere la storia. Vale anche per riparare un commit che
+  ha inghiottito roba altrui — riscrivere la storia di un ramo su cui qualcuno sta
+  lavorando fa più danni di quanti ne ripari. Si annota e si va avanti: è quello che ha
+  fatto `71b2a37`, che dice in coda al messaggio cosa era finito per errore in `d21d53e`.
 
 ### Le intenzioni si chiedono, i fatti si verificano
 
