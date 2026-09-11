@@ -677,6 +677,201 @@ class TestPianoDelCivico:
         )
 
 
+class TestToponimiEstesi:
+    """Issue #34: `TOPONIMI` copriva 13 toponimi in 16 alternative, e le forme
+    rimaste fuori non producevano **alcuno** span di regola: l'indirizzo intero
+    — odonimo, civico, CAP e comune — restava in chiaro nel testo esportato.
+
+    Il NER non fa da rete: solo la regola sa mascherare civico e CAP, e quando
+    la regola non si aggancia il NER riprende al massimo la via e il comune.
+    Si vede sulla riga peggiore, `Rotonda Diaz 2, 80132 Napoli`, dove col NER
+    acceso restavano in chiaro odonimo, civico e CAP e spariva il solo comune,
+    cioè la parte meno identificante.
+
+    Allungare la lista è a basso rischio perché il toponimo è una parola intera
+    e obbligatoria in *testa* allo span, e dopo di lui resta obbligatoria una
+    parola con l'iniziale davvero maiuscola: è quella, non il toponimo, la
+    guardia anti-vorace di questo gruppo, ed è quella che le guardie in coda
+    tengono ferma."""
+
+    def test_lungotevere_include_civico_cap_e_comune(self):
+        testo = "Residente in Lungotevere Flaminio 22, 00196 Roma."
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Lungotevere Flaminio 22, 00196 Roma"
+        ]
+
+    def test_lungarno_include_civico_cap_e_comune(self):
+        testo = "Residente in Lungarno Vespucci 12, 50123 Firenze."
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Lungarno Vespucci 12, 50123 Firenze"
+        ]
+
+    def test_passeggiata_include_civico_cap_e_comune(self):
+        # il criterio nominato dalla issue: qui il CAP *e* il comune restavano
+        # entrambi in chiaro anche col NER acceso
+        testo = "Residente in Passeggiata Ripa 3, 16128 Genova."
+        assert valori(testo, Category.INDIRIZZO) == ["Passeggiata Ripa 3, 16128 Genova"]
+
+    def test_traversa_include_civico_cap_e_comune(self):
+        testo = "Residente in Traversa Marconi 5, 80100 Napoli."
+        assert valori(testo, Category.INDIRIZZO) == ["Traversa Marconi 5, 80100 Napoli"]
+
+    def test_circonvallazione_include_civico_cap_e_comune(self):
+        testo = "Residente in Circonvallazione Clodia 163, 00195 Roma."
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Circonvallazione Clodia 163, 00195 Roma"
+        ]
+
+    def test_strada_abbreviata_include_civico_cap_e_comune(self):
+        # `str.` sta a `strada` come `v.le` a `viale` e `c.so` a `corso`: le
+        # abbreviazioni erano già una voce a sé nella lista, questa mancava
+        testo = "Residente in Str. del Nobile 86, 10131 Torino."
+        assert valori(testo, Category.INDIRIZZO) == ["Str. del Nobile 86, 10131 Torino"]
+
+    def test_galleria_include_civico_cap_e_comune(self):
+        testo = "Residente in Galleria Vittorio 4, 20121 Milano."
+        assert valori(testo, Category.INDIRIZZO) == ["Galleria Vittorio 4, 20121 Milano"]
+
+    def test_calle_include_civico_cap_e_comune(self):
+        testo = "Residente in Calle Larga 30, 30124 Venezia."
+        assert valori(testo, Category.INDIRIZZO) == ["Calle Larga 30, 30124 Venezia"]
+
+    def test_vico_include_civico_cap_e_comune(self):
+        testo = "Residente in Vico Equense 9, 80069 Napoli."
+        assert valori(testo, Category.INDIRIZZO) == ["Vico Equense 9, 80069 Napoli"]
+
+    def test_piazzetta_include_civico_cap_e_comune(self):
+        testo = "Residente in Piazzetta Nilo 6, 80134 Napoli."
+        assert valori(testo, Category.INDIRIZZO) == ["Piazzetta Nilo 6, 80134 Napoli"]
+
+    def test_frazione_include_civico_cap_e_comune(self):
+        testo = "Residente in Frazione Pieve 7, 06055 Perugia."
+        assert valori(testo, Category.INDIRIZZO) == ["Frazione Pieve 7, 06055 Perugia"]
+
+    def test_la_frazione_accanto_all_odonimo_non_lascia_cap_e_comune_in_chiaro(self):
+        # la forma in cui la frazione si scrive davvero: il civico sta
+        # sull'odonimo, la frazione no. Senza `frazione` nella lista il gruppo
+        # del CAP non si agganciava — pretende le cinque cifre subito dopo il
+        # civico, e qui in mezzo c'è la frazione — quindi lo span si fermava a
+        # "Via Roma 7" e "Frazione Pieve, 06055 Perugia" usciva tutto in
+        # chiaro. È questo, e non "Frazione Pieve 7", il caso che ha deciso di
+        # ammetterla.
+        testo = "Residente in Via Roma 7, Frazione Pieve, 06055 Perugia."
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 7",
+            "Frazione Pieve, 06055 Perugia",
+        ]
+
+    # --- lo scarto motivato: `rotonda` ---------------------------------------
+    # `rotonda` è l'unico candidato che non è un sostantivo ma un **aggettivo**,
+    # e la differenza si misura sul *punto di partenza* dello span. Ogni altro
+    # toponimo della lista, ammesso o candidato, è capofila del proprio
+    # sintagma: nel peggiore dei casi "corso Excel" maschera un sintagma a
+    # partire dalla sua testa. `rotonda` invece si aggancia al **secondo**
+    # membro di un sintagma la cui testa è un'altra parola — "tavola rotonda
+    # Aperta" dà lo span "rotonda Aperta", che comincia a metà — e "tavola
+    # rotonda" è comunissima proprio nel registro amministrativo che questo
+    # programma tratta: il testo mascherato sarebbe il nome di un convegno, non
+    # un dato personale, e per giunta mutilato a metà.
+    #
+    # Il guadagno, dall'altra parte, è stretto: la forma italiana canonica è
+    # "Piazza della Rotonda", già coperta da `piazza`, e "Rotonda Diaz" è un
+    # uso locale napoletano.
+    #
+    # La guardia che avrebbe salvato `rotonda` — un lookbehind negativo su
+    # "tavola" — è stata scartata perché sarebbe stata proprio la guardia
+    # contro cui mette in guardia la #22: `re` vuole i lookbehind a larghezza
+    # fissa, quindi la lista dei nomi da escludere (tavola, sala, pianta,
+    # torre, finestra, volta, forma...) andrebbe scritta una voce per volta e
+    # resterebbe aperta. I test sarebbero verdi perché li avrei scelti sulla
+    # lista, non perché il confine regge.
+    #
+    # Resta quindi aperto il caso che la issue chiama il più grave. È una
+    # scelta, non una svista: chiuderlo vuole un confine sulla catena dei nomi,
+    # che è il gruppo di competenza della #28, non la lista dei toponimi.
+
+    def test_la_rotonda_come_aggettivo_non_diventa_un_indirizzo(self):
+        # se qualcuno aggiunge `rotonda` alla lista senza un confine, questo
+        # test diventa rosso: è lo scarto scritto nel codice invece che solo
+        # nel commento
+        assert Category.INDIRIZZO not in categorie(
+            "Una tavola rotonda Aperta a tutti i soci."
+        )
+
+    def test_la_rotonda_degli_indirizzi_resta_coperta_dal_toponimo_piazza(self):
+        # la forma canonica non ha bisogno di `rotonda`: la copre `piazza`
+        testo = "In Piazza della Rotonda 3, 00186 Roma."
+        assert valori(testo, Category.INDIRIZZO) == ["Piazza della Rotonda 3, 00186 Roma"]
+
+    # --- guardie anti-vorace -------------------------------------------------
+    # Ognuno dei toponimi ammessi è anche un nome comune italiano: passeggiata,
+    # traversa, galleria, frazione, circonvallazione, piazzetta. Il confine che
+    # li tiene fuori dalla prosa è la parola con l'iniziale davvero maiuscola,
+    # obbligatoria dopo il toponimo. Queste guardie sono verdi prima e dopo la
+    # correzione per costruzione — come quelle della #22 — e si falsificano
+    # contro *quel* confine: ammettendo una parola qualunque dopo il toponimo
+    # tornano tutte rosse.
+
+    def test_la_passeggiata_come_nome_comune_non_produce_un_indirizzo(self):
+        assert Category.INDIRIZZO not in categorie(
+            "Abbiamo fatto una passeggiata in centro storico."
+        )
+
+    def test_la_traversa_come_nome_comune_non_produce_un_indirizzo(self):
+        assert Category.INDIRIZZO not in categorie(
+            "Alla prima traversa a destra c'è il semaforo."
+        )
+
+    def test_la_galleria_come_nome_comune_non_produce_un_indirizzo(self):
+        assert Category.INDIRIZZO not in categorie(
+            "La galleria d'arte contemporanea è chiusa il lunedì."
+        )
+
+    def test_la_frazione_come_nome_comune_non_produce_un_indirizzo(self):
+        assert Category.INDIRIZZO not in categorie(
+            "Il versamento copre una frazione del capitale sociale."
+        )
+
+    def test_la_circonvallazione_come_nome_comune_non_produce_un_indirizzo(self):
+        assert Category.INDIRIZZO not in categorie(
+            "La circonvallazione è chiusa al traffico pesante."
+        )
+
+    def test_la_piazzetta_come_nome_comune_non_produce_un_indirizzo(self):
+        assert Category.INDIRIZZO not in categorie(
+            "Una piazzetta con la fontana in mezzo."
+        )
+
+    def test_la_strada_abbreviata_senza_punto_non_produce_un_indirizzo(self):
+        # il punto fa parte dell'alternativa ed è obbligatorio: senza di lui
+        # `str` sarebbe una sigla di tre lettere, e qualunque acronimo seguito
+        # da un nome proprio diventerebbe un indirizzo
+        assert Category.INDIRIZZO not in categorie(
+            "Il modulo STR Bianchi va restituito firmato."
+        )
+
+    def test_lo_span_di_un_toponimo_nuovo_si_ferma_al_comune(self):
+        # stessa guardia di `test_lo_span_si_ferma_al_comune`: un indirizzo
+        # vorace che si mangia il testo attorno è un difetto peggiore di quello
+        # corretto qui
+        testo = "Residente in Passeggiata Ripa 3, 16128 Genova presso lo studio Bianchi"
+        assert valori(testo, Category.INDIRIZZO) == ["Passeggiata Ripa 3, 16128 Genova"]
+
+    def test_il_toponimo_da_solo_non_produce_un_indirizzo(self):
+        # invariante dei giri precedenti: dopo il toponimo la parola maiuscola
+        # resta obbligatoria, e il vocabolario allargato non la aggira
+        assert Category.INDIRIZZO not in categorie(
+            "La frazione 3 del totale è stata versata."
+        )
+
+    def test_il_vicolo_non_regredisce_accanto_al_vico(self):
+        # non è una guardia ma una non regressione: `vico` è prefisso di
+        # `vicolo`, e una forma corta messa davanti a una lunga la
+        # nasconderebbe. `vicolo` resta prima nell'alternanza.
+        testo = "Residente in Vicolo Stretto 4, 95131 Catania."
+        assert valori(testo, Category.INDIRIZZO) == ["Vicolo Stretto 4, 95131 Catania"]
+
+
 class TestTelefonoAGruppi:
     """Ruling I2: la spec §6 elenca i separatori senza limitarne il numero, ma
     le due forme nazionali ne ammettevano una e due, quindi i numeri scritti a
