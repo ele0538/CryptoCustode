@@ -76,6 +76,18 @@ si sono parlate.
 strumenti della sessione, non comandi `glab`: su GitLab non resta traccia, quindi quello
 che viene concordato va poi scritto in una nota sulla issue.
 
+### Le intenzioni si chiedono, i fatti si verificano
+
+Il punto più importante di questa sezione. Fra sessioni asincrone lo stato che hai
+dell'altra è **sempre** vecchio di qualche minuto: va bene per sapere cosa una sessione
+*intende* fare, non per sapere cosa *ha* fatto. Chiedi pure con `SendMessage` chi sta
+facendo cosa, ma prima di agire su un fatto — se un ramo è fuso, se un file è cambiato,
+se una issue è chiusa — guardalo nel repo: `git log`, `git status`, `git worktree list`.
+Non fidarti del racconto, nemmeno del tuo di dieci minuti fa.
+
+Misurato il 2026-09-11: ogni deduzione tratta da un messaggio di un'altra sessione è
+risultata sbagliata, ogni verifica fatta nel repo è risultata giusta al primo colpo.
+
 ### Prima di prendere una issue
 
 1. `glab issue view <n> --comments` e leggi **le note**, non solo assegnatario e label:
@@ -102,6 +114,12 @@ tests/test_rules.py (nuove classi in coda)."
 non l'assegnatario, ma l'elenco dei file. Scrivi la nota **prima** di far partire un
 agente, e aggiornala se l'ambito cambia: una nota che elenca file che non stai più
 toccando blocca gli altri per niente.
+
+**Una rivendicazione condizionata non è possesso.** "La prendo se il mio utente me lo
+conferma" non è una rivendicazione: o tieni la issue, o è libera. Lo stato intermedio,
+lasciato implicito, ferma il lavoro degli altri senza che nessuno stia davvero lavorando.
+Quindi la nota di esclusiva si scrive quando la conferma c'è; se l'hai scritta e la
+conferma non arriva, scrivi una nota che libera la issue invece di lasciarla appesa.
 
 ### Se scopri che qualcuno è già partito
 
