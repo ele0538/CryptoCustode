@@ -252,8 +252,42 @@ PATTERN: dict[Category, Pattern[str]] = {
 # Categorie che richiedono una parola chiave vicina per non generare falsi positivi
 # a valanga su qualunque numero lungo del documento (spec §6).
 PAROLE_CONTESTO: dict[Category, tuple[str, ...]] = {
-    Category.PIVA: ("p. iva", "p.iva", "partita iva", "p.i.", "vat"),
-    Category.TELEFONO: ("tel", "telefono", "cell", "cellulare", "fax", "mobile"),
+    Category.PIVA: (
+        "p. iva",
+        "p.iva",
+        "partita iva",
+        "p.i.",
+        "vat",
+        # Il codice fiscale di una società è un numero di undici cifre identico
+        # per forma alla P.IVA, e nei documenti italiani è quasi sempre
+        # introdotto da queste diciture invece che da "P. IVA" (issue #32).
+        # Il checksum resta il cancello: queste aprono la porta, non decidono
+        # chi entra.
+        "codice fiscale",
+        "cod. fisc.",
+        "cod.fisc.",
+        "c.f.",
+        "cf",
+        "partita i.v.a.",
+        "p. i.v.a.",
+        "piva",
+    ),
+    # `telefono` e `cellulare` non sono più qui: li copre `PREFISSI_CONTESTO`,
+    # che ne prende anche le forme flesse. Restano qui le sigle che devono
+    # essere parole intere, perché come prefisso diventerebbero voraci: `tel`
+    # dentro `telaio`, `cell` dentro `particella`.
+    Category.TELEFONO: ("tel", "telef.", "cell", "fax", "mobile"),
+}
+
+PREFISSI_CONTESTO: dict[Category, tuple[str, ...]] = {
+    # Parole di contesto che ammettono un suffisso, perché la morfologia
+    # italiana è aperta e un elenco di forme flesse è sempre incompleto:
+    # `telefonico`, `telefonica`, `telefoniche`, `telefoni`, `telefonia`
+    # (issue #32). La radice `telefon` è sicura perché ogni parola italiana
+    # che comincia così parla di telefoni. `tel` **non** lo è, ed è per questo
+    # che sta fra le parole intere: "numero di telaio" è una dicitura reale
+    # dei documenti dei veicoli e non deve fare da contesto a un numero.
+    Category.TELEFONO: ("telefon", "cellular", "telefax"),
 }
 
 FINESTRA_CONTESTO = 30

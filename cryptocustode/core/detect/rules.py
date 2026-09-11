@@ -15,6 +15,7 @@ from cryptocustode.core.detect.patterns import (
     MESI,
     PAROLE_CONTESTO,
     PATTERN,
+    PREFISSI_CONTESTO,
 )
 from cryptocustode.core.models import Category, Source, Span
 
@@ -24,11 +25,32 @@ _NOMI_MESI = {nome: numero for numero, nome in enumerate(MESI.split("|"), start=
 # ciascuna delimitata da confini di parola non standard (`\b` non si comporta
 # bene dopo un punto finale come in "p.i."), così "particella" non attiva
 # "cell" (spec §6, §16 limite 3).
+def _alternative_di_contesto(categoria: Category) -> list[str]:
+    """Le alternative della regex di contesto per una categoria.
+
+    Le parole di `PAROLE_CONTESTO` portano il confine destro `(?!\\w)`, i
+    prefissi di `PREFISSI_CONTESTO` no: è l'unica differenza fra le due liste.
+    Serve perché la morfologia italiana è aperta — `telefonico`, `telefoniche`,
+    `telefonia` — mentre le sigle corte vanno chiuse a destra o diventano
+    voraci: `tel` si aggancerebbe dentro `telaio` (issue #32).
+
+    Il confine sinistro `(?<!\\w)` c'è in entrambi i casi: è quello che
+    impedisce a `tel` di agganciarsi dentro `hotel`.
+    """
+    alternative = [
+        rf"(?<!\w){re.escape(parola)}(?!\w)"
+        for parola in PAROLE_CONTESTO.get(categoria, ())
+    ]
+    alternative += [
+        rf"(?<!\w){re.escape(prefisso)}"
+        for prefisso in PREFISSI_CONTESTO.get(categoria, ())
+    ]
+    return alternative
+
+
 _REGEX_CONTESTO: dict[Category, re.Pattern[str]] = {
-    categoria: re.compile(
-        "|".join(rf"(?<!\w){re.escape(parola)}(?!\w)" for parola in parole)
-    )
-    for categoria, parole in PAROLE_CONTESTO.items()
+    categoria: re.compile("|".join(_alternative_di_contesto(categoria)))
+    for categoria in PAROLE_CONTESTO.keys() | PREFISSI_CONTESTO.keys()
 }
 
 # Prefissi che certificano da soli il requisito di contesto: fanno parte del

@@ -75,6 +75,77 @@ class TestRequisitoDiContesto:
         assert Category.TELEFONO not in categorie("Ordine 00391234567 spedito")
 
 
+class TestVariantiDelleParoleDiContesto:
+    """Il valore e' gia' validato dal checksum: se cade, cade sulla parola chiave.
+
+    Ogni caso qui ha la sua controprova in `TestRequisitoDiContesto` con la
+    forma che funzionava gia', sullo **stesso** numero: e' la dimostrazione che
+    non c'entra il valore (issue #32).
+    """
+
+    def test_codice_fiscale_di_societa_riconosciuto(self):
+        # il codice fiscale di una societa' ha la forma della P.IVA, ed e' la
+        # dicitura piu' comune nei documenti italiani
+        assert valori("Ditta con Codice Fiscale 12345678903 attiva.", Category.PIVA) == [
+            "12345678903"
+        ]
+
+    def test_cf_abbreviato_riconosciuto(self):
+        assert valori("Ditta con C.F. 12345678903 attiva.", Category.PIVA) == ["12345678903"]
+
+    def test_cod_fisc_riconosciuto(self):
+        assert valori("Ditta con Cod. Fisc. 12345678903 attiva.", Category.PIVA) == [
+            "12345678903"
+        ]
+
+    def test_partita_iva_puntata_riconosciuta(self):
+        assert valori("Ditta con Partita I.V.A. 12345678903 attiva.", Category.PIVA) == [
+            "12345678903"
+        ]
+
+    def test_piva_attaccata_riconosciuta(self):
+        assert valori("Ditta con PIVA 12345678903 attiva.", Category.PIVA) == ["12345678903"]
+
+    def test_recapito_telefonico_riconosciuto(self):
+        assert valori("Recapito telefonico: 3401234567", Category.TELEFONO) == ["3401234567"]
+
+    def test_utenza_telefonica_riconosciuta(self):
+        testo = "Utenza telefonica 011 1234567 intestata al cliente."
+        assert valori(testo, Category.TELEFONO) == ["011 1234567"]
+
+    def test_telefoni_al_plurale_riconosciuto(self):
+        assert valori("Telefoni: 011 1234567", Category.TELEFONO) == ["011 1234567"]
+
+    def test_telefax_riconosciuto(self):
+        assert valori("Telefax: 011 1234567", Category.TELEFONO) == ["011 1234567"]
+
+    def test_telef_abbreviato_riconosciuto(self):
+        assert valori("Telef. 011 1234567", Category.TELEFONO) == ["011 1234567"]
+
+    def test_cellulari_al_plurale_riconosciuto(self):
+        assert valori("Recapiti cellulari: 3401234567", Category.TELEFONO) == ["3401234567"]
+
+
+class TestIlValidatoreRestaIlCancello:
+    """Le guardie della #32: la parola chiave apre la porta, il checksum
+    decide chi entra. Allargare la prima non deve allentare il secondo."""
+
+    def test_piva_con_checksum_errato_resta_fuori_con_la_chiave_nuova(self):
+        assert Category.PIVA not in categorie("Ditta con Codice Fiscale 12345678901 attiva.")
+
+    def test_numero_troppo_corto_resta_fuori_con_la_chiave_nuova(self):
+        assert Category.TELEFONO not in categorie("Recapito telefonico: 12345")
+
+    def test_tel_dentro_una_parola_non_fa_contesto(self):
+        # `tel` resta parola intera: non deve agganciarsi dentro `hotel`
+        assert Category.TELEFONO not in categorie("Fattura hotel 3401234567 del mese.")
+
+    def test_una_parola_che_comincia_per_tel_non_fa_contesto(self):
+        # il prefisso ammesso e' `telefon`, non `tel`: "numero di telaio" e'
+        # una dicitura reale dei documenti dei veicoli e non parla di telefoni
+        assert Category.TELEFONO not in categorie("Numero di telaio 3401234567 del veicolo.")
+
+
 class TestLunghezzaTelefono:
     """Spec §6: lunghezza complessiva 9-11 cifre."""
 
