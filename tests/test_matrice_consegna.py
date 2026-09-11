@@ -23,7 +23,7 @@ from tests.pdf_di_prova import pdf_di_prova
 TESTO_RICCO = (
     "Il contratto è firmato da Mario Rossi, codice fiscale RSSMRA85M01H501Q, "
     "con IBAN IT60X0542811101000000123456 e P. IVA 12345678903. "
-    "Recapito: Cell. 3401234567, mario.rossi@esempio.it."
+    "Recapito: Cell. 3401234567, mario.rossi@example.com."
 )
 
 
