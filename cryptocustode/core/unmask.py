@@ -7,11 +7,14 @@ import re
 from cryptocustode.core.errors import MalformedPlaceholder, UnknownPlaceholder
 from cryptocustode.core.models import Entity
 
-# Passo 2: la forma canonica.
-SEGNAPOSTO = re.compile(r"\[[A-Z]+_\d+\]")
+# Passo 2: la forma canonica. Arriva dal modulo che la possiede e non da una
+# copia locale, così non può divergere in silenzio dalla forma con cui la
+# mascheratura genera i segnaposto (issue #20).
+from cryptocustode.core.placeholders import SEGNAPOSTO
 
 # Passo 3: la forma permissiva, che cattura anche i quasi-segnaposto storpiati
-# dall'IA. Tutto ciò che questa trova e la severa no è un'alterazione.
+# dall'IA. Tutto ciò che questa trova e la severa no è un'alterazione. Resta
+# qui perché è una regola del ripristino, non una dichiarazione del formato.
 QUASI_SEGNAPOSTO = re.compile(r"\[[A-Za-z]+[_\-\s]?\d*\]?")
 
 

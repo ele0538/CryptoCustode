@@ -50,6 +50,90 @@ test: solo dati inventati, CF e IBAN sintetici).
 
 Infer the repo from `git remote -v`; `glab` does this automatically when run inside a clone.
 
+## Sessioni Claude in parallelo
+
+Su questo repo lavorano più sessioni Claude insieme, ciascuna con le proprie
+worktree e i propri agenti. Due segnali che sembrano coordinamento non lo sono:
+
+- **L'assegnatario GitLab non è un lock.** Tutte le sessioni agiscono come lo stesso
+  utente (`emanuele.quagliotto`), quindi `glab issue update <n> --assignee @me` dice
+  che la issue è presa, non *da quale sessione*. Due sessioni che la rivendicano si
+  sovrascrivono a vicenda e nessuna delle due se ne accorge.
+- **"Zero commit dietro" non prova che un agente sia morto.** Il lavoro di un agente
+  vive dentro la sua worktree finché non viene committato: nelle prime ore un agente
+  vivissimo è indistinguibile da uno morto. Un'assegnazione vecchia di ore senza
+  commit è lo stato normale del lavoro in corso, non un'eredità da raccogliere.
+
+Il caso reale, 2026-09-11. La sessione `cryptocustode-bc` ha letto la #14 assegnata da
+17 ore senza commit, ha concluso "agente morto" e ha messo un proprio agente sulla #22.
+La #22 tocca la stessa regex `INDIRIZZO` in `core/detect/patterns.py` e la stessa classe
+di test in `tests/test_rules.py` che `cryptocustode-9c` teneva in esclusiva per la #14 —
+viva, e partita da dieci minuti. Il conflitto è stato evitato solo perché le due sessioni
+si sono parlate.
+
+**Come ci si parla.** `ListAgents` elenca le sessioni peer come `cryptocustode-NN`;
+`SendMessage` con quel nome recapita, e la risposta arriva in un minuto o due. Sono
+strumenti della sessione, non comandi `glab`: su GitLab non resta traccia, quindi quello
+che viene concordato va poi scritto in una nota sulla issue.
+
+### Le intenzioni si chiedono, i fatti si verificano
+
+Il punto più importante di questa sezione. Fra sessioni asincrone lo stato che hai
+dell'altra è **sempre** vecchio di qualche minuto: va bene per sapere cosa una sessione
+*intende* fare, non per sapere cosa *ha* fatto. Chiedi pure con `SendMessage` chi sta
+facendo cosa, ma prima di agire su un fatto — se un ramo è fuso, se un file è cambiato,
+se una issue è chiusa — guardalo nel repo: `git log`, `git status`, `git worktree list`.
+Non fidarti del racconto, nemmeno del tuo di dieci minuti fa.
+
+Misurato il 2026-09-11: ogni deduzione tratta da un messaggio di un'altra sessione è
+risultata sbagliata, ogni verifica fatta nel repo è risultata giusta al primo colpo.
+
+### Prima di prendere una issue
+
+1. `glab issue view <n> --comments` e leggi **le note**, non solo assegnatario e label:
+   la rivendicazione vera sta lì.
+2. Guarda le issue vicine per *file*, non per numero. Due issue che toccano lo stesso
+   file sono la stessa issue dal punto di vista dei conflitti, anche se i numeri sono
+   lontani: la #14 e la #22 non si somigliano affatto a leggerne i titoli.
+3. Se una nota nomina una sessione, chiedile con `SendMessage` se è ancora sopra, invece
+   di dedurlo dai commit.
+
+### Come rivendicarla
+
+`glab issue update <n> --assignee @me` va fatto comunque — serve alla frontier query del
+wayfinder — ma da solo non dice niente a nessuno. La rivendicazione che funziona è una
+nota:
+
+```
+glab issue note <n> --message "Presa da cryptocustode-9c, <data e ora>.
+File tenuti in esclusiva: core/detect/patterns.py (Category.INDIRIZZO, righe 156-203),
+tests/test_rules.py (nuove classi in coda)."
+```
+
+È esattamente questo che ha tenuto le altre sessioni alla larga dalla #14 e dalla #15:
+non l'assegnatario, ma l'elenco dei file. Scrivi la nota **prima** di far partire un
+agente, e aggiornala se l'ambito cambia: una nota che elenca file che non stai più
+toccando blocca gli altri per niente.
+
+**Una rivendicazione condizionata non è possesso.** "La prendo se il mio utente me lo
+conferma" non è una rivendicazione: o tieni la issue, o è libera. Lo stato intermedio,
+lasciato implicito, ferma il lavoro degli altri senza che nessuno stia davvero lavorando.
+Quindi la nota di esclusiva si scrive quando la conferma c'è; se l'hai scritta e la
+conferma non arriva, scrivi una nota che libera la issue invece di lasciarla appesa.
+
+### Se scopri che qualcuno è già partito
+
+Non far mollare nessuno per anzianità di assegnazione: **dividi l'ambito**. Quando bc e
+9c si sono parlate hanno spartito lo stesso file per righe — `Category.TELEFONO` righe
+88-95 a una, `Category.INDIRIZZO` righe 156-203 all'altra — e hanno concordato dove
+ciascuna avrebbe appeso le nuove classi di test. Nessuna delle due ha buttato via il
+proprio lavoro. Dopo l'accordo, entrambe le sessioni aggiornano la nota della propria
+issue, così la divisione sopravvive a chi l'ha concordata.
+
+Se la sessione nominata non risponde, prendi un'altra issue che non condivida file: il
+costo di aspettare è un ticket rimandato, il costo di sbagliare sono due rami che
+riscrivono le stesse righe.
+
 ## Merge requests as a triage surface
 
 **MRs as a request surface: no.** _(Set to `yes` if this repo treats external merge requests as feature requests; `/triage` reads this flag.)_
