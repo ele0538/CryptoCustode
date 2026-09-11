@@ -75,6 +75,77 @@ class TestRequisitoDiContesto:
         assert Category.TELEFONO not in categorie("Ordine 00391234567 spedito")
 
 
+class TestVariantiDelleParoleDiContesto:
+    """Il valore e' gia' validato dal checksum: se cade, cade sulla parola chiave.
+
+    Ogni caso qui ha la sua controprova in `TestRequisitoDiContesto` con la
+    forma che funzionava gia', sullo **stesso** numero: e' la dimostrazione che
+    non c'entra il valore (issue #32).
+    """
+
+    def test_codice_fiscale_di_societa_riconosciuto(self):
+        # il codice fiscale di una societa' ha la forma della P.IVA, ed e' la
+        # dicitura piu' comune nei documenti italiani
+        assert valori("Ditta con Codice Fiscale 12345678903 attiva.", Category.PIVA) == [
+            "12345678903"
+        ]
+
+    def test_cf_abbreviato_riconosciuto(self):
+        assert valori("Ditta con C.F. 12345678903 attiva.", Category.PIVA) == ["12345678903"]
+
+    def test_cod_fisc_riconosciuto(self):
+        assert valori("Ditta con Cod. Fisc. 12345678903 attiva.", Category.PIVA) == [
+            "12345678903"
+        ]
+
+    def test_partita_iva_puntata_riconosciuta(self):
+        assert valori("Ditta con Partita I.V.A. 12345678903 attiva.", Category.PIVA) == [
+            "12345678903"
+        ]
+
+    def test_piva_attaccata_riconosciuta(self):
+        assert valori("Ditta con PIVA 12345678903 attiva.", Category.PIVA) == ["12345678903"]
+
+    def test_recapito_telefonico_riconosciuto(self):
+        assert valori("Recapito telefonico: 3401234567", Category.TELEFONO) == ["3401234567"]
+
+    def test_utenza_telefonica_riconosciuta(self):
+        testo = "Utenza telefonica 011 1234567 intestata al cliente."
+        assert valori(testo, Category.TELEFONO) == ["011 1234567"]
+
+    def test_telefoni_al_plurale_riconosciuto(self):
+        assert valori("Telefoni: 011 1234567", Category.TELEFONO) == ["011 1234567"]
+
+    def test_telefax_riconosciuto(self):
+        assert valori("Telefax: 011 1234567", Category.TELEFONO) == ["011 1234567"]
+
+    def test_telef_abbreviato_riconosciuto(self):
+        assert valori("Telef. 011 1234567", Category.TELEFONO) == ["011 1234567"]
+
+    def test_cellulari_al_plurale_riconosciuto(self):
+        assert valori("Recapiti cellulari: 3401234567", Category.TELEFONO) == ["3401234567"]
+
+
+class TestIlValidatoreRestaIlCancello:
+    """Le guardie della #32: la parola chiave apre la porta, il checksum
+    decide chi entra. Allargare la prima non deve allentare il secondo."""
+
+    def test_piva_con_checksum_errato_resta_fuori_con_la_chiave_nuova(self):
+        assert Category.PIVA not in categorie("Ditta con Codice Fiscale 12345678901 attiva.")
+
+    def test_numero_troppo_corto_resta_fuori_con_la_chiave_nuova(self):
+        assert Category.TELEFONO not in categorie("Recapito telefonico: 12345")
+
+    def test_tel_dentro_una_parola_non_fa_contesto(self):
+        # `tel` resta parola intera: non deve agganciarsi dentro `hotel`
+        assert Category.TELEFONO not in categorie("Fattura hotel 3401234567 del mese.")
+
+    def test_una_parola_che_comincia_per_tel_non_fa_contesto(self):
+        # il prefisso ammesso e' `telefon`, non `tel`: "numero di telaio" e'
+        # una dicitura reale dei documenti dei veicoli e non parla di telefoni
+        assert Category.TELEFONO not in categorie("Numero di telaio 3401234567 del veicolo.")
+
+
 class TestLunghezzaTelefono:
     """Spec §6: lunghezza complessiva 9-11 cifre."""
 
@@ -295,6 +366,140 @@ class TestSuffissoDelCivico:
         assert valori("Residente in Via Roma 10121 Torino", Category.INDIRIZZO) == [
             "Via Roma 10121 Torino"
         ]
+
+
+class TestSuffissoDelCivicoNonSiAggancia:
+    """Issue #29: il suffisso a lettera sola del ruling I1 ammetteva *lo spazio
+    da solo* come separatore, quindi si agganciava a qualunque lettera isolata
+    dopo il civico — un'abbreviazione, una congiunzione, una preposizione — e
+    non solo alla lettera che del civico fa davvero parte.
+
+    Il rimedio ovvio, pretendere sempre il separatore, è stato misurato e
+    scartato: toglie "Via Roma 12 A, 10121 Torino", indirizzo italiano reale
+    che prima funzionava, e con lui CAP e comune tornano in chiaro. Chiudeva
+    una voracità aprendo sei fughe, e nessun test lo mostrava — è il motivo per
+    cui `test_il_suffisso_maiuscolo_separato_da_spazio_resta` esiste.
+
+    Quello che distingue un suffisso vero da una lettera di passaggio non è
+    solo il separatore: è anche il caso della lettera e ciò che le sta a
+    destra. Separata da spazio, la maiuscola vale per convenzione ("12 A"); la
+    minuscola vale solo se lì l'indirizzo finisce davvero — virgola, fine riga
+    o del testo, o il CAP subito dopo.
+
+    La correzione sta sul suffisso e non fra le parole chiave dell'interno: `p`
+    è una chiave di una lettera sola, ambigua con `pagina` e con qualunque
+    altra iniziale, e ammetterla allargherebbe la voracità invece di ridurla —
+    oltre a non chiudere il difetto, che si presenta anche senza `p.`."""
+
+    def test_una_lettera_isolata_seguita_da_punto_non_entra_nello_span(self):
+        # `p.` è un'abbreviazione di "piano": lo span si mangiava la `p`
+        # ("Via Roma 12 p"), quindi restituiva un civico storpiato. Ora il
+        # suffisso non si aggancia e il civico resta intero.
+        #
+        # LIMITE NOTO, dichiarato: CAP e comune restano in chiaro lo stesso,
+        # perché `p.` non è fra le parole chiave ammesse fra civico e CAP e
+        # aggiungercelo è stato scartato con motivo (vedi il docstring). Questo
+        # test chiude la voracità sulla `p`, non la fuga del CAP: quella resta
+        # aperta e va decisa a parte.
+        testo = "Via Roma 12 p. 2, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_la_congiunzione_dopo_il_civico_non_entra_nello_span(self):
+        # voracità pura: la `e` non è un dato personale e lo span la mascherava
+        testo = "Il piano regolatore di Via Roma 12 e stato approvato"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    def test_la_preposizione_dopo_il_civico_non_entra_nello_span(self):
+        # stessa famiglia: ogni lettera isolata dopo il numero valeva come
+        # suffisso, anche quando introduce la frase invece dell'indirizzo
+        assert valori("Abita in Via Roma 12 a Torino", Category.INDIRIZZO) == [
+            "Via Roma 12"
+        ]
+
+    def test_la_minuscola_seguita_da_un_numero_breve_non_e_un_suffisso(self):
+        # è il test che tiene fermo `\d{5}` invece di `\d` nel contesto a
+        # destra: con le cifre generiche "12 o 14" tornerebbe a dare
+        # "Via Roma 12 o". Dopo un suffisso vero vengono le cinque cifre del
+        # CAP, non un secondo civico.
+        testo = "Via Roma 12 o 14 del quartiere"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12"]
+
+    # --- guardie: le forme reali del suffisso non devono regredire -----------
+    # è il motivo per cui il suffisso esiste (ruling I1): se la restrizione le
+    # togliesse, il gruppo del CAP tornerebbe a non agganciarsi e resterebbero
+    # in chiaro suffisso, CAP e comune — il difetto che I1 aveva chiuso.
+
+    def test_il_suffisso_maiuscolo_separato_da_spazio_resta(self):
+        # LA guardia che mancava. "Via Roma 12 A" è un indirizzo italiano
+        # reale, nessun test lo copriva, e per questo una correzione che lo
+        # rompeva lasciava la suite verde.
+        testo = "Residente in Via Roma 12 A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 A, 10121 Torino"]
+
+    def test_il_suffisso_maiuscolo_separato_da_spazio_senza_virgola(self):
+        testo = "Residente in Via Roma 12 A 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 A 10121 Torino"]
+
+    def test_il_suffisso_maiuscolo_separato_da_spazio_con_l_interno(self):
+        # la forma composta: il suffisso separato da spazio *e* un complemento
+        # fra civico e CAP. È qui che si vede perché la maiuscola vale da sola,
+        # senza pretendere anche il contesto a destra: pretendendolo, questa
+        # riga perde CAP e comune.
+        testo = "Residente in Via Roma 12 A int. 3, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == [
+            "Via Roma 12 A int. 3, 10121 Torino"
+        ]
+
+    def test_il_suffisso_maiuscolo_in_un_documento_tutto_maiuscolo(self):
+        # i documenti estratti da PDF sono spesso tutti maiuscoli, e il repo ha
+        # già test su indirizzi così ("VIA GARIBALDI 42")
+        testo = "RESIDENTE IN VIA ROMA 12 A, 10121 TORINO"
+        assert valori(testo, Category.INDIRIZZO) == ["VIA ROMA 12 A, 10121 TORINO"]
+
+    def test_il_suffisso_minuscolo_separato_da_spazio_prima_della_virgola(self):
+        # la minuscola non è esclusa: le si chiede solo che lì l'indirizzo
+        # finisca davvero
+        testo = "Residente in Via Roma 12 a, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 a, 10121 Torino"]
+
+    def test_il_suffisso_minuscolo_separato_da_spazio_prima_del_cap(self):
+        testo = "Residente in Via Roma 12 a 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 a 10121 Torino"]
+
+    def test_il_suffisso_minuscolo_a_fine_riga(self):
+        # nei documenti estratti l'indirizzo chiude una riga molto più spesso
+        # che il documento: se "fine indirizzo" fosse solo la fine del testo,
+        # questa riga perderebbe il suffisso
+        testo = "Residente in Via Roma 12 a\nTorino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 a"]
+
+    def test_il_suffisso_attaccato_al_civico_resta(self):
+        testo = "Residente in Via Roma 12A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12A, 10121 Torino"]
+
+    def test_il_suffisso_dopo_la_barra_resta(self):
+        testo = "Residente in Via Roma 12/A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12/A, 10121 Torino"]
+
+    def test_il_suffisso_dopo_la_barra_spaziata_resta(self):
+        # con la barra la lettera è dichiarata parte del civico da chi ha
+        # scritto il documento: né il caso né il contesto a destra contano
+        testo = "Residente in Via Roma 12 / a, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 / a, 10121 Torino"]
+
+    def test_il_suffisso_dopo_il_trattino_resta(self):
+        testo = "Residente in Via Roma 12-A, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12-A, 10121 Torino"]
+
+    def test_il_suffisso_a_parola_resta(self):
+        # "bis" ha il proprio ramo e lo spazio gli è indispensabile: la
+        # restrizione sul suffisso a lettera sola non deve toccarlo
+        testo = "Residente in Via Roma 12 bis, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12 bis, 10121 Torino"]
+
+    def test_il_civico_a_intervallo_resta(self):
+        testo = "Residente in Via Roma 12-14, 10121 Torino"
+        assert valori(testo, Category.INDIRIZZO) == ["Via Roma 12-14, 10121 Torino"]
 
 
 class TestInternoDelCivico:
@@ -616,8 +821,18 @@ class TestFissoAGruppiCorti:
 
 class TestAltreCategorie:
     def test_email(self):
-        assert valori("Scrivere a mario.rossi@esempio.it subito.", Category.EMAIL) == [
-            "mario.rossi@esempio.it"
+        assert valori("Scrivere a mario.rossi@example.com subito.", Category.EMAIL) == [
+            "mario.rossi@example.com"
+        ]
+
+    def test_email_con_trattino_nel_dominio(self):
+        # Il trattino nelle etichette di dominio è ammesso dalla regex
+        # ([A-Za-z0-9.\-]+) e fino a oggi era esercitato solo di rimbalzo, da
+        # una fixture di tests/test_documenti_di_verifica.py. Una fixture però
+        # la si riscrive senza sapere che cosa stava sorvegliando: qui la
+        # copertura diventa deliberata e ha un nome che lo dice.
+        assert valori("Scrivere a info@posta-esempio.example.com subito.", Category.EMAIL) == [
+            "info@posta-esempio.example.com"
         ]
 
     def test_data_numerica(self):

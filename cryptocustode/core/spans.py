@@ -1,8 +1,6 @@
 """Risoluzione delle sovrapposizioni fra span, per priorità decrescente (spec §6)."""
-from __future__ import annotations
 
 from cryptocustode.core.models import Span
-
 
 def si_sovrappongono(a: Span, b: Span) -> bool:
     """Due span si sovrappongono se stanno nello stesso documento e

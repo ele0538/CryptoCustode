@@ -1,9 +1,7 @@
 """Tipi di dominio di CryptoCustode. Solo dati: nessun comportamento, nessuna I/O."""
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-
 
 class Category(str, Enum):
     PERSONA = "PERSONA"

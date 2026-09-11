@@ -1,7 +1,5 @@
 """Ripristino della risposta dell'IA: dai segnaposto ai valori veri (spec §11)."""
 
-from __future__ import annotations
-
 import re
 
 from cryptocustode.core.errors import MalformedPlaceholder, UnknownPlaceholder

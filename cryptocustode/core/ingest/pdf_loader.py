@@ -1,7 +1,5 @@
 """Estrazione dei PDF con PyMuPDF e verdetto di scansione (spec §12)."""
 
-from __future__ import annotations
-
 import fitz
 
 from cryptocustode.core.errors import ScannedDocumentRejected

@@ -10,7 +10,6 @@ sé, ma non viene mai legato a una persona, perché nessuna regola può dire qua
 CF appartenga a quale nome senza rischiare di fondere due persone diverse (spec
 §7, emendata nella issue #12).
 """
-from __future__ import annotations
 
 import itertools
 import re

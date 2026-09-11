@@ -193,3 +193,44 @@ def test_non_vieta_import_di_moduli_interni_a_core():
 def test_non_vieta_import_del_pacchetto_radice():
     trovati = nomi_vietati_in("import cryptocustode\n", PACCHETTO_DI_PROVA)
     assert trovati == set()
+
+
+# Issue #18, voce 2. `from __future__ import annotations` è la PEP 563: rende
+# ogni annotazione una stringa. Da Python 3.14 (PEP 649/749) le annotazioni sono
+# già valutate pigramente, quindi la future import non serve più — e non è
+# neutrale, perché chi le legge riceve stringhe invece di oggetti: `@dataclass`
+# in `core/models.py` e i modelli Pydantic delle route ci lavorano sopra.
+# Il repo non ha né linter né CI, quindi senza questa guardia la riga rientra al
+# primo file nuovo scritto da chi la #18 non l'ha letta, e nessuno se ne accorge.
+PACKAGE = RADICE / "cryptocustode"
+TEST = RADICE / "tests"
+
+
+def ha_future_annotations(sorgente: str) -> bool:
+    for nodo in ast.walk(ast.parse(sorgente)):
+        if isinstance(nodo, ast.ImportFrom) and nodo.module == "__future__":
+            if any(alias.name == "annotations" for alias in nodo.names):
+                return True
+    return False
+
+
+def test_nessun_modulo_reintroduce_la_future_import_delle_annotazioni():
+    # Anche tests/: l'insieme trattato dalla #18 comprendeva
+    # tests/pdf_di_prova.py, che è un helper e non un test, e la riga può
+    # rientrare da lì come da qualsiasi modulo del package.
+    colpevoli = [
+        percorso.relative_to(RADICE).as_posix()
+        for radice in (PACKAGE, TEST)
+        for percorso in sorted(radice.rglob("*.py"))
+        if ha_future_annotations(percorso.read_text(encoding="utf-8"))
+    ]
+    assert colpevoli == []
+
+def test_la_guardia_sulla_future_import_sa_rilevarla():
+    # Senza questo, la guardia sopra passerebbe anche se smettesse di guardare:
+    # una lista vuota è il risultato atteso e anche il risultato di un controllo
+    # rotto. Qui si prova che il rilevatore distingue davvero i due casi.
+    assert ha_future_annotations("from __future__ import annotations")
+    assert ha_future_annotations("from __future__ import annotations, division")
+    assert not ha_future_annotations("from __future__ import division")
+    assert not ha_future_annotations("import annotations")

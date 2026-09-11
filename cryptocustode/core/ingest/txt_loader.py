@@ -1,7 +1,5 @@
 """Decodifica dei TXT: UTF-8 strict e nient'altro (spec §12)."""
 
-from __future__ import annotations
-
 from cryptocustode.core.errors import InvalidEncoding
 
 

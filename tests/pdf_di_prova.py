@@ -4,8 +4,6 @@ La spec §14 vieta di committare binari nel repo: ogni PDF usato dai test nasce
 qui, riproducibile e ispezionabile.
 """
 
-from __future__ import annotations
-
 import fitz
 
 # Testo abbondante: supera comodamente CARATTERI_MINIMI_PAGINA.

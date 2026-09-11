@@ -18,7 +18,6 @@ una UI che tagliasse da sé evidenzierebbe il pezzo sbagliato senza un errore.
 Qui i segmenti arrivano già tagliati, e la UI si limita a dipingerli.
 """
 
-from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import PurePosixPath, PureWindowsPath

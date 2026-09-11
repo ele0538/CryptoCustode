@@ -5,7 +5,6 @@ mascherare lo stesso fascicolo due volte producesse output diversi, il
 confronto con `approval_hash` fallirebbe a caso e il controllo di integrità
 diventerebbe rumore invece di una difesa (spec §4, invariante 2).
 """
-from __future__ import annotations
 
 import hashlib
 
