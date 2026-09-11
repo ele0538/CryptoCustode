@@ -306,9 +306,24 @@ rivede il piano 3 non deve riaprirlo.
 
 Controlli, in ordine:
 
-1. `fascicolo.state == APPROVED`, altrimenti `ExportNotAllowed`.
-2. Ricalcolo dell'hash sul testo mascherato corrente e confronto con `approval_hash`;
+1. Risoluzione di `fascicolo_id` contro lo `store`, altrimenti `FascicoloNotFound`.
+2. `fascicolo.state == APPROVED`, altrimenti `ExportNotAllowed`.
+3. Ricalcolo dell'hash sul testo mascherato corrente e confronto con `approval_hash`;
    se differisce, `IntegrityError`.
+
+**Perché la risoluzione dell'id è il primo controllo e non un preliminare.** Il gate non
+può guardare né lo stato né l'hash prima di avere in mano il fascicolo: `prendi` è la
+prima cosa che `export_sanitized_text` chiama, quindi è anche la prima che può fallire.
+Finché `prendi` si limitava a indicizzare il suo dizionario ne usciva un `KeyError` nudo,
+che non è un `CryptoCustodeError` e attraversava il gate senza che nessuno lo
+riconoscesse: non era un controllo, era un incidente, e la lista qui sopra taceva a
+ragione. Da quando `prendi` solleva `FascicoloNotFound` (issue #16) è un controllo a tutti
+gli effetti, con l'errore di dominio e il **404** dichiarati nella tabella della §13 — un
+id sconosciuto non è un conflitto di stato come i due controlli che lo seguono, perché
+non c'è ancora alcuno stato da conciliare. Va nominato qui perché questa sezione è il
+contratto dell'unico punto da cui esce il testo mascherato (§4, invariante), cioè il posto
+dove si va a leggere cosa può andare storto nell'export: ometterlo lasciava fuori dalla
+lista proprio la prima cosa che può fallire (issue #24).
 
 **Payload:** esclusivamente `{nome_file: testo_mascherato}`. Nessun testo originale,
 nessun dizionario, nessun metadato sensibile, nessuno span.
