@@ -36,3 +36,22 @@ def test_le_istruzioni_elencano_le_categorie():
     testo = istruzioni()
     for categoria in Category:
         assert categoria.value in testo
+
+
+def test_le_istruzioni_chiedono_entrambe_le_forme_di_un_dato():
+    """Mascherare l'importo in cifre e lasciarlo in lettere non nasconde
+    niente: chi legge `[IMPORTO_1] (quattordicimilaquattrocento/00)` ha ancora
+    il numero. Trovato su un contratto vero, dove il canone compariva due volte
+    e solo la cifra veniva sostituita.
+
+    Il test pianta l'istruzione, non il comportamento del modello: quello si
+    verifica solo con una chiamata vera, che sta fra i test `rete`. Serve
+    comunque — impedisce che l'istruzione sparisca in una riscrittura del
+    prompt senza che nessuno se ne accorga, ed è l'unica difesa disponibile a
+    costo zero.
+    """
+    testo = istruzioni().lower()
+
+    assert "due modi" in testo or "due volte" in testo
+    assert "lettere" in testo, "il caso dell'importo scritto per esteso"
+    assert "quattordicimilaquattrocento" in testo, "l'esempio concreto"
