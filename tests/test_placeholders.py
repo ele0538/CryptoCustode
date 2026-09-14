@@ -10,7 +10,7 @@ import pytest
 
 from cryptocustode.core.entities import prossimo_placeholder
 from cryptocustode.core.ingest.loader import segnaposto_preesistenti
-from cryptocustode.core.models import Category, Entity, fascicolo_vuoto
+from cryptocustode.core.models import Category, fascicolo_vuoto
 from cryptocustode.core.placeholders import SEGNAPOSTO, costruisci_segnaposto
 from cryptocustode.core.unmask import ripristina
 
@@ -62,13 +62,8 @@ def test_un_segnaposto_generato_attraversa_il_ripristino():
     mai vedere come alterato un segnaposto che abbiamo generato noi."""
     fascicolo = fascicolo_vuoto("f1")
     generato = prossimo_placeholder(fascicolo, Category.PERSONA)
-    entita = {
-        "e1": Entity(
-            entity_id="e1", category=Category.PERSONA, placeholder=generato,
-            canonical_value="Mario Rossi",
-        )
-    }
-    assert ripristina(f"Firmato da {generato}.", entita) == "Firmato da Mario Rossi."
+    dizionario = {generato: "Mario Rossi"}
+    assert ripristina(f"Firmato da {generato}.", dizionario) == "Firmato da Mario Rossi."
 
 
 def test_un_segnaposto_generato_viene_segnalato_nel_testo_in_ingresso():

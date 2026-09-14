@@ -4,30 +4,15 @@ import pytest
 
 from cryptocustode.core.entities import prossimo_placeholder
 from cryptocustode.core.errors import MalformedPlaceholder, UnknownPlaceholder
-from cryptocustode.core.models import Category, Entity, fascicolo_vuoto
+from cryptocustode.core.models import Category, fascicolo_vuoto
 from cryptocustode.core.unmask import SEGNAPOSTO, ripristina
 
 
 def dizionario():
     return {
-        "e1": Entity(
-            entity_id="e1",
-            category=Category.PERSONA,
-            placeholder="[PERSONA_1]",
-            canonical_value="Mario Rossi",
-        ),
-        "e2": Entity(
-            entity_id="e2",
-            category=Category.PERSONA,
-            placeholder="[PERSONA_10]",
-            canonical_value="Luisa Bianchi",
-        ),
-        "e3": Entity(
-            entity_id="e3",
-            category=Category.IBAN,
-            placeholder="[IBAN_1]",
-            canonical_value="IT60X0542811101000000123456",
-        ),
+        "[PERSONA_1]": "Mario Rossi",
+        "[PERSONA_10]": "Luisa Bianchi",
+        "[IBAN_1]": "IT60X0542811101000000123456",
     }
 
 

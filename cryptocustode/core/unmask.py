@@ -3,7 +3,8 @@
 import re
 
 from cryptocustode.core.errors import MalformedPlaceholder, UnknownPlaceholder
-from cryptocustode.core.models import Entity
+
+# (nessun import di modelli: questo modulo lavora su stringhe)
 
 # Passo 2: la forma canonica. Arriva dal modulo che la possiede e non da una
 # copia locale, così non può divergere in silenzio dalla forma con cui la
@@ -32,13 +33,18 @@ def _alterazioni(risposta: str) -> list[str]:
     ]
 
 
-def ripristina(risposta: str, entities: dict[str, Entity]) -> str:
-    """Sostituisce i segnaposto della risposta con i valori canonici.
+def ripristina(risposta: str, dizionario: dict[str, str]) -> str:
+    """Sostituisce i segnaposto della risposta con i valori reali.
+
+    `dizionario` è la mappa `tag → valore`, non più un dizionario di entità:
+    questo modulo non ha bisogno di conoscere i tipi del dominio, e ricevendo
+    stringhe resta identico sia che la mappa venga da un fascicolo vivo sia che
+    venga da un vault riaperto (`core/tagga.dizionario_di`).
 
     Nessun ripristino parziale, in nessun caso: se anche un solo segnaposto è
-    alterato o sconosciuto la funzione solleva e non restituisce nulla. Un testo
-    in cui l'utente non sa quali segnaposto siano stati risolti e quali no è
-    peggio di un errore (spec §11).
+    alterato o sconosciuto la funzione solleva e non restituisce nulla. Un
+    testo in cui l'utente non sa quali segnaposto siano stati risolti e quali
+    no è peggio di un errore (spec §11).
     """
     alterati = _alterazioni(risposta)
     if alterati:
@@ -47,7 +53,6 @@ def ripristina(risposta: str, entities: dict[str, Entity]) -> str:
             f"segnaposto alterati, ripristino interrotto: {elenco}"
         )
 
-    dizionario = {entita.placeholder: entita.canonical_value for entita in entities.values()}
     trovati = [trovato.group(0) for trovato in SEGNAPOSTO.finditer(risposta)]
     sconosciuti = sorted({t for t in trovati if t not in dizionario})
     if sconosciuti:
