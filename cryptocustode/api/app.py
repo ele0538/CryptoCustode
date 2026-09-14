@@ -160,7 +160,8 @@ STATO_HTTP: dict[type[CryptoCustodeError], int] = {
     AIResponseInvalid: 502,
     VaultNotFound: 404,
 }
-"""La tabella della spec §13, trascritta una volta sola.
+"""La tabella della §13 della spec del 2026-09-10 e della §12 della spec del
+2026-09-14, trascritte una volta sola.
 
 Sta qui e non dentro le route perché è un contratto dell'applicazione, non di
 un endpoint: ripetuta in ogni handler divergerebbe al primo che dimentica una

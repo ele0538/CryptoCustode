@@ -22,11 +22,19 @@ from cryptocustode.core.models import Category, Rilevazione
 
 VARIABILE_CHIAVE = "CRYPTOCUSTODE_GEMINI_API_KEY"
 
-Chiamata = Callable[[str, str, str, dict], str]
-"""`(modello, istruzioni, testo, schema) -> JSON grezzo`."""
+Chiamata = Callable[[str, str, str, dict, str], str]
+"""`(modello, istruzioni, testo, schema, chiave) -> JSON grezzo`.
+
+La chiave passa come parametro e non si rilegge dall'ambiente dentro la
+chiamata: `RilevatoreGemini` è già la fonte della chiave — ricevuta nel
+costruttore o letta lì da `VARIABILE_CHIAVE` — e chi costruisce il
+rilevatore con una chiave esplicita si aspetta che sia quella a essere usata,
+non una seconda lettura indipendente dell'ambiente che potrebbe non
+combaciare (o non esistere).
+"""
 
 
-def chiamata_reale(modello: str, sistema: str, testo: str, schema: dict) -> str:
+def chiamata_reale(modello: str, sistema: str, testo: str, schema: dict, chiave: str) -> str:
     """La chiamata di produzione. Importa `google.genai` qui dentro e non in
     testa al modulo, così chi costruisce un `RilevatoreGemini` con una
     `chiama` propria — cioè ogni test — non ha bisogno che l'SDK sia
@@ -34,7 +42,7 @@ def chiamata_reale(modello: str, sistema: str, testo: str, schema: dict) -> str:
     from google import genai
     from google.genai import types
 
-    cliente = genai.Client(api_key=os.environ[VARIABILE_CHIAVE])
+    cliente = genai.Client(api_key=chiave)
     risposta = cliente.models.generate_content(
         model=modello,
         contents=testo,
@@ -67,6 +75,17 @@ class RilevatoreGemini:
         Il controllo sulla chiave precede la chiamata: scoprire che manca dopo
         aver spedito significherebbe aver mandato il documento in rete per
         niente.
+
+        Il messaggio di `AIUnavailable` cita solo `type(errore).__name__` e non
+        `str(errore)`: il testo di un'eccezione di trasporto può contenere
+        l'URL della richiesta fallita, e l'API REST di Google accetta la
+        chiave anche come parametro `?key=` nell'URL — interpolare `str(errore)`
+        rischierebbe di mettere la chiave nel corpo di una risposta 503, cioè
+        sotto gli occhi dell'utente e nei log del browser, il che viola per
+        costruzione il vincolo che la chiave non compaia mai in un messaggio
+        d'errore. Il traceback completo, con l'eccezione originale, resta nel
+        log del server grazie a `from errore`: lì la chiave non è comunque più
+        esposta di quanto già sia.
         """
         if not self._chiave:
             raise AIKeyMissing(
@@ -78,12 +97,12 @@ class RilevatoreGemini:
             )
         try:
             grezza = self._chiama(
-                self._modello, istruzioni(), testo, SCHEMA_RILEVAZIONI
+                self._modello, istruzioni(), testo, SCHEMA_RILEVAZIONI, self._chiave
             )
         except Exception as errore:
             raise AIUnavailable(
                 "il servizio di analisi non è raggiungibile, il fascicolo è "
-                f"intatto: riprova. Dettaglio: {errore}"
+                f"intatto: riprova. Tipo di errore: {type(errore).__name__}."
             ) from errore
         return _traduci(grezza)
 
