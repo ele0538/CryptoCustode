@@ -31,6 +31,7 @@ import json
 import re
 import shutil
 import subprocess
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
@@ -82,13 +83,25 @@ def client_con_rilevatore(store):
     Restituisce una funzione e non una coppia già fatta perché ogni test ha
     bisogno di un doppio programmato diversamente: una fixture che decidesse
     lei le rilevazioni costringerebbe i test ad accettare le sue.
-    """
-    def costruisci(**kwargs):
-        finto = RilevatoreFinto(**kwargs)
-        app = crea_app(store=store, rilevatore=finto)
-        return TestClient(app, base_url=INDIRIZZO_DI_PROVA), finto
 
-    return costruisci
+    Ogni `TestClient` costruito da `costruisci` entra nel proprio context
+    manager tramite l'`ExitStack` della fixture, non lo restituisce grezzo:
+    senza `__enter__` starlette non programma mai `self.lifespan`, quindi
+    `ciclo_di_vita` (e con lui `al_pronto`) non partirebbe per nessun test che
+    usa questa fixture — oggi innocuo solo perché `ciclo_di_vita` non fa altro,
+    ma silenzioso e fragile per la prossima inizializzazione che vi si
+    appoggerà. Lo stack si chiude allo smontaggio della fixture, chiudendo con
+    sé anche il client — la stessa pulizia che la fixture `client` ottiene dal
+    suo `with`.
+    """
+    with ExitStack() as stack:
+        def costruisci(**kwargs):
+            finto = RilevatoreFinto(**kwargs)
+            app = crea_app(store=store, rilevatore=finto)
+            client = stack.enter_context(TestClient(app, base_url=INDIRIZZO_DI_PROVA))
+            return client, finto
+
+        yield costruisci
 
 
 def carica(client: TestClient, nome: str, testo: str):
