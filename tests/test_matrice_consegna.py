@@ -136,7 +136,8 @@ def test_il_segnaposto_generato_si_ripristina_con_il_valore_canonico():
     entita = next(iter(fascicolo.entities.values()))
     frase = f"Confermo {entita.placeholder} per conoscenza."
     atteso = f"Confermo {entita.canonical_value} per conoscenza."
-    assert ripristina(frase, fascicolo.entities) == atteso
+    dizionario = {e.placeholder: e.canonical_value for e in fascicolo.entities.values()}
+    assert ripristina(frase, dizionario) == atteso
 
 
 def test_TC_04_export_in_stato_draft_e_negato():
@@ -148,8 +149,9 @@ def test_TC_04_export_in_stato_draft_e_negato():
 
 def test_TC_05_risposta_con_un_segnaposto_inesistente_interrompe_il_ripristino():
     fascicolo = fascicolo_con(TESTO_RICCO)
+    dizionario = {e.placeholder: e.canonical_value for e in fascicolo.entities.values()}
     with pytest.raises(UnknownPlaceholder, match=r"\[PERSONA_99\]"):
-        ripristina("Rispondo a [PERSONA_99].", fascicolo.entities)
+        ripristina("Rispondo a [PERSONA_99].", dizionario)
 
 
 def test_TC_06_una_mutazione_dopo_l_approvazione_riporta_in_pending_e_nega_l_export():

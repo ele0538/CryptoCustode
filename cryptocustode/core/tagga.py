@@ -157,3 +157,14 @@ def conta_occorrenze(
             stato=StatoTag.APPLICATO if totale else StatoTag.NON_TROVATO,
         )
     return aggiornata
+
+
+def dizionario_di(tabella: dict[str, Tag]) -> dict[str, str]:
+    """La mappa `tag → valore` che il ripristino consuma.
+
+    Sta qui e non in `unmask.py` perché è una proiezione della tabella dei tag,
+    e `unmask` non deve conoscere `Tag`: riceve un dizionario di stringhe, e
+    così resta usabile anche quando la mappa arriva da un vault invece che da
+    un fascicolo vivo.
+    """
+    return {tag.tag: tag.valore for tag in tabella.values()}
