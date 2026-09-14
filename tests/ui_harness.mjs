@@ -1,14 +1,18 @@
-// Esercita cryptocustode/ui/app.js fuori dal browser (issue #3).
+// Esercita gli script veri della UI fuori dal browser (issue #3).
 //
 // Non c'è infrastruttura JavaScript in questo repo, e la conseguenza misurata è
 // che tre rotture da un solo token nella UI lasciavano la suite verde: il campo
 // multipart rinominato, un id che non esiste nella pagina, e una risposta senza
 // corpo JSON che uccideva la fila dei file senza dire niente all'utente.
 //
-// Questo harness carica il vero `app.js` — non una copia, non una riscrittura —
-// dentro un DOM finto e con una `fetch` programmata, esegue il gestore del
-// submit e stampa su stdout quello che l'utente avrebbe visto. I test Python lo
-// invocano con il nome di uno scenario e asseriscono su quel JSON.
+// Questo harness carica i veri script di `nascondi.html` — non una copia, non
+// una riscrittura — dentro un DOM finto e con una `fetch` programmata, esegue il
+// gestore del submit e stampa su stdout quello che l'utente avrebbe visto. I
+// test Python lo invocano con il nome di uno scenario e asseriscono su quel JSON.
+//
+// Dal 2026-09-14 gli script sono due, `comune.js` e `nascondi.js`, e vanno
+// caricati in quest'ordine: il primo definisce `window.cc`, che il secondo usa
+// alla prima riga di ogni chiamata.
 //
 // Quello che l'harness NON prova: il rendering, il CSS, e che il browser esegua
 // la pagina. Quello resta un controllo umano.
@@ -54,9 +58,25 @@ function elementoFinto(nome) {
     },
     replaceChildren(...figli) {
       this.figli = figli;
+      // Come nel DOM vero: svuotare un elemento ne azzera anche il testo
+      // proprio. Senza questa riga una frase scritta con `textContent` e poi
+      // sostituita da nodi figli resterebbe nell'elemento finto, e l'harness
+      // riporterebbe un testo che nel browser non c'è più.
+      this.textContent = "";
     },
     addEventListener(evento, gestore) {
       this.gestori[evento] = gestore;
+    },
+    // `hidden`, `setAttribute` e `removeAttribute` sono arrivati con le due
+    // schermate: `vaiA` accende un passo e spegne l'altro, e marca quello
+    // corrente con `aria-current`. Un DOM finto senza questi metodi farebbe
+    // morire lo script al primo passaggio di schermata, cioe' subito.
+    attributi: {},
+    setAttribute(nome, valore) {
+      this.attributi[nome] = valore;
+    },
+    removeAttribute(nome) {
+      delete this.attributi[nome];
     },
   };
   elemento.classList.classi = elemento.classi;
@@ -74,6 +94,9 @@ globalThis.document = {
   createElement(tag) {
     return elementoFinto(tag);
   },
+  // Lo scaricamento appende un `<a>` al body e lo clicca. Nessuno scenario
+  // arriva fin lì, ma il corpo deve esistere o il file non si carica.
+  body: elementoFinto("body"),
 };
 
 // `window` esiste perché la pagina vera lo usa per due cose che un DOM finto
@@ -86,6 +109,9 @@ globalThis.document = {
 // lo rimetterebbe a `false` per sé.
 globalThis.window = globalThis;
 globalThis.confirm = () => true;
+// Il passaggio di schermata riporta la pagina in cima. In un DOM finto non c'è
+// niente da scorrere, ma la chiamata c'è e senza questa riga solleverebbe.
+globalThis.scrollTo = () => {};
 
 globalThis.FormData = class {
   constructor() {
@@ -293,12 +319,35 @@ if (copione === undefined) {
 // portano le risposte in `risposte` e gli eventi da premere in `eventi`.
 const programmate = Array.isArray(copione) ? copione : copione.risposte;
 
+// Quello che `GET /api/fascicolo` risponde all'apertura della pagina.
+//
+// La pagina chiede lo stato da sé al primo disegno (#50): senza questa risposta
+// la richiesta pescherebbe dalla coda dello scenario, e ogni scenario
+// esaminerebbe una risposta spostata di uno. Serve fuori dalla coda perché non
+// è un evento dello scenario — è quello che succede *prima* che l'utente tocchi
+// qualcosa. Uno scenario che voglia una pagina riaperta a lavoro già fatto
+// passa il proprio con `stato_iniziale`.
+const FASCICOLO_VUOTO = {
+  stato: "NEW",
+  esposizione: { in_chiaro: 0, mascherati: 0, categorie: [] },
+  categorie: [],
+  documenti: [],
+  totali: { documenti: 0, massimo_documenti: 10, pagine: 0, caratteri: 0, avvisi: 0 },
+};
+
 const tentativi = [];
 let indice = 0;
 globalThis.fetch = async (url, opzioni) => {
   // Il caricamento manda un `FormData`, la revisione una stringa JSON: la
   // ricerca della parte vale solo per il primo, e il ramo che segue lascia
   // intatto quello che i sette test del caricamento leggono.
+  // La lettura dello stato all'apertura non consuma la coda: è fuori dal
+  // copione, e contarla dentro sposterebbe di uno ogni risposta programmata.
+  if (url === "/api/fascicolo" && opzioni.method === "GET") {
+    const stato = Array.isArray(copione) ? FASCICOLO_VUOTO : copione.stato_iniziale ?? FASCICOLO_VUOTO;
+    return { ok: true, status: 200, json: async () => stato };
+  }
+
   const corpo = opzioni.body;
   const parti = corpo === undefined || typeof corpo === "string" ? undefined : corpo.parti;
   const parte = parti === undefined ? undefined : parti.find(([nome]) => nome === "file");
@@ -325,7 +374,17 @@ globalThis.fetch = async (url, opzioni) => {
   };
 };
 
-runInThisContext(readFileSync(join(radice, "cryptocustode", "ui", "app.js"), "utf8"));
+// Nell'ordine in cui li carica `nascondi.html`: `comune.js` definisce
+// `window.cc`, e invertire le due righe farebbe trovare `undefined` alla prima
+// chiamata di `nascondi.js`.
+for (const nome of ["comune.js", "nascondi.js"]) {
+  runInThisContext(readFileSync(join(radice, "cryptocustode", "ui", nome), "utf8"));
+}
+
+// La lettura dello stato iniziale parte alla fine di `nascondi.js` ed è
+// asincrona: senza questa attesa il driver premerebbe i bottoni mentre la
+// pagina si sta ancora disegnando, e leggerebbe una schermata a metà.
+await new Promise((risolvi) => setImmediate(risolvi));
 
 async function eseguiCaricamento() {
   const modulo = document.getElementById("modulo-caricamento");
@@ -419,6 +478,10 @@ async function eseguiRevisione() {
 
   const documenti = document.getElementById("documenti");
   return {
+    // Quale delle due schermate e' in pagina. E' l'unico modo che un test ha
+    // per verificare che l'analisi porti avanti l'utente invece di lasciarlo
+    // sulla schermata del caricamento a chiedersi se sia successo qualcosa.
+    passo: document.getElementById("passo-salva").hidden === false ? "salva" : "carica",
     stato: document.getElementById("stato-analisi").textContent,
     testo_atteso: TESTO_REVISIONE,
     // L'ultimo payload servito dalla `fetch` programmata, riportato tale e
@@ -431,7 +494,14 @@ async function eseguiRevisione() {
     // decidere cosa devono contenere invece di questo file.
     esposizione: {
       classe: document.getElementById("esposizione").className,
-      testo: [...discendenti(document.getElementById("esposizione"))]
+      // L'elemento **e** i suoi discendenti: il riquadro scrive una frase sola
+      // con `textContent` quando non c'e' niente da segnalare, e due nodi figli
+      // quando deve mostrare il bilancio. Leggere solo i figli perdeva il primo
+      // caso, cioe' proprio quello in cui la pagina dice "va tutto bene".
+      testo: [
+        document.getElementById("esposizione"),
+        ...discendenti(document.getElementById("esposizione")),
+      ]
         .map((nodo) => nodo.textContent ?? "")
         .join(" "),
     },

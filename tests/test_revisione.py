@@ -43,6 +43,7 @@ from cryptocustode.api.routes_fascicolo import ID_FASCICOLO_ATTIVO, crea_router
 from cryptocustode.core.models import Category, Rilevazione, State, StatoTag
 from cryptocustode.state.session import SessionStore
 from tests.doppi import RilevatoreCheFallisceSuAlcuniTesti, RilevatoreFinto
+from tests.pagine import pagine
 
 INDIRIZZO_DI_PROVA = "http://127.0.0.1:8765"
 """L'app accetta solo il loopback nell'intestazione `Host` (`HOST_CONSENTITI`),
@@ -638,47 +639,39 @@ def test_un_analisi_rifiutata_arriva_in_pagina_col_suo_messaggio():
 
 
 @senza_node
-def test_la_pagina_dice_lo_stato_del_fascicolo():
-    """Criterio 4, metà UI. Lo stato è verificato nel fascicolo da
-    `test_dopo_l_analisi_lo_stato_e_pending_review`; qui si verifica l'altra
-    metà, cioè che l'utente lo venga a sapere invece di doverlo dedurre dal
-    fatto che la pagina è cambiata.
+def test_dopo_l_analisi_la_pagina_dice_che_cosa_nascondera():
+    """Criterio 4, metà UI: dopo l'analisi l'utente deve **venire a sapere**
+    cosa è successo, invece di doverlo dedurre dal fatto che la pagina è
+    cambiata.
+
+    Fino al 2026-09-14 questo test pretendeva la stringa `PENDING_REVIEW` in
+    pagina, ed era il segnale sbagliato per due ragioni: è il nome interno di
+    uno stato — jargon che non dice niente a chi carica un contratto — e non
+    risponde alla domanda che l'utente ha davvero, cioè quanti dei suoi dati
+    verranno nascosti. Il criterio non è cambiato; il segnale che lo soddisfa
+    sì. Adesso la pagina passa al secondo passo e dichiara il bilancio.
+
+    Lo stato resta verificato dove conta, cioè sul fascicolo nello store, da
+    `test_dopo_l_analisi_lo_stato_e_pending_review`.
     """
     esito = esito_della_ui("revisione-analisi")
 
-    assert "PENDING_REVIEW" in esito["stato"]
-    assert "undefined" not in esito["stato"]
-
-
-@senza_node
-def test_gli_identificativi_cercati_dallo_script_esistono_nella_pagina():
-    """Il secondo dei tre guasti della #3: un `getElementById` con un nome che
-    la pagina non ha restituisce `null`, e la prima riga che ci scrive sopra fa
-    morire tutto lo script — compreso il caricamento, che con la revisione non
-    c'entra niente. Il test della #3 copriva gli id di allora; questo copre
-    tutti quelli che lo script cerca oggi.
-    """
-    script = (UI / "app.js").read_text(encoding="utf-8")
-    pagina = (UI / "index.html").read_text(encoding="utf-8")
-
-    cercati = set(re.findall(r'getElementById\("([^"]+)"\)', script))
-
-    assert len(cercati) > 4, "attesi anche gli elementi della revisione"
-    mancanti = sorted(nome for nome in cercati if f'id="{nome}"' not in pagina)
-    assert mancanti == [], f"lo script cerca elementi che la pagina non ha: {mancanti}"
-
-
-@senza_node
-def test_lo_script_della_ui_e_sintatticamente_valido():
-    """Un errore di sintassi in `app.js` non fa fallire nulla nel resto della
-    suite: la pagina viene servita, il browser scarta lo script e la UI è morta
-    senza un solo test rosso. `node --check` non lo esegue, lo compila.
-    """
-    esito = subprocess.run(
-        ["node", "--check", str(UI / "app.js")], capture_output=True, text=True
+    assert esito["passo"] == "salva", (
+        "dopo l'analisi la pagina deve mostrare il passo del salvataggio"
     )
+    assert "2" in esito["esposizione"]["testo"], (
+        "il riepilogo deve dire quanti dati verranno nascosti: "
+        f"{esito['esposizione']['testo']!r}"
+    )
+    assert "undefined" not in esito["esposizione"]["testo"]
 
-    assert esito.returncode == 0, esito.stderr
+
+# I due controlli strutturali che stavano qui — gli id cercati dagli script
+# esistono nella pagina, e ogni script compila — sono in
+# `tests/test_caricamento.py`, dove dal 2026-09-14 girano su **tutte** le pagine
+# e su tutti gli script invece che sulla coppia `index.html`/`app.js`. Due copie
+# della stessa guardia sono due copie che divergono, e la prima a invecchiare
+# sarebbe quella che nessuno ricorda di avere.
 
 
 def percorsi_di(valore, prefisso: str = "") -> set[str]:
@@ -731,72 +724,90 @@ def test_il_payload_dello_scenario_ha_la_forma_di_quello_che_la_rotta_serve(
 # --- Criterio 3: il testo non è modificabile in nessun punto -----------------
 
 
-def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
+def test_nessuna_pagina_offre_un_campo_in_cui_modificare_il_testo():
     """Criterio 3, e la decisione 2 della spec §2: il testo estratto è
     immutabile, l'utente agisce solo sui tag. Un campo modificabile
     permetterebbe di reintrodurre dati reali *dopo* il riconoscimento — cioè
     dati che nessun tag copre e che uscirebbero in chiaro dall'export — e di
     spostare i caratteri sotto le regioni già trovate.
 
-    Verificato sul sorgente della pagina e non sull'harness: il DOM finto non
+    Verificato sul sorgente delle pagine e non sull'harness: il DOM finto non
     ha attributi, quindi non può distinguere un contenitore modificabile da uno
     che non lo è. Questo è il controllo che quella lacuna lascia scoperto.
+
+    Dal 2026-09-14 le pagine sono tre e il controllo gira su tutte. Le zone che
+    hanno il diritto di scrivere sono dichiarate qui sotto **per pagina e per
+    id**: una zona non dichiarata non è un'omissione perdonata, è un rosso.
     """
-    pagina = (UI / "index.html").read_text(encoding="utf-8").lower()
-
-    assert "contenteditable" not in pagina
-
-    # Due sezioni della pagina hanno per forza dei campi da scrivere: la
-    # configurazione (modello, prezzi, chiave, passphrase) e il vault (le due
-    # password). Ammettere quei tipi **in blocco** svuoterebbe la guardia:
-    # passerebbe anche un campo di testo aggiunto un domani accanto al
-    # documento, che è esattamente la cosa che qui si vuole rendere
-    # impossibile.
-    #
-    # Quindi non si allarga l'elenco dei tipi, si guarda **dove** stanno. Ogni
-    # zona che può scrivere va dichiarata qui per id, una riga per zona: fuori
-    # da quelle, gli unici campi ammessi restano quelli di prima. Il criterio
-    # regge quando le zone crescono, e continua a far rosso se un campo
-    # scrivibile compare dove si legge il testo.
+    # Ammettere certi tipi **in blocco** svuoterebbe la guardia: passerebbe
+    # anche un campo di testo aggiunto un domani accanto al documento, che è
+    # esattamente la cosa che qui si vuole rendere impossibile. Quindi non si
+    # allarga l'elenco dei tipi, si guarda **dove** stanno. Ogni zona che può
+    # scrivere va dichiarata qui, una riga per zona: il criterio regge quando le
+    # zone crescono, e continua a far rosso se un campo scrivibile compare dove
+    # si legge il testo.
     ZONE_CHE_SCRIVONO = {
-        'id="pannello-config"': {"text", "number", "password", "checkbox"},
-        'id="card-vault"': {"file", "password"},
-        # Il ripristino ha bisogno di un'area di testo: l'utente incolla la
-        # risposta dell'IA, che è lunga quanto un documento. Non e' un'eccezione
-        # alla decisione 2 della §2 — quel testo non entra nel fascicolo, viene
-        # letto, sostituito e restituito — ma e' l'unico `textarea` ammesso in
-        # tutta la pagina, e lo e' solo qui dentro.
-        'id="card-ripristino"': {"textarea"},
+        # L'ingresso: la chiave, i prezzi, la passphrase. Sono i soli campi
+        # dell'applicazione che chiedono di scrivere qualcosa che non è un file.
+        "home.html": {
+            'id="schermo-chiave"': {"text", "number", "password", "checkbox"},
+            'id="schermo-sblocco"': {"password"},
+        },
+        # Nascondere non chiede di scrivere niente: si scelgono file e si
+        # premono interruttori, che lo script costruisce da sé. Nessuna zona.
+        "nascondi.html": {},
+        "rimetti.html": {
+            # Il vault da riaprire, e la passphrase di un vault vecchio.
+            'id="card-origine"': {"file", "password"},
+            # Il ripristino ha bisogno di un'area di testo: l'utente incolla la
+            # risposta dell'IA, che è lunga quanto un documento. Non è
+            # un'eccezione alla decisione 2 della §2 — quel testo non entra nel
+            # fascicolo, viene letto, sostituito e restituito — ed è l'unico
+            # `textarea` ammesso in tutta l'applicazione.
+            'id="card-ripristino"': {"file", "textarea"},
+        },
     }
 
-    fuori = pagina
-    for marcatore, ammessi in ZONE_CHE_SCRIVONO.items():
-        inizio = fuori.index(marcatore)
-        fine = fuori.index("</section>", inizio)
-        dentro = fuori[inizio:fine]
-        fuori = fuori[:inizio] + fuori[fine:]
-
-        # Dentro la zona: nessun campo che possa contenere il testo di un
-        # documento, e nessuna area di testo che non sia dichiarata qui sopra.
-        tipi_zona = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', dentro, flags=re.S))
-        if "<textarea" in dentro:
-            tipi_zona.add("textarea")
-        assert tipi_zona <= ammessi, (
-            f"la zona {marcatore} ha campi inattesi: {sorted(tipi_zona)}"
+    for percorso in pagine():
+        pagina = percorso.read_text(encoding="utf-8").lower()
+        zone = ZONE_CHE_SCRIVONO.get(percorso.name)
+        assert zone is not None, (
+            f"{percorso.name} è una pagina nuova: dichiara qui le sue zone che "
+            "scrivono, anche se sono zero"
         )
 
-    # `textarea` fuori dalle zone dichiarate resta vietato in assoluto: e' il
-    # controllo che prima era globale, e non si e' indebolito — si e' spostato
-    # dopo l'esclusione delle zone, come gia' quello sugli `input`.
-    assert "<textarea" not in fuori, (
-        "fuori dalle zone che scrivono la pagina ha un'area di testo"
-    )
+        assert "contenteditable" not in pagina, percorso.name
 
-    tipi = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', fuori, flags=re.S))
-    assert tipi <= {"file"}, (
-        "fuori dalle zone che scrivono la pagina ha campi di immissione "
-        f"inattesi: {sorted(tipi)}"
-    )
+        fuori = pagina
+        for marcatore, ammessi in zone.items():
+            assert marcatore in fuori, f"{percorso.name}: manca la zona {marcatore}"
+            avvio_zona = fuori.index(marcatore)
+            fine_zona = fuori.index("</section>", avvio_zona)
+            dentro = fuori[avvio_zona:fine_zona]
+            fuori = fuori[:avvio_zona] + fuori[fine_zona:]
+
+            # Dentro la zona: nessun campo che possa contenere il testo di un
+            # documento, e nessuna area di testo che non sia dichiarata sopra.
+            tipi_zona = set(
+                re.findall(r'<input[^>]*?type="([^"]+)"', dentro, flags=re.S)
+            )
+            if "<textarea" in dentro:
+                tipi_zona.add("textarea")
+            assert tipi_zona <= ammessi, (
+                f"{percorso.name}, zona {marcatore}: campi inattesi "
+                f"{sorted(tipi_zona)}"
+            )
+
+        # `textarea` fuori dalle zone dichiarate resta vietato in assoluto.
+        assert "<textarea" not in fuori, (
+            f"{percorso.name}: area di testo fuori dalle zone che scrivono"
+        )
+
+        tipi = set(re.findall(r'<input[^>]*?type="([^"]+)"', fuori, flags=re.S))
+        assert tipi <= {"file"}, (
+            f"{percorso.name}: fuori dalle zone che scrivono ci sono campi di "
+            f"immissione inattesi: {sorted(tipi)}"
+        )
 
 
 def test_lo_script_non_costruisce_nessun_elemento_modificabile():

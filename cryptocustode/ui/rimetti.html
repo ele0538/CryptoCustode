@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rimetti i dati — CryptoCustode</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="telaio">
+      <div class="app">
+        <header class="barra">
+          <a class="marchio come-collegamento" href="/">
+            <span class="logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </span>
+            <h1>Rimetti i dati</h1>
+          </a>
+        </header>
+
+        <main>
+          <!--
+            Prima cosa in pagina, e per scelta: da dove vengono i segnaposto.
+            Il ripristino usa la tabella del fascicolo attivo, e un utente che
+            non sa **quale** fascicolo sia attivo non può sapere se il testo che
+            ottiene sia giusto. Prima questa informazione non c'era affatto: il
+            riquadro del ripristino stava in fondo a una pagina lunga e usava in
+            silenzio qualunque cosa ci fosse in memoria.
+          -->
+          <section class="riquadro origine" id="card-origine" aria-labelledby="titolo-origine">
+            <h2 id="titolo-origine" class="etichetta">Da dove prendo i dati veri</h2>
+            <p id="stato-fascicolo" class="origine-riga" aria-live="polite">Sto guardando…</p>
+
+            <form id="modulo-vault-apri" class="modulo" hidden>
+              <input type="file" id="vault-file" name="file" class="nascosto-accessibile"
+                     accept=".vault,application/octet-stream" />
+              <label class="pillola scura" for="vault-file">Scegli il file .vault</label>
+              <span id="vault-file-scelto" class="tenue">Nessun vault scelto</span>
+              <button type="submit" class="pillola scura">Apri</button>
+            </form>
+
+            <div id="campo-altra-passphrase" hidden>
+              <label class="etichetta" for="vault-password-apri">
+                Passphrase con cui questo vault &egrave; stato chiuso
+              </label>
+              <input type="password" id="vault-password-apri" name="password"
+                     autocomplete="current-password" placeholder="La passphrase di allora" />
+              <small class="tenue">
+                I vault si cifrano con la passphrase della chiave API. Se nel
+                frattempo l&rsquo;hai cambiata, questo &egrave; il posto dove
+                scrivere quella vecchia.
+              </small>
+            </div>
+
+            <p class="suggerimento tenue">
+              <button type="button" id="usa-altra-passphrase" class="come-collegamento" hidden>
+                Questo vault &egrave; stato chiuso con un&rsquo;altra passphrase
+              </button>
+            </p>
+
+            <p id="stato-vault" class="tenue" aria-live="polite"></p>
+          </section>
+
+          <section class="riquadro ripristino" id="card-ripristino" aria-labelledby="titolo-ripristino">
+            <h2 id="titolo-ripristino">Carica quello che ti ha restituito l&rsquo;IA</h2>
+            <p class="suggerimento tenue">
+              File di testo, uno per documento: i segnaposto tornano a essere i
+              dati veri. Se un segnaposto non &egrave; nostro o &egrave; stato
+              storpiato dall&rsquo;IA, quel file si ferma e non restituisce
+              niente &mdash; un testo ripristinato a met&agrave;, in cui non sai
+              quali dati siano veri e quali no, &egrave; peggio di un errore.
+            </p>
+
+            <form id="modulo-ripristino" class="modulo">
+              <input type="file" id="scelta-risposte" name="file" class="nascosto-accessibile"
+                     multiple accept=".txt,.md,text/plain,text/markdown" />
+              <label class="pillola scura" for="scelta-risposte">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M12 16V4m0 0l-4 4m4-4l4 4" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
+                </svg>
+                Scegli i file
+              </label>
+              <span id="risposte-scelte" class="tenue">Nessun file scelto</span>
+              <button type="submit" class="pillola scura">Rimetti i dati veri</button>
+            </form>
+            <p class="suggerimento tenue">Oppure trascina i file su questa scheda.</p>
+
+            <details id="incolla">
+              <summary>Oppure incolla il testo</summary>
+              <p class="suggerimento tenue">
+                Comodo quando la risposta &egrave; in una chat e non in un file.
+              </p>
+              <form id="modulo-incolla" class="modulo-ripristino">
+                <label for="risposta-ia">Risposta dell&rsquo;IA</label>
+                <textarea id="risposta-ia" rows="8" spellcheck="false"
+                  placeholder="Incolla qui il testo che ti &egrave; tornato indietro, coi segnaposto dentro."></textarea>
+                <button type="submit" class="pillola chiara">Rimetti i dati veri</button>
+              </form>
+            </details>
+
+            <p id="stato-ripristino" class="tenue" aria-live="polite"></p>
+          </section>
+
+          <section class="riquadro esito" id="esito-ripristino" aria-labelledby="titolo-esito" hidden>
+            <div class="config-testa">
+              <h2 id="titolo-esito">Testi ripristinati</h2>
+              <button type="button" id="scarica-tutti" class="pillola scura">Scarica tutti</button>
+            </div>
+            <p class="suggerimento tenue">
+              Contengono dati personali veri &mdash; trattali come gli originali.
+            </p>
+            <ul id="ripristinati" class="esiti"></ul>
+          </section>
+        </main>
+
+        <footer class="barra-bassa">
+          <span class="puntino" aria-hidden="true"></span>
+          <p>
+            La tabella dei segnaposto non esce mai da questo programma: il testo
+            va al server, che la conosce, e torna indietro ripristinato.
+          </p>
+        </footer>
+      </div>
+    </div>
+
+    <script src="/static/comune.js"></script>
+    <script src="/static/rimetti.js"></script>
+  </body>
+</html>

@@ -46,6 +46,7 @@ from cryptocustode.core.errors import (
 )
 from cryptocustode.state.session import SessionStore
 from tests.doppi import RilevatoreFinto
+from tests.pagine import coppie, tutti_gli_script
 from tests.pdf_di_prova import pdf_di_prova
 
 ROTTA = "/api/fascicolo/documenti"
@@ -337,22 +338,29 @@ def test_una_richiesta_con_un_host_diverso_dal_loopback_non_viene_servita(store)
 
 
 def test_gli_identificativi_cercati_dallo_script_esistono_nella_pagina():
-    """Nessun test esegue `app.js` — in questo repo non c'è infrastruttura
-    JavaScript — e un `getElementById` con un nome sbagliato fa morire la
-    pagina al caricamento senza che la suite se ne accorga: l'`app.js` viene
-    comunque servito, e il test che lo verifica guarda solo che risponda 200.
+    """Un `getElementById` con un nome sbagliato fa morire la pagina al
+    caricamento senza che la suite se ne accorga: lo script viene comunque
+    servito, e il test che lo verifica guarda solo che risponda 200.
 
-    Questo test non esegue lo script: controlla che i due file si riferiscano
-    agli stessi nomi, che è la rottura che nessun altro vedrebbe.
+    Questo test non esegue niente: controlla che ogni pagina e i suoi script si
+    riferiscano agli stessi nomi. Dal 2026-09-14 le pagine sono tre, e l'elenco
+    si scopre da `tests/pagine.py` invece di essere scritto qui: una schermata
+    aggiunta domani entra nel controllo da sola, mentre un elenco scritto a mano
+    la lascerebbe fuori senza che nessun test diventi rosso.
     """
-    script = (UI / "app.js").read_text(encoding="utf-8")
-    pagina = (UI / "index.html").read_text(encoding="utf-8")
+    for percorso, script in coppie():
+        pagina = percorso.read_text(encoding="utf-8")
+        cercati = set()
+        for file_js in script:
+            cercati |= set(
+                re.findall(r'getElementById\("([^"]+)"\)', file_js.read_text(encoding="utf-8"))
+            )
 
-    cercati = set(re.findall(r'getElementById\("([^"]+)"\)', script))
-
-    assert cercati, "atteso che lo script cerchi almeno un elemento della pagina"
-    mancanti = sorted(nome for nome in cercati if f'id="{nome}"' not in pagina)
-    assert mancanti == [], f"lo script cerca elementi che la pagina non ha: {mancanti}"
+        assert cercati, f"{percorso.name}: nessuno script cerca elementi della pagina"
+        mancanti = sorted(nome for nome in cercati if f'id="{nome}"' not in pagina)
+        assert mancanti == [], (
+            f"{percorso.name}: i suoi script cercano elementi che non ha: {mancanti}"
+        )
 
 
 def test_il_campo_multipart_dello_script_e_quello_che_la_route_aspetta():
@@ -362,8 +370,8 @@ def test_il_campo_multipart_dello_script_e_quello_che_la_route_aspetta():
 
     Il nome atteso è chiesto alla firma della route, non riscritto a mano.
     """
-    script = (UI / "app.js").read_text(encoding="utf-8")
-    [campo] = re.findall(r'corpo\.append\("([^"]+)"', script)
+    script = (UI / "nascondi.js").read_text(encoding="utf-8")
+    [campo] = re.findall(r'corpo\.append\("([^"]+)", file\)', script)
 
     router = crea_router(SessionStore(), RilevatoreFinto())
     [rotta] = [r for r in router.routes if getattr(r, "path", "") == ROTTA]
@@ -376,16 +384,21 @@ def test_il_campo_multipart_dello_script_e_quello_che_la_route_aspetta():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node non installato")
 def test_lo_script_della_ui_e_sintatticamente_valido():
-    """Un errore di sintassi in `app.js` non fa fallire nulla nella suite: la
+    """Un errore di sintassi in uno script non fa fallire nulla nella suite: la
     pagina viene servita, il browser scarta lo script e la UI è morta senza
     un solo test rosso. `node --check` non lo esegue, lo compila: è il
     controllo più debole che intercetta comunque quella rottura.
-    """
-    esito = subprocess.run(
-        ["node", "--check", str(UI / "app.js")], capture_output=True, text=True
-    )
 
-    assert esito.returncode == 0, esito.stderr
+    Guarda **tutti** gli script della cartella, compresi quelli che nessuna
+    pagina carica: un file morto che non compila è un file morto che qualcuno
+    rianimerà.
+    """
+    for file_js in tutti_gli_script():
+        esito = subprocess.run(
+            ["node", "--check", str(file_js)], capture_output=True, text=True
+        )
+
+        assert esito.returncode == 0, f"{file_js.name}: {esito.stderr}"
 
 
 def test_un_documento_di_tre_megabyte_non_viene_scritto_su_disco(client, monkeypatch):

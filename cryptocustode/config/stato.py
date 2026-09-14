@@ -44,6 +44,15 @@ class Configurazione:
             impostazioni if impostazioni is not None else leggi(percorso_file)
         )
         self.sessione = Consumo()
+        self._passphrase: str | None = None
+        """La passphrase con cui la chiave è stata aperta, **solo in memoria**.
+
+        Serve al vault, che dal 2026-09-14 non chiede più una password propria:
+        un segreto solo per la chiave API e per i fascicoli archiviati. Sta qui
+        e non in `Impostazioni` perché `Impostazioni` è ciò che `scrivi` mette
+        sul disco, accanto alla chiave cifrata — e una passphrase scritta
+        accanto al segreto che protegge non protegge più niente.
+        """
 
     # --- lettura, per chi deve chiamare Gemini ------------------------------
 
@@ -62,6 +71,16 @@ class Configurazione:
     @property
     def piano_attestato(self) -> bool:
         return self.impostazioni.piano_attestato
+
+    @property
+    def passphrase_corrente(self) -> str | None:
+        """La passphrase aperta in questa sessione, o `None` se non ce n'è.
+
+        `None` e non stringa vuota: chi cifra un vault deve poter distinguere
+        «non la so» da «è vuota», e il primo caso è un rifiuto, non una
+        cifratura con un segreto che non esiste.
+        """
+        return self._passphrase
 
     # --- scrittura ----------------------------------------------------------
 
@@ -111,12 +130,19 @@ class Configurazione:
                     "è quella che la protegge sul disco"
                 )
             nuove = con_chiave_nuova(nuove, chiave, passphrase)
+            self._passphrase = passphrase
         self.impostazioni = nuove
         self._salva()
 
     def sblocca(self, passphrase: str) -> None:
-        """Decifra la chiave salvata e la tiene in memoria per questa sessione."""
+        """Decifra la chiave salvata e la tiene in memoria per questa sessione.
+
+        La passphrase si trattiene **dopo** `sbloccata`, non prima: se quella
+        solleva, il tentativo era sbagliato, e ricordarlo farebbe cifrare i
+        vault con un segreto che non apre nemmeno la chiave.
+        """
         self.impostazioni = sbloccata(self.impostazioni, passphrase)
+        self._passphrase = passphrase
 
     def _salva(self) -> None:
         scrivi(self.impostazioni, self._percorso)

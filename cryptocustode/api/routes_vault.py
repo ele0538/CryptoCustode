@@ -13,7 +13,7 @@ mentre l'utente vedeva un pulsante spento.
 """
 
 from fastapi import APIRouter, Form, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from cryptocustode.api.routes_fascicolo import (
@@ -21,18 +21,57 @@ from cryptocustode.api.routes_fascicolo import (
     fascicolo_attivo,
     revisione,
 )
+from cryptocustode.config.stato import Configurazione
 from cryptocustode.core.vault import carica, salva
 from cryptocustode.state.session import SessionStore
 
 NOME_FILE_VAULT = "fascicolo.vault"
 
+SENZA_PASSPHRASE = (
+    "non c'è nessuna passphrase aperta in questa sessione: il fascicolo si "
+    "cifra con la stessa passphrase che protegge la chiave API. Aprila dalla "
+    "configurazione, oppure scegline una per questo vault soltanto."
+)
+
 
 class Password(BaseModel):
-    password: str
+    """La password del vault, facoltativa dal 2026-09-14.
+
+    Assente significa «usa la passphrase della configurazione», che è il flusso
+    normale: il fascicolo si salva a ogni esportazione, e un segreto nuovo da
+    inventare ogni volta è un segreto che finisce su un foglietto. Resta
+    accettata perché chi vuole chiudere *questo* vault con un segreto proprio
+    deve poterlo fare — e perché i vault salvati prima si riaprono solo così.
+    """
+
+    password: str | None = None
 
 
-def crea_router(store: SessionStore) -> APIRouter:
+def crea_router(
+    store: SessionStore, configurazione: Configurazione | None = None
+) -> APIRouter:
+    """Le rotte del vault.
+
+    `configurazione` è facoltativa perché il vault sa funzionare senza: chi
+    manda una password esplicita non ha bisogno di nessuna sessione sbloccata.
+    Assente, il ripiego non esiste e la rotta lo dice invece di cifrare con una
+    stringa vuota.
+    """
     router = APIRouter(prefix="/api/vault", tags=["vault"])
+
+    def segreto(esplicita: str | None) -> str | None:
+        """La password da usare: quella mandata, o la passphrase di sessione.
+
+        L'ordine non è arbitrario. Una password esplicita è una scelta
+        dell'utente su *questo* file, e una scelta esplicita non si scavalca
+        mai con un valore implicito — altrimenti chi chiede un vault separato
+        si ritrova un vault che si apre col segreto di tutti gli altri.
+        """
+        if esplicita:
+            return esplicita
+        if configurazione is None:
+            return None
+        return configurazione.passphrase_corrente
 
     @router.post("/salva", response_model=None)
     async def salva_vault(comando: Password) -> Response:
@@ -42,7 +81,10 @@ def crea_router(store: SessionStore) -> APIRouter:
         finisce nei log del server e nella cronologia del browser, e questa è
         l'unica cosa che sta fra il fascicolo e chi trova il file `.vault`.
         """
-        blob = salva(fascicolo_attivo(store), comando.password)
+        password = segreto(comando.password)
+        if password is None:
+            return JSONResponse(status_code=409, content={"errore": SENZA_PASSPHRASE})
+        blob = salva(fascicolo_attivo(store), password)
         return Response(
             content=blob,
             media_type="application/octet-stream",
@@ -52,7 +94,9 @@ def crea_router(store: SessionStore) -> APIRouter:
         )
 
     @router.post("/apri", response_model=None)
-    async def apri_vault(file: UploadFile, password: str = Form(...)) -> dict:
+    async def apri_vault(
+        file: UploadFile, password: str | None = Form(default=None)
+    ) -> dict | JSONResponse:
         """Il vault torna a essere il fascicolo attivo, e la pagina si ridisegna.
 
         `carica` ricostruisce il `fascicolo_id` con cui era stato salvato, e
@@ -75,8 +119,11 @@ def crea_router(store: SessionStore) -> APIRouter:
         (spec §13): distinguerli direbbe a chi ci prova che la password è
         l'unico ostacolo rimasto.
         """
+        segreta = segreto(password)
+        if segreta is None:
+            return JSONResponse(status_code=409, content={"errore": SENZA_PASSPHRASE})
         blob = await file.read()
-        fascicolo = carica(blob, password)
+        fascicolo = carica(blob, segreta)
         fascicolo.fascicolo_id = ID_FASCICOLO_ATTIVO
         store.salva(fascicolo)
         return revisione(fascicolo)

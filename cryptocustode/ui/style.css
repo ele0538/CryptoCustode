@@ -1118,3 +1118,178 @@ mark.evidenza.spenta::after {
   font-size: 0.85rem;
   color: var(--tenue);
 }
+
+/* --- Le tre pagine (2026-09-14) --------------------------------------------
+   La UI non e' piu' un documento solo: `home.html` sceglie, `nascondi.html`
+   maschera, `rimetti.html` ripristina. Quello che segue e' cio' che serve alle
+   schermate nuove; tutto il resto del foglio e' condiviso, ed e' la ragione per
+   cui e' rimasto un file solo invece di tre. */
+
+.schermo {
+  animation: entra 0.18s ease-out;
+}
+
+@keyframes entra {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Lo sblocco chiede una cosa sola: un riquadro a piena larghezza per un campo
+   password fa sembrare che manchi qualcosa. */
+.schermo-stretto {
+  max-width: 34rem;
+  margin-inline: auto;
+}
+
+.titolo-scelta {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-size: 1.35rem;
+}
+
+/* I due mestieri. Due carte grandi e non due bottoni: un bottone chiede di
+   essere premuto, una carta si legge prima — e qui la scelta sbagliata costa
+   un giro intero di lavoro. */
+.scelta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.25rem;
+}
+
+.scelta-carta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.75rem 1.5rem;
+  border-radius: var(--raggio-card);
+  background: var(--carta);
+  box-shadow: var(--ombra-card);
+  border: 2px solid transparent;
+  color: inherit;
+  text-decoration: none;
+  transition: transform var(--transizione), border-color var(--transizione),
+    box-shadow var(--transizione);
+}
+
+.scelta-carta:hover,
+.scelta-carta:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--accento);
+}
+
+.scelta-icona {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--accento);
+}
+
+.scelta-nome {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.scelta-spiega {
+  color: var(--tenue);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.nota-scelta {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+/* Un pulsante che si comporta da collegamento: serve dove l'azione e' una via
+   di fuga rara (rifare la chiave, usare un'altra passphrase) e un pulsante
+   pieno la metterebbe alla pari di quella principale. */
+.come-collegamento {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accento);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+a.marchio.come-collegamento {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Il passaggio da un passo all'altro. Sta da solo, centrato e staccato dalle
+   schede: e' l'unica cosa da premere quando i documenti sono dentro. */
+.avanti {
+  text-align: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.pillola.grande {
+  font-size: 1.05rem;
+  padding: 0.85rem 2rem;
+}
+
+.pillola:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.avanti .suggerimento {
+  max-width: 34rem;
+  margin: 0.8rem auto 0;
+}
+
+/* Il testo evidenziato, sotto «Mostrami dove»: chiuso di default perche' serve
+   a controllare, non a decidere. */
+.dettaglio {
+  border-left: 3px solid var(--accento);
+}
+
+/* Da dove vengono i dati veri, in cima a «Rimetti». Due stati con due colori,
+   perche' la differenza fra «so quale fascicolo sto usando» e «non c'e'
+   niente» e' l'unica cosa che rende affidabile il risultato. */
+.origine-riga {
+  padding: 0.85rem 1rem;
+  border-radius: 0.6rem;
+  line-height: 1.5;
+  margin: 0.5rem 0 1rem;
+}
+
+.origine-riga.piena {
+  background: color-mix(in srgb, var(--ok, #1b7f4c) 10%, transparent);
+  border-left: 3px solid var(--ok, #1b7f4c);
+}
+
+.origine-riga.vuota {
+  background: var(--chip);
+  border-left: 3px solid var(--tenue);
+  color: var(--tenue);
+}
+
+.esiti .ripristinato {
+  display: block;
+}
+
+.esiti .ripristinato .anteprima-export {
+  margin-top: 0.6rem;
+  max-height: 14rem;
+}
+
+#incolla {
+  margin-top: 1rem;
+  color: var(--tenue);
+}
+
+#incolla summary {
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+
+#scaricati:empty {
+  display: none;
+}

@@ -150,7 +150,9 @@ def test_la_legenda_usa_le_classi_vere_degli_span():
     """La legenda dei due stati non deve essere una copia dello stile: se un
     domani cambia il modo di disegnare «in chiaro», deve cambiare con lui invece
     di restare a descrivere un aspetto che la pagina non ha piu'."""
-    pagina = (UI / "index.html").read_text(encoding="utf-8")
+    # La legenda vive dove vive il testo evidenziato: dal 2026-09-14 è la
+    # pagina «Nascondi», dentro il dettaglio che si apre con «Mostrami dove».
+    pagina = (UI / "nascondi.html").read_text(encoding="utf-8")
     legenda = re.search(r'<p class="legenda-stati">(.*?)</p>', pagina, flags=re.S)
     assert legenda is not None, "la legenda dei due stati non c'e'"
 

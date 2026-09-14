@@ -67,7 +67,30 @@ PORTA = 8765
 INDIRIZZO = f"http://{HOST}:{PORTA}/"
 
 UI = Path(__file__).resolve().parents[1] / "ui"
-PAGINA = UI / "index.html"
+
+PAGINE = {
+    "/": "home.html",
+    "/nascondi": "nascondi.html",
+    "/rimetti": "rimetti.html",
+}
+"""Le tre pagine dell'interfaccia, e i tre indirizzi da cui si raggiungono.
+
+Erano una sola, con tutto impilato dentro: la configurazione, il caricamento,
+la revisione, l'esportazione, il ripristino e il vault. Il proprietario del
+prodotto l'ha riassunta così — «non tutto in una pagina» — e la divisione
+segue i mestieri, non le schermate: si entra (`/`), si nasconde (`/nascondi`),
+si rimette (`/rimetti`).
+
+Tre documenti e non un router nel JavaScript perché i due mestieri non
+condividono stato: tutto quello che conta vive nel `SessionStore`, quindi
+cambiare pagina non perde niente, e un guasto in uno dei due non può portare
+giù l'altro. I due *passi* dentro `/nascondi` stanno invece nello stesso
+documento, perché quelli una conversazione sola la sono davvero.
+
+`PAGINA` resta come nome del punto d'ingresso per chi lo importa.
+"""
+
+PAGINA = UI / PAGINE["/"]
 
 HOST_CONSENTITI = ("127.0.0.1", "localhost")
 """Gli unici valori accettati nell'intestazione `Host`.
@@ -233,6 +256,20 @@ def rispondi_all_errore_di_dominio(richiesta: Request, errore: Exception) -> JSO
     return JSONResponse(status_code=stato, content={"errore": str(errore)})
 
 
+def servi_pagina(percorso: Path) -> Callable[[], FileResponse]:
+    """Un endpoint che serve **quel** file, e nient'altro.
+
+    Il percorso è deciso qui, a costruzione dell'app, e non può essere
+    influenzato dalla richiesta: è la differenza fra servire tre pagine e
+    offrire al browser di scegliere quale file leggere dal disco.
+    """
+
+    def servi() -> FileResponse:
+        return FileResponse(percorso, media_type="text/html")
+
+    return servi
+
+
 def crea_app(
     *,
     al_pronto: AlPronto | None = None,
@@ -348,7 +385,7 @@ def crea_app(
     # toccano il fascicolo attivo per id come fanno quelle di `routes_fascicolo`,
     # lo sostituiscono per intero. Riceve lo **stesso** store, altrimenti
     # salverebbe un fascicolo diverso da quello che l'utente sta revisionando.
-    app.include_router(crea_router_vault(store))
+    app.include_router(crea_router_vault(store, configurazione))
     # I suggerimenti di fusione hanno un router loro perche' non sono un passo
     # della revisione: non bloccano niente e il fascicolo che li ignora e'
     # esattamente quello di prima (spec 7).
@@ -357,9 +394,24 @@ def crea_app(
     app.include_router(crea_router_ripristino(store))
     app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)
 
-    @app.get("/", include_in_schema=False)
-    def pagina() -> FileResponse:
-        return FileResponse(PAGINA, media_type="text/html")
+    # Una rotta per pagina, registrate dal dizionario invece che scritte tre
+    # volte: aggiungere una schermata non deve poter significare aggiungerla
+    # all'elenco e dimenticare la rotta, o il contrario — due elenchi che
+    # dicono la stessa cosa sono due elenchi che divergono.
+    #
+    # Il gestore si costruisce in una funzione a parte e non dentro il ciclo:
+    # una funzione definita nel ciclo cattura la variabile, non il suo valore,
+    # e tutte e tre servirebbero l'ultima pagina. Il percorso arriva per
+    # chiusura e non come parametro, perché un parametro di un endpoint FastAPI
+    # è un parametro della richiesta — cioè qualcosa che il browser potrebbe
+    # scegliere, e qui sceglierebbe quale file leggere dal disco.
+    for indirizzo, nome_file in PAGINE.items():
+        app.add_api_route(
+            indirizzo,
+            servi_pagina(UI / nome_file),
+            methods=["GET"],
+            include_in_schema=False,
+        )
 
     return app
 
