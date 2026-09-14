@@ -152,9 +152,16 @@ class Tag:
     stato: StatoTag
 
 @dataclass(frozen=True)
+class Regione:
+    start: int              # offset nel testo ORIGINALE
+    end: int
+    tag: str
+
+@dataclass(frozen=True)
 class Mascheratura:
     mascherato: str
     tags: list[Tag]
+    regioni: list[Regione]  # le occorrenze rivendicate, in ordine di start
 
 @dataclass
 class Fascicolo:
@@ -167,8 +174,17 @@ class Fascicolo:
     counters: dict[Category, int]
 ```
 
-**Cosa sparisce dal modello.** `Span` (non ci sono più offset: il modello restituisce
-valori, non posizioni), `Entity` (un tag *è* l'entità: valore canonico e segnaposto in
+**`Regione` non è uno `Span` risorto.** Uno `Span` era un'entità di dominio con
+identità, interruttore e sorgente, che l'utente manipolava una per una e che il
+modello produceva. Una `Regione` è il verbale di ciò che `tagga()` ha appena fatto al
+testo: nasce dentro la funzione, non ha identità, nessuno la modifica, e il modello
+non la vede mai. Serve a due cose concrete — dipingere il testo evidenziato nella UI
+di revisione, e contare le occorrenze — e senza di lei quei due compiti andrebbero
+rifatti cercando di nuovo le stringhe, con il rischio di trovare posizioni diverse da
+quelle davvero sostituite.
+
+**Cosa sparisce dal modello.** `Span` (il modello restituisce valori, non posizioni,
+e le posizioni che restano le calcola l'app), `Entity` (un tag *è* l'entità: valore canonico e segnaposto in
 un oggetto solo), `Ambiguity` e `AmbiguityKind` con tutto il sottosistema delle
 ambiguità, `Source` (la sorgente è sempre il modello o l'utente, e la distinzione non
 governa più niente), la tabella `PRIORITA` (non ci sono più categorie che si contendono
@@ -276,6 +292,10 @@ Nessuna delle due tocca filesystem, orologio o random.
 4. **Costruisce il testo mascherato** sostituendo le regioni rivendicate da destra a
    sinistra, così ogni sostituzione lascia validi gli offset di quelle ancora da
    applicare — la stessa ragione della §9 precedente.
+5. **Restituisce anche le regioni**, ordinate per `start` crescente e riferite al
+   testo **originale**. Sono ciò che permette alla UI di revisione di continuare a
+   dipingere il testo evidenziato senza ricercare le stringhe una seconda volta, e
+   quindi senza poter evidenziare un punto diverso da quello davvero sostituito.
 
 **`NON_TROVATO` non è un caso d'angolo, è il modo in cui il modello sbaglia più
 spesso.** Un modello che restituisce `Mario Rossi` per un documento che scrive
