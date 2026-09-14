@@ -16,7 +16,7 @@
 - `core/` non può importare `fastapi`, `uvicorn`, `starlette`, `cryptocustode.state`, e da questa fase nemmeno `httpx`, `requests`, `google`, `google.genai`.
 - `core/mask.py` e `core/tagga.py` non possono importare `os`, `pathlib`, `random`, `secrets`, `time`, `datetime`, `uuid`, `io`: devono essere deterministici perché `approval_hash` va ricalcolato identico in esportazione.
 - **Additivo prima, sottrattivo dopo.** Nessun commit può lasciare la suite rossa. I tipi e i moduli nuovi si aggiungono accanto ai vecchi (task 1-12); `core/detect/`, `core/spans.py` e `core/entities.py` si cancellano solo nel task 13, quando nessuno li importa più.
-- Nomi dei tipi e delle eccezioni in inglese; messaggi d'errore, docstring e commenti in italiano, come tutto il repo.
+- **Lingua dei nomi.** Le **eccezioni** sono in inglese, senza eccezioni: `errors.py` lo dichiara, e i loro nomi vengono dalla tabella della spec. I **tipi** seguono invece la provenienza del concetto, che è la regola che il repo applica di fatto: inglese per ciò che è arrivato dalla consegna originale (`Document`, `Span`, `Entity`, `Category`, `Source`, `State`, `Ambiguity`), italiano per ciò che il progetto ha inventato da sé (`Fascicolo`, `PRIORITA`, `fascicolo_vuoto`, `costruisci_segnaposto`, `segnaposto_preesistenti`). I tipi di questa fase sono concetti nuovi, quindi italiani: `Rilevazione`, `Tag`, `Regione`, `Mascheratura`, `StatoTag`. **Funzioni, parametri e variabili sono sempre in italiano.** Messaggi d'errore, docstring e commenti in italiano.
 - Suite: `python -m pytest -q` dalla radice del repo. Un singolo file: `python -m pytest tests/test_tagga.py -q`.
 - Il repo è condiviso con altre sessioni: `git add` solo i file elencati nel task, mai `git add -A`.
 
