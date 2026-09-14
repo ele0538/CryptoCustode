@@ -220,7 +220,8 @@ class TestRipristinoDeiCodiciSpaziati:
         mascherato = maschera_documento(f, doc)
         assert mascherato == "Bonifico su [IBAN_1] presso la banca."
         assert codice not in mascherato
-        assert ripristina(mascherato, f.entities) == testo
+        dizionario = {e.placeholder: e.canonical_value for e in f.entities.values()}
+        assert ripristina(mascherato, dizionario) == testo
 
     def test_il_giro_completo_del_cf_a_gruppi_restituisce_il_codice_com_era(self):
         f = fascicolo_vuoto("f1")
@@ -230,7 +231,8 @@ class TestRipristinoDeiCodiciSpaziati:
         mascherato = maschera_documento(f, doc)
         assert mascherato == "Codice fiscale [CF_1] del contribuente."
         assert "RSSMRA" not in mascherato
-        assert ripristina(mascherato, f.entities) == testo
+        dizionario = {e.placeholder: e.canonical_value for e in f.entities.values()}
+        assert ripristina(mascherato, dizionario) == testo
 
     def test_due_forme_dello_stesso_iban_restano_due_entita(self):
         # La conseguenza dichiarata della scelta, pinnata qui perché non passi
