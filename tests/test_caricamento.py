@@ -45,6 +45,7 @@ from cryptocustode.core.errors import (
     VaultVersionNotSupported,
 )
 from cryptocustode.state.session import SessionStore
+from tests.doppi import RilevatoreFinto
 from tests.pdf_di_prova import pdf_di_prova
 
 ROTTA = "/api/fascicolo/documenti"
@@ -364,7 +365,7 @@ def test_il_campo_multipart_dello_script_e_quello_che_la_route_aspetta():
     script = (UI / "app.js").read_text(encoding="utf-8")
     [campo] = re.findall(r'corpo\.append\("([^"]+)"', script)
 
-    router = crea_router(SessionStore())
+    router = crea_router(SessionStore(), RilevatoreFinto())
     [rotta] = [r for r in router.routes if getattr(r, "path", "") == ROTTA]
     parametri = set(inspect.signature(rotta.endpoint).parameters)
 

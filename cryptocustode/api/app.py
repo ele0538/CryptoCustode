@@ -19,6 +19,7 @@ loopback: il giorno in cui questa app venisse esposta, vanno chiuse.
 """
 
 
+import os
 import socket
 import webbrowser
 from collections.abc import Callable
@@ -32,6 +33,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.formparsers import MultiPartParser
 
+from cryptocustode.ai.gemini import VARIABILE_CHIAVE, RilevatoreGemini
 from cryptocustode.api.routes_fascicolo import crea_router
 from cryptocustode.core.errors import (
     AIKeyMissing,
@@ -52,6 +54,7 @@ from cryptocustode.core.errors import (
     VaultUnreadable,
     VaultVersionNotSupported,
 )
+from cryptocustode.core.rilevatore import Rilevatore
 from cryptocustode.state.session import SessionStore
 
 HOST = "127.0.0.1"
@@ -229,6 +232,7 @@ def crea_app(
     *,
     al_pronto: AlPronto | None = None,
     store: SessionStore | None = None,
+    rilevatore: Rilevatore | None = None,
     tetto_richiesta: int = TETTO_RICHIESTA,
 ) -> FastAPI:
     """L'app HTTP: serve la pagina della UI, i suoi statici e le route del fascicolo.
@@ -243,9 +247,18 @@ def crea_app(
     poter guardare il fascicolo invece di credere alla risposta HTTP sulla
     parola. Non è un singleton di modulo di proposito: due app dello stesso
     processo non devono condividere il fascicolo.
+
+    `rilevatore` è il terzo seme, per la stessa ragione: chi inietta un doppio
+    evita che i suoi test facciano partire il client Gemini vero (spec §4,
+    invariante 5). Il default `RilevatoreGemini()` non chiama nessuno alla
+    costruzione — la chiave si legge alla prima `rileva` — quindi creare
+    l'app senza chiave resta possibile, ed è ciò che permette a ogni test che
+    non analizza di ignorare questo parametro.
     """
     if store is None:
         store = SessionStore()
+    if rilevatore is None:
+        rilevatore = RilevatoreGemini()
 
     @asynccontextmanager
     async def ciclo_di_vita(app: FastAPI):
@@ -299,7 +312,7 @@ def crea_app(
                 )
         return await chiama(richiesta)
     app.mount("/static", StaticFiles(directory=UI), name="static")
-    app.include_router(crea_router(store))
+    app.include_router(crea_router(store, rilevatore))
     app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)
 
     @app.get("/", include_in_schema=False)
@@ -358,12 +371,46 @@ def esegui_uvicorn(app: FastAPI, host: str, porta: int) -> None:
         uvicorn.Server(uvicorn.Config(app, host=host, port=porta)).run(sockets=[presa])
 
 
+PIANO_ATTESTATO = "CRYPTOCUSTODE_GEMINI_PIANO"
+
+
+def verifica_configurazione_ia(ambiente: dict[str, str]) -> None:
+    """Rifiuta l'avvio se la chiave manca o il piano non è attestato (D8).
+
+    L'attestazione è una dichiarazione dell'utente, non una verifica: l'API non
+    espone il piano di fatturazione, quindi l'applicazione non ha modo di
+    controllarlo. Serve comunque, e non è teatro: costringe chi avvia a leggere
+    perché il piano gratuito non va bene, prima che il primo documento parta.
+    """
+    if not ambiente.get(VARIABILE_CHIAVE):
+        raise SystemExit(
+            f"{VARIABILE_CHIAVE} non è impostata. CryptoCustode manda i tuoi "
+            "documenti a Gemini per farli analizzare: senza chiave non può "
+            "partire."
+        )
+    if ambiente.get(PIANO_ATTESTATO) != "pagamento":
+        raise SystemExit(
+            f"Imposta {PIANO_ATTESTATO}=pagamento per confermare che la chiave "
+            "appartiene a un progetto con fatturazione attiva.\n"
+            "Sul piano gratuito i termini di Gemini dicono di non inviare dati "
+            "personali, e Google usa i contenuti per sviluppare i propri "
+            "prodotti: CryptoCustode non invia altro che documenti con dati "
+            "personali dentro."
+        )
+
+
 def avvia(*, esegui: Esegui = esegui_uvicorn, apri: Apri = webbrowser.open) -> None:
     """Avvia l'applicazione: ascolto sul solo loopback e scheda del browser.
 
     `HOST` non è configurabile dall'esterno di proposito. Un fascicolo contiene
     dati personali di terzi e l'applicazione non ha autenticazione: legarla a
     `0.0.0.0` li offrirebbe a chiunque sia sulla stessa rete.
+
+    Il controllo della decisione D8 precede l'apertura della porta: scoprire
+    che la chiave manca o il piano non è attestato **dopo** aver aperto la
+    scheda del browser mostrerebbe all'utente una pagina che si romperà al
+    primo «Analizza», invece di un messaggio chiaro in console.
     """
+    verifica_configurazione_ia(os.environ)
     app = crea_app(al_pronto=lambda: apri(INDIRIZZO))
     esegui(app, HOST, PORTA)

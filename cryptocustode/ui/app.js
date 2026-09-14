@@ -193,20 +193,21 @@ card.addEventListener("drop", async (evento) => {
 
 // --- Revisione: testo evidenziato e interruttori (issue #4) -----------------
 //
-// Il testo arriva dal server **già spezzato in segmenti** sugli offset degli
-// span, e qui non si fa aritmetica su nessun offset: tagliare da questa parte
-// significherebbe tenere una seconda copia di quel calcolo, che diverge alla
-// prima differenza fra il modo in cui Python e JavaScript contano i caratteri.
+// Il testo arriva dal server **già spezzato in segmenti** sulle regioni che
+// la mascheratura rivendica, e qui non si fa aritmetica su nessun offset:
+// tagliare da questa parte significherebbe tenere una seconda copia di quel
+// calcolo, che diverge alla prima differenza fra il modo in cui Python e
+// JavaScript contano i caratteri.
 //
 // Il testo non è modificabile in nessun punto, ed è la decisione 2 della spec
-// §2: l'utente agisce solo sugli span. Ogni segmento è un nodo di solo testo,
+// §2: l'utente agisce solo sui tag. Ogni segmento è un nodo di solo testo,
 // scritto con `textContent` e senza alcun attributo di modifica; gli unici
 // campi della pagina sono la scelta dei file e le caselle di spunta degli
 // interruttori.
 
 const ROTTA_ANALISI = "/api/fascicolo/analisi";
 const ROTTA_CATEGORIA = "/api/fascicolo/categoria";
-const ROTTA_SPAN = "/api/fascicolo/span";
+const ROTTA_TAG = "/api/fascicolo/tag";
 
 const avvio = document.getElementById("avvia-analisi");
 const statoAnalisi = document.getElementById("stato-analisi");
@@ -282,11 +283,11 @@ function disegnaDocumenti(elenco) {
     const corpo = document.createElement("p");
     corpo.className = "testo-originale";
     for (const segmento of documento.segmenti) {
-      // Il tag è scelto fra due letterali e non costruito: `mark` porta
+      // Il tag HTML è scelto fra due letterali e non costruito: `mark` porta
       // l'evidenziazione anche a chi non distingue i colori, e restare su due
       // nomi scritti per esteso è ciò che rende verificabile che questa pagina
       // non costruisca mai un elemento modificabile.
-      if (segmento.span_id === null) {
+      if (segmento.tag === null) {
         const pezzo = document.createElement("span");
         pezzo.textContent = segmento.testo;
         corpo.appendChild(pezzo);
@@ -296,7 +297,7 @@ function disegnaDocumenti(elenco) {
       pezzo.textContent = segmento.testo;
       pezzo.className =
         `evidenza cat-${segmento.categoria}` + (segmento.mascherato ? "" : " spenta");
-      pezzo.dataset.spanId = segmento.span_id;
+      pezzo.dataset.tag = segmento.tag;
       pezzo.dataset.categoria = segmento.categoria;
       pezzo.dataset.mascherato = segmento.mascherato ? "1" : "0";
       pezzo.title = segmento.mascherato
@@ -318,11 +319,7 @@ function disegna(revisione) {
   if (revisione === null) {
     return;
   }
-  const coda = revisione.ambiguita;
-  statoAnalisi.textContent =
-    `Stato del fascicolo: ${revisione.stato}. ` +
-    `Ambiguità in coda: ${coda.totale}, di cui ${coda.bloccanti} ` +
-    `${coda.bloccanti === 1 ? "blocca" : "bloccano"} l'approvazione.`;
+  statoAnalisi.textContent = `Stato del fascicolo: ${revisione.stato}.`;
   disegnaInterruttori(revisione.categorie);
   disegnaDocumenti(revisione.documenti);
 }
@@ -345,13 +342,13 @@ categorie.addEventListener("change", async (evento) => {
 });
 
 documenti.addEventListener("click", async (evento) => {
-  const spanId = evento.target.dataset.spanId;
-  if (spanId === undefined) {
+  const tag = evento.target.dataset.tag;
+  if (tag === undefined) {
     return;
   }
   // Il verso si legge da ciò che è disegnato: cliccare su un'occorrenza accesa
   // la spegne. Tenerlo in una variabile del JavaScript lo farebbe divergere
   // dal fascicolo appena due schede — o due ridisegni — non coincidessero.
   const attivo = evento.target.dataset.mascherato !== "1";
-  disegna(await chiedi(ROTTA_SPAN, { span_id: spanId, attivo }));
+  disegna(await chiedi(ROTTA_TAG, { tag, attivo }));
 });

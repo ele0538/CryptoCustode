@@ -20,13 +20,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 import cryptocustode.__main__ as comando
+from cryptocustode.ai.gemini import VARIABILE_CHIAVE
 from cryptocustode.api import app as modulo
 from cryptocustode.api.app import (
+    PIANO_ATTESTATO,
     PortaOccupata,
     apri_ascolto,
     avvia,
     crea_app,
     esegui_uvicorn,
+    verifica_configurazione_ia,
 )
 
 INDIRIZZO_DI_PROVA = "http://127.0.0.1:8765"
@@ -66,8 +69,19 @@ def test_ogni_risorsa_referenziata_dalla_pagina_e_servita():
             assert client.get(riferimento).status_code == 200, riferimento
 
 
-def test_avvia_lega_il_server_al_solo_loopback():
+def attesta_ia(monkeypatch):
+    """`avvia` rifiuta di partire senza la chiave e l'attestazione del piano
+    (D8): questi test riguardano il bind e l'apertura della scheda, non quel
+    controllo, quindi l'ambiente va preparato perché non intercetti l'avvio
+    prima che i due arrivino a girare.
+    """
+    monkeypatch.setenv(VARIABILE_CHIAVE, "chiave-di-prova")
+    monkeypatch.setenv(PIANO_ATTESTATO, "pagamento")
+
+
+def test_avvia_lega_il_server_al_solo_loopback(monkeypatch):
     """`0.0.0.0` esporrebbe in rete locale un fascicolo di dati personali."""
+    attesta_ia(monkeypatch)
     passati = []
 
     avvia(esegui=lambda app, host, porta: passati.append((host, porta)), apri=lambda url: None)
@@ -75,11 +89,12 @@ def test_avvia_lega_il_server_al_solo_loopback():
     assert [host for host, _ in passati] == ["127.0.0.1"]
 
 
-def test_avvia_apre_il_browser_sull_indirizzo_su_cui_il_server_ascolta():
+def test_avvia_apre_il_browser_sull_indirizzo_su_cui_il_server_ascolta(monkeypatch):
     """L'indirizzo atteso è derivato da quello che il server ha ricevuto, non
     dalla costante `INDIRIZZO`: se le due cose divergono — per esempio perché
     la porta è stata cambiata in un posto solo — la scheda si aprirebbe su una
     connessione rifiutata, e questo test lo intercetta."""
+    attesta_ia(monkeypatch)
     aperti = []
     ascolto = []
 
@@ -92,6 +107,43 @@ def test_avvia_apre_il_browser_sull_indirizzo_su_cui_il_server_ascolta():
 
     host, porta = ascolto[0]
     assert aperti == [f"http://{host}:{porta}/"]
+
+
+# --- D8: la chiave e l'attestazione del piano, prima che il server parta ----
+
+
+def test_verifica_configurazione_ia_rifiuta_senza_la_chiave():
+    """Senza chiave l'analisi non può nemmeno partire: `avvia` non deve
+    lasciare che il server si metta in ascolto per poi morire al primo
+    documento caricato."""
+    with pytest.raises(SystemExit) as errore:
+        verifica_configurazione_ia({})
+
+    assert VARIABILE_CHIAVE in str(errore.value)
+
+
+def test_verifica_configurazione_ia_rifiuta_senza_l_attestazione_del_piano():
+    """La chiave da sola non basta: senza `CRYPTOCUSTODE_GEMINI_PIANO=pagamento`
+    l'utente potrebbe avere una chiave del piano gratuito, il cui contratto
+    vieta l'invio di dati personali — ed è tutto ciò che questa applicazione
+    manda."""
+    with pytest.raises(SystemExit) as errore:
+        verifica_configurazione_ia({VARIABILE_CHIAVE: "una-chiave"})
+
+    assert PIANO_ATTESTATO in str(errore.value)
+
+    with pytest.raises(SystemExit):
+        verifica_configurazione_ia(
+            {VARIABILE_CHIAVE: "una-chiave", PIANO_ATTESTATO: "gratuito"}
+        )
+
+
+def test_verifica_configurazione_ia_passa_con_chiave_e_attestazione():
+    """Il controllo del controllo: senza questo, un guardiano che sollevasse
+    sempre passerebbe entrambi i test sopra."""
+    verifica_configurazione_ia(
+        {VARIABILE_CHIAVE: "una-chiave", PIANO_ATTESTATO: "pagamento"}
+    )
 
 
 def test_l_apertura_del_browser_scatta_all_avvio_dell_app_non_alla_creazione():

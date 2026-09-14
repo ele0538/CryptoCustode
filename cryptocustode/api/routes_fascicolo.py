@@ -9,13 +9,14 @@ messaggio: con più file nella stessa richiesta l'esito sarebbe misto e un solo
 stato non potrebbe dirlo. La UI cicla sui file scelti e mostra un verdetto per
 ciascuno.
 
-La revisione serve il testo **originale già spezzato in segmenti** sugli offset
-degli span, non il testo più una lista di offset che il JavaScript ricompone.
-L'aritmetica sugli offset è dominio, e duplicata nella UI diverge alla prima
-differenza fra il modo in cui Python e JavaScript contano i caratteri: un
-carattere fuori dai piani BMP vale uno in Python e due in JavaScript, quindi
-una UI che tagliasse da sé evidenzierebbe il pezzo sbagliato senza un errore.
-Qui i segmenti arrivano già tagliati, e la UI si limita a dipingerli.
+La revisione serve il testo **originale già spezzato in segmenti** sulle
+regioni che la mascheratura rivendica, non il testo più una lista di offset
+che il JavaScript ricompone. L'aritmetica sugli offset è dominio, e duplicata
+nella UI diverge alla prima differenza fra il modo in cui Python e JavaScript
+contano i caratteri: un carattere fuori dai piani BMP vale uno in Python e due
+in JavaScript, quindi una UI che tagliasse da sé evidenzierebbe il pezzo
+sbagliato senza un errore. Qui i segmenti arrivano già tagliati, e la UI si
+limita a dipingerli.
 """
 
 
@@ -26,14 +27,15 @@ from fastapi import APIRouter, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from cryptocustode.core.entities import analizza_documento
 from cryptocustode.core.ingest.loader import (
     aggiungi_documento,
     costruisci_documento,
     segnaposto_preesistenti,
 )
-from cryptocustode.core.mask import span_attivo
-from cryptocustode.core.models import Category, Document, Fascicolo, fascicolo_vuoto
+from cryptocustode.core.mask import tabella_attiva
+from cryptocustode.core.models import Category, Document, Fascicolo, StatoTag, fascicolo_vuoto
+from cryptocustode.core.rilevatore import Rilevatore
+from cryptocustode.core.tagga import assegna_tag, conta_occorrenze, tagga
 from cryptocustode.state.session import SessionStore, analisi_completata
 
 ID_FASCICOLO_ATTIVO = "f_attivo"
@@ -86,62 +88,57 @@ class ToggleCategoria(BaseModel):
     attiva: bool
 
 
-class ToggleSpan(BaseModel):
-    span_id: str
+class ToggleTag(BaseModel):
+    tag: str
     attivo: bool
 
 
+def _segmento_nudo(testo: str) -> dict:
+    return {
+        "testo": testo,
+        "tag": None,
+        "categoria": None,
+        "mascherato": False,
+        "segnaposto": None,
+    }
+
+
 def segmenti_di(fascicolo: Fascicolo, documento: Document) -> list[dict]:
-    """Il testo originale del documento spezzato sugli offset dei suoi span.
+    """Il testo originale spezzato sulle regioni che la mascheratura rivendica.
 
-    Concatenare i `testo` dei segmenti restituisce il testo originale carattere
-    per carattere: è la decisione 2 della spec §2 resa osservabile — il testo è
-    immutabile e l'utente agisce solo sugli span, quindi la revisione non può
-    mostrare un testo diverso da quello che verrà mascherato.
+    Le regioni si calcolano sulla tabella **intera** e non su quella attiva,
+    perché la pagina deve mostrare anche i tag spenti — spenti, ma visibili,
+    altrimenti l'utente non avrebbe modo di riaccenderli. Quale sia acceso lo
+    dice `tabella_attiva`, letta da un posto solo così la pagina non può
+    mostrare acceso un dato che l'esportazione lascia in chiaro.
 
-    `mascherato` è `span_attivo`, cioè **entrambi** gli interruttori: quello
-    del singolo span e quello della sua categoria (spec §5). Ricalcolarlo qui
-    con un `and` scritto a mano lo farebbe divergere da ciò che `maschera`
-    applica davvero, e la pagina mostrerebbe acceso un dato che esce in chiaro.
+    Questa scelta apre una divergenza nota e accettata (issue #48): con un
+    valore lungo spento che ne contiene uno corto acceso, la pagina mostra in
+    chiaro più di quanto l'esportazione lasci davvero in chiaro. L'errore
+    corre nella direzione sicura — la pagina mostra sempre più esposizione di
+    quella reale, mai meno — e la tabella della fase 2 sostituirà questa vista
+    evidenziata: non si ricalcolano le regioni due volte per chiuderla qui.
     """
-    spans = sorted(
-        (span for span in fascicolo.spans if span.doc_id == documento.doc_id),
-        key=lambda span: span.start,
-    )
+    attivi = tabella_attiva(fascicolo)
+    regioni = tagga(documento.text, fascicolo.tags).regioni
     segmenti: list[dict] = []
     cursore = 0
-    for span in spans:
-        if span.start > cursore:
-            segmenti.append(
-                {
-                    "testo": documento.text[cursore:span.start],
-                    "span_id": None,
-                    "categoria": None,
-                    "mascherato": False,
-                    "segnaposto": None,
-                }
-            )
-        entita = fascicolo.entities.get(span.entity_id)
+    for regione in regioni:
+        if regione.start > cursore:
+            segmenti.append(_segmento_nudo(documento.text[cursore:regione.start]))
+        tag = fascicolo.tags[regione.tag]
         segmenti.append(
             {
-                "testo": documento.text[span.start:span.end],
-                "span_id": span.span_id,
-                "categoria": span.category.value,
-                "mascherato": span_attivo(span, fascicolo),
-                "segnaposto": None if entita is None else entita.placeholder,
+                "testo": documento.text[regione.start:regione.end],
+                "tag": tag.tag,
+                "categoria": tag.categoria.value,
+                "mascherato": tag.tag in attivi,
+                "segnaposto": tag.tag,
             }
         )
-        cursore = span.end
+        cursore = regione.end
     if cursore < len(documento.text):
-        segmenti.append(
-            {
-                "testo": documento.text[cursore:],
-                "span_id": None,
-                "categoria": None,
-                "mascherato": False,
-                "segnaposto": None,
-            }
-        )
+        segmenti.append(_segmento_nudo(documento.text[cursore:]))
     return segmenti
 
 
@@ -154,13 +151,13 @@ def revisione(fascicolo: Fascicolo) -> dict:
     che divergono al primo caso che una delle due non prevede; e quella che
     l'utente vede sarebbe la copia sbagliata.
 
-    Le categorie servite sono soltanto quelle che hanno almeno uno span: un
+    Le categorie servite sono soltanto quelle che hanno almeno un tag: un
     interruttore per una categoria assente dal fascicolo prometterebbe un
     effetto che non può avere.
     """
     quanti: dict[Category, int] = {}
-    for span in fascicolo.spans:
-        quanti[span.category] = quanti.get(span.category, 0) + 1
+    for tag in fascicolo.tags.values():
+        quanti[tag.categoria] = quanti.get(tag.categoria, 0) + 1
     return {
         "stato": fascicolo.state.value,
         "categorie": [
@@ -172,10 +169,6 @@ def revisione(fascicolo: Fascicolo) -> dict:
             for categoria in Category
             if categoria in quanti
         ],
-        "ambiguita": {
-            "totale": len(fascicolo.ambiguities),
-            "bloccanti": sum(1 for a in fascicolo.ambiguities if a.blocca_approvazione),
-        },
         "documenti": [
             {
                 "doc_id": documento.doc_id,
@@ -187,12 +180,13 @@ def revisione(fascicolo: Fascicolo) -> dict:
     }
 
 
-def crea_router(store: SessionStore) -> APIRouter:
-    """Le route del fascicolo, legate allo store che ricevono.
+def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
+    """Le route del fascicolo, legate allo store e al rilevatore che ricevono.
 
-    Lo store arriva per parametro e non come singleton di modulo, come già fa
-    `export_sanitized_text` (spec §8): un singleton renderebbe ogni app del
-    processo compartecipe dello stesso fascicolo.
+    Entrambi arrivano per parametro e non come singleton di modulo, come già
+    fa `export_sanitized_text` (spec §8): un singleton renderebbe ogni app del
+    processo compartecipe dello stesso fascicolo, o costringerebbe ogni test a
+    far partire il client Gemini vero.
     """
     router = APIRouter(prefix="/api/fascicolo", tags=["fascicolo"])
 
@@ -266,41 +260,38 @@ def crea_router(store: SessionStore) -> APIRouter:
 
     @router.post("/analisi", response_model=None)
     async def analizza() -> dict | JSONResponse:
-        """Analizza i documenti non ancora analizzati e chiude l'analisi.
+        """Fa rilevare i dati sensibili e chiude l'analisi.
 
-        Rieseguibile di proposito, ed è il criterio 5 della issue #4: chi
-        aggiunge un documento dopo una prima analisi ripreme lo stesso bottone,
-        e la coda delle ambiguità viene ricalcolata. `analisi_completata` è
-        l'**unico** punto che popola le code — l'omonimia è una proprietà del
-        fascicolo intero, non del singolo documento — quindi saltarla al
-        secondo giro lascerebbe in coda le ambiguità del primo, senza quelle
-        che il documento appena entrato ha creato: stantie, e in silenzio.
+        Rieseguibile, come prima: chi aggiunge un documento dopo una prima
+        analisi ripreme lo stesso bottone. I documenti già passati dal
+        rilevatore vengono saltati, e qui la ragione è più forte di prima —
+        ogni chiamata costa e manda il documento in rete.
 
-        I documenti già analizzati vengono saltati perché `analizza_documento`
-        li rifiuta: una seconda copia di ogni span farebbe applicare a
-        `maschera` due sostituzioni sovrapposte allo stesso intervallo,
-        troncando il testo dal primo segnaposto in poi. Il filtro è sugli span
-        e non su una lista di doc_id già visti: un documento che non ha
-        prodotto nemmeno uno span viene ripassato, e ripassarlo non costa
-        niente perché il risultato è di nuovo vuoto.
-
-        Il fascicolo vuoto è un rifiuto e non un'analisi a vuoto: promuoverlo a
-        `PENDING_REVIEW` lo renderebbe approvabile, e un fascicolo approvato
-        senza documenti esporta zero documenti senza che nulla lo segnali.
+        Se il rilevatore solleva, il fascicolo resta esattamente com'era:
+        `assegna_tag` non muta i suoi argomenti, e la scrittura avviene solo
+        dopo che tutte le chiamate sono andate a buon fine (spec §6).
         """
         fascicolo = fascicolo_attivo(store)
         if not fascicolo.documents:
             return JSONResponse(
                 status_code=422,
-                content={
-                    "errore": "non c'è nessun documento da analizzare: "
-                    "caricane almeno uno"
-                },
+                content={"errore": "non c'è nessun documento da analizzare: "
+                                   "caricane almeno uno"},
             )
-        analizzati = {span.doc_id for span in fascicolo.spans}
-        for documento in fascicolo.documents:
-            if documento.doc_id not in analizzati:
-                analizza_documento(fascicolo, documento)
+        da_analizzare = [
+            d for d in fascicolo.documents if d.doc_id not in fascicolo.analizzati
+        ]
+        rilevazioni = []
+        for documento in da_analizzare:
+            rilevazioni.extend(rilevatore.rileva(documento.text))
+
+        tabella, contatori = assegna_tag(
+            rilevazioni, fascicolo.tags, fascicolo.counters
+        )
+        mascherature = [tagga(d.text, tabella) for d in fascicolo.documents]
+        fascicolo.tags = conta_occorrenze(tabella, mascherature)
+        fascicolo.counters = contatori
+        fascicolo.analizzati.update(d.doc_id for d in da_analizzare)
         analisi_completata(fascicolo)
         return revisione(fascicolo)
 
@@ -308,39 +299,37 @@ def crea_router(store: SessionStore) -> APIRouter:
     async def cambia_categoria(comando: ToggleCategoria) -> dict:
         """Accende o spegne il mascheramento di un'intera categoria (spec §5).
 
-        Non tocca il flag dei singoli span: le due decisioni sono indipendenti
-        e `span_attivo` le legge in `and`, quindi riaccendere la categoria
-        rimette esattamente com'erano gli span spenti uno per uno. Scriverle
+        Non tocca il flag dei singoli tag: le due decisioni sono indipendenti
+        e `tabella_attiva` le legge in `and`, quindi riaccendere la categoria
+        rimette esattamente com'erano i tag spenti uno per uno. Scriverle
         entrambe qui perderebbe quelle scelte senza poterle recuperare.
         """
         fascicolo = fascicolo_attivo(store)
         fascicolo.category_enabled[comando.categoria] = comando.attiva
         return revisione(fascicolo)
 
-    @router.post("/span", response_model=None)
-    async def cambia_span(comando: ToggleSpan) -> dict | JSONResponse:
-        """Accende o spegne il mascheramento di una singola occorrenza.
+    @router.post("/tag", response_model=None)
+    async def cambia_tag(comando: ToggleTag) -> dict | JSONResponse:
+        """Accende o spegne il mascheramento di un dato.
 
-        Uno `span_id` che non esiste è un 404 e non un 200 silenzioso: senza il
+        Un tag che non esiste è un 404 e non un 200 silenzioso: senza il
         controllo la route non muterebbe niente e risponderebbe come se avesse
-        funzionato, e la pagina continuerebbe a mostrare acceso uno span che
-        l'utente crede di aver spento — cioè un dato che esce in chiaro
-        dall'export contro la sua volontà esplicita.
+        funzionato, e la pagina continuerebbe a mostrare acceso un tag che
+        l'utente crede di aver spento — cioè un dato che esce in chiaro contro
+        la sua volontà esplicita.
         """
         fascicolo = fascicolo_attivo(store)
-        for indice, span in enumerate(fascicolo.spans):
-            if span.span_id == comando.span_id:
-                # `Span` è congelato: la sostituzione in posizione è l'unico
-                # modo di cambiarne il flag senza perdere l'ordine, da cui
-                # dipende la stabilità dell'hash di approvazione.
-                fascicolo.spans[indice] = replace(span, enabled=comando.attivo)
-                return revisione(fascicolo)
-        return JSONResponse(
-            status_code=404,
-            content={
-                "errore": f"nessuno span con identificativo {comando.span_id!r} "
-                "nel fascicolo: ricarica la revisione"
-            },
+        tag = fascicolo.tags.get(comando.tag)
+        if tag is None:
+            return JSONResponse(
+                status_code=404,
+                content={"errore": f"nessun tag {comando.tag!r} nel fascicolo: "
+                                   "ricarica la revisione"},
+            )
+        nuovo_stato = (
+            StatoTag.APPLICATO if comando.attivo else StatoTag.DISATTIVATO
         )
+        fascicolo.tags[comando.tag] = replace(tag, stato=nuovo_stato)
+        return revisione(fascicolo)
 
     return router

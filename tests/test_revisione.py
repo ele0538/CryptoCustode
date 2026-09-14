@@ -1,11 +1,12 @@
-"""Revisione: testo evidenziato e toggle per categoria (issue #4).
+"""Revisione: testo evidenziato e toggle per tag (issue #4, riscritta per la
+corsia IA della spec del 2026-09-14).
 
 Questi test difendono due cose che si verificano su **superfici diverse**, e
 tenerle distinte è il punto della slice:
 
-1. quello che il fascicolo diventa — stato `PENDING_REVIEW`, code delle
-   ambiguità popolate, interruttori che cambiano davvero cosa verrà mascherato
-   — si verifica **guardando il fascicolo nello store**, non credendo alla
+1. quello che il fascicolo diventa — stato `PENDING_REVIEW`, tabella dei tag
+   popolata, interruttori che cambiano davvero cosa verrà mascherato — si
+   verifica **guardando il fascicolo nello store**, non credendo alla
    risposta HTTP sulla parola;
 2. quello che l'utente vede — il testo segmentato, le evidenziazioni per
    categoria, gli interruttori che si accendono — si verifica **eseguendo il
@@ -19,6 +20,10 @@ verifica di «la pagina mostra X».
 
 Quello che l'harness **non** prova, e non va spacciato per coperto: il
 rendering, il CSS applicato, e che il browser esegua davvero la pagina.
+
+Il rilevatore non è più il NER interno: è iniettato (`client_con_rilevatore`),
+ed è un `RilevatoreFinto` a rispondere. Senza quel doppio ogni test che
+analizza farebbe partire il client Gemini vero — l'invariante 5 della spec §4.
 """
 
 import inspect
@@ -34,8 +39,9 @@ from pydantic import BaseModel
 
 from cryptocustode.api.app import UI, crea_app
 from cryptocustode.api.routes_fascicolo import ID_FASCICOLO_ATTIVO, crea_router
-from cryptocustode.core.models import AmbiguityKind, Category, Source, Span, State
+from cryptocustode.core.models import Category, Rilevazione, State
 from cryptocustode.state.session import SessionStore
+from tests.doppi import RilevatoreFinto
 
 INDIRIZZO_DI_PROVA = "http://127.0.0.1:8765"
 """L'app accetta solo il loopback nell'intestazione `Host` (`HOST_CONSENTITI`),
@@ -45,43 +51,12 @@ richiesta. Il valore di prova sta qui e non fra gli host di produzione."""
 ROTTA_DOCUMENTI = "/api/fascicolo/documenti"
 ROTTA_ANALISI = "/api/fascicolo/analisi"
 ROTTA_CATEGORIA = "/api/fascicolo/categoria"
-ROTTA_SPAN = "/api/fascicolo/span"
+ROTTA_TAG = "/api/fascicolo/tag"
 
 HARNESS = Path(__file__).parent / "ui_harness.mjs"
 
 UNO = "Il sig. Mario Rossi paga 1.200,00 euro."
 DUE = "Anche Mario Rossi firma, IBAN IT60X0542811101000000123456."
-
-
-@pytest.fixture
-def ner_finto(monkeypatch):
-    """Sostituisce il NER con una ricerca letterale dei nomi che gli si danno.
-
-    Il modello vero pesa 550 MB e caricarlo qui renderebbe questi test lenti e
-    dipendenti da un download; ma senza NER non esiste nessuna categoria con
-    varianti, e l'omonimia della spec §7 — l'unica ambiguità che popola la coda
-    bloccante — non potrebbe nascere. Il doppio produce span `PERSONA` veri, che
-    attraversano poi la pipeline vera: `risolvi`, l'assegnazione delle entità,
-    i segnaposto.
-    """
-    nomi: list[str] = []
-
-    def trova_per_ner(testo: str, doc_id: str) -> list[Span]:
-        trovati = []
-        for nome in nomi:
-            for trovato in re.finditer(re.escape(nome), testo):
-                inizio, fine = trovato.start(), trovato.end()
-                trovati.append(
-                    Span(
-                        span_id=f"{doc_id}:{inizio}-{fine}:{Category.PERSONA.value}",
-                        doc_id=doc_id, start=inizio, end=fine,
-                        category=Category.PERSONA, source=Source.NER, entity_id="",
-                    )
-                )
-        return trovati
-
-    monkeypatch.setattr("cryptocustode.core.entities.trova_per_ner", trova_per_ner)
-    return nomi
 
 
 @pytest.fixture
@@ -96,51 +71,106 @@ def client(store):
         yield client
 
 
+@pytest.fixture
+def client_con_rilevatore(store):
+    """Un `TestClient` e il `RilevatoreFinto` che l'app userà.
+
+    Il rilevatore arriva per parametro come già fa lo store: costruirlo dentro
+    `crea_app` significherebbe che ogni test fa partire il client Gemini vero,
+    cioè che la suite tocca la rete (spec §4, invariante 5).
+
+    Restituisce una funzione e non una coppia già fatta perché ogni test ha
+    bisogno di un doppio programmato diversamente: una fixture che decidesse
+    lei le rilevazioni costringerebbe i test ad accettare le sue.
+    """
+    def costruisci(**kwargs):
+        finto = RilevatoreFinto(**kwargs)
+        app = crea_app(store=store, rilevatore=finto)
+        return TestClient(app, base_url=INDIRIZZO_DI_PROVA), finto
+
+    return costruisci
+
+
 def carica(client: TestClient, nome: str, testo: str):
     return client.post(
         ROTTA_DOCUMENTI, files={"file": (nome, testo.encode("utf-8"), "text/plain")}
     )
 
 
+def _file(nome: str, testo: str):
+    return {"file": (nome, testo.encode("utf-8"), "text/plain")}
+
+
 def fascicolo_di(store: SessionStore):
     return store.prendi(ID_FASCICOLO_ATTIVO)
 
 
-# --- Criterio 4: dopo l'analisi lo stato e la coda ---------------------------
+# --- L'analisi usa il rilevatore iniettato -----------------------------------
 
 
-def test_dopo_l_analisi_lo_stato_e_pending_review_e_la_coda_e_popolata(
-    client, store, ner_finto
-):
+def test_l_analisi_usa_il_rilevatore_iniettato(client_con_rilevatore):
+    client, finto = client_con_rilevatore(
+        sempre=[Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+    )
+    client.post(ROTTA_DOCUMENTI, files=_file("a.txt", "Mario Rossi paga."))
+    revisione = client.post(ROTTA_ANALISI).json()
+
+    segmenti = revisione["documenti"][0]["segmenti"]
+    assert [s["testo"] for s in segmenti] == ["Mario Rossi", " paga."]
+    assert segmenti[0]["tag"] == "[PERSONA_1]"
+    assert segmenti[0]["mascherato"] is True
+
+
+def test_un_documento_gia_analizzato_non_ripaga_una_chiamata(client_con_rilevatore):
+    """Ogni chiamata costa e manda il documento in rete: rianalizzare ciò che
+    si è già analizzato è una spesa e un'esposizione senza contropartita."""
+    client, finto = client_con_rilevatore(sempre=[])
+    client.post(ROTTA_DOCUMENTI, files=_file("a.txt", "Mario Rossi paga."))
+    client.post(ROTTA_ANALISI)
+    client.post(ROTTA_ANALISI)
+
+    assert finto.chiamate == ["Mario Rossi paga."]
+
+
+def test_un_documento_aggiunto_dopo_l_analisi_viene_comunque_rilevato(client_con_rilevatore):
+    """Criterio 5: chi aggiunge un documento dopo una prima analisi ripreme lo
+    stesso bottone, e il documento nuovo deve passare dal rilevatore — solo
+    quello già analizzato viene saltato, non l'intera seconda chiamata."""
+    client, finto = client_con_rilevatore(sempre=[])
+    client.post(ROTTA_DOCUMENTI, files=_file("a.txt", "Mario Rossi paga."))
+    client.post(ROTTA_ANALISI)
+
+    client.post(ROTTA_DOCUMENTI, files=_file("b.txt", "Anche Luigi firma."))
+    seconda = client.post(ROTTA_ANALISI)
+
+    assert seconda.status_code == 200, seconda.text
+    assert finto.chiamate == ["Mario Rossi paga.", "Anche Luigi firma."]
+
+
+def test_dopo_l_analisi_lo_stato_e_pending_review(client_con_rilevatore, store):
     """Criterio 4, verificato **nel fascicolo** e non nella risposta HTTP: un
-    payload che dicesse `"stato": "PENDING_REVIEW"` senza che nessuno abbia
-    chiamato `analisi_completata` lascerebbe le code vuote, e l'approvazione
-    non troverebbe mai niente da bloccare (spec §7, TC-03).
-
-    Due documenti con lo stesso nome e nessun CF sono il caso che apre
-    l'omonimia: con un documento solo la coda resterebbe legittimamente vuota,
-    e il test non distinguerebbe l'analisi fatta da quella saltata.
-    """
-    ner_finto.append("Mario Rossi")
-    carica(client, "uno.txt", UNO)
-    carica(client, "due.txt", DUE)
+    payload che dicesse `"stato": "PENDING_REVIEW"` senza che il fascicolo
+    fosse davvero passato di stato non basterebbe (spec §7, TC-03 adattato
+    alla corsia IA: l'omonimia fra documenti non è più intercettata, spec §16
+    limite noto 2)."""
+    client, finto = client_con_rilevatore(
+        sempre=[Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+    )
+    client.post(ROTTA_DOCUMENTI, files=_file("uno.txt", UNO))
 
     risposta = client.post(ROTTA_ANALISI)
 
     assert risposta.status_code == 200, risposta.text
-    fascicolo = fascicolo_di(store)
-    assert fascicolo.state is State.PENDING_REVIEW
-    omonimie = [
-        a for a in fascicolo.ambiguities if a.kind is AmbiguityKind.SAME_NAME_NO_CF
-    ]
-    assert omonimie, "la coda delle ambiguità è vuota: `analisi_completata` non è passata"
-    assert any(a.blocca_approvazione for a in fascicolo.ambiguities)
+    assert fascicolo_di(store).state is State.PENDING_REVIEW
 
 
 def test_l_analisi_di_un_fascicolo_vuoto_e_rifiutata_invece_di_promuoverlo(client, store):
     """Senza documenti non c'è niente da analizzare, e promuovere comunque il
     fascicolo a `PENDING_REVIEW` lo renderebbe approvabile: un fascicolo vuoto
-    approvato esporta zero documenti senza che nulla lo segnali.
+    approvato esporta zero documenti senza che nulla lo segnali. Usa il
+    `client` semplice: senza documenti la route non arriva mai a interrogare
+    il rilevatore, quindi il default (`RilevatoreGemini` senza chiave) non
+    viene mai chiamato.
     """
     risposta = client.post(ROTTA_ANALISI)
 
@@ -149,55 +179,26 @@ def test_l_analisi_di_un_fascicolo_vuoto_e_rifiutata_invece_di_promuoverlo(clien
     assert fascicolo_di(store).state is State.DRAFT
 
 
-# --- Criterio 5: un documento in più fa rieseguire l'analisi -----------------
-
-
-def test_un_documento_aggiunto_dopo_l_analisi_ne_fa_rieseguire_una(client, store, ner_finto):
-    """Criterio 5. `analisi_completata` è l'unico punto che popola le code:
-    saltarla dopo il secondo caricamento lascerebbe la coda com'era, cioè
-    senza l'omonimia che il secondo documento ha appena creato — stantia, e
-    silenziosamente.
-
-    Il secondo passaggio non deve nemmeno rianalizzare il primo documento:
-    `analizza_documento` lo rifiuta di proposito, perché una seconda copia di
-    ogni span farebbe applicare a `maschera` due sostituzioni sovrapposte allo
-    stesso intervallo, troncando il testo dal primo segnaposto in poi.
-    """
-    ner_finto.append("Mario Rossi")
-    carica(client, "uno.txt", UNO)
-    assert client.post(ROTTA_ANALISI).status_code == 200
-    fascicolo = fascicolo_di(store)
-    assert not [a for a in fascicolo.ambiguities if a.kind is AmbiguityKind.SAME_NAME_NO_CF]
-    span_del_primo = [s.span_id for s in fascicolo.spans]
-
-    carica(client, "due.txt", DUE)
-    seconda = client.post(ROTTA_ANALISI)
-
-    assert seconda.status_code == 200, seconda.text
-    fascicolo = fascicolo_di(store)
-    assert [
-        a for a in fascicolo.ambiguities if a.kind is AmbiguityKind.SAME_NAME_NO_CF
-    ], "la coda è rimasta com'era: la seconda analisi non ha ripopolato niente"
-    rimasti = [s.span_id for s in fascicolo.spans if s.span_id in span_del_primo]
-    assert sorted(rimasti) == sorted(span_del_primo)
-    assert len(rimasti) == len(set(rimasti)), "gli span del primo documento sono duplicati"
-
-
-# --- Criterio 1, metà server: i segmenti coprono il testo originale ----------
+# --- Criterio 1, metà server: i segmenti coprono il testo originale ---------
 
 
 def test_i_segmenti_serviti_ricompongono_esattamente_il_testo_originale(
-    client, store, ner_finto
+    client_con_rilevatore, store
 ):
     """Criterio 1, metà server. Il testo evidenziato si costruisce spezzando il
-    testo **originale** sugli offset degli span: se la giunzione perdesse o
-    duplicasse un carattere, l'utente reviserebbe un testo che non è quello che
-    verrà mascherato, e gli offset su cui clicca non sarebbero più gli stessi.
+    testo **originale** sulle regioni che la mascheratura rivendica: se la
+    giunzione perdesse o duplicasse un carattere, l'utente reviserebbe un
+    testo che non è quello che verrà mascherato.
 
     La decisione 2 della spec §2 dice che il testo estratto è immutabile:
     questo test è ciò che la rende osservabile.
     """
-    ner_finto.append("Mario Rossi")
+    client, finto = client_con_rilevatore(
+        sempre=[
+            Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA),
+            Rilevazione(valore="1.200,00 euro", categoria=Category.IMPORTO),
+        ]
+    )
     carica(client, "uno.txt", UNO)
 
     esito = client.post(ROTTA_ANALISI).json()
@@ -207,22 +208,28 @@ def test_i_segmenti_serviti_ricompongono_esattamente_il_testo_originale(
     evidenziati = [s for s in documento["segmenti"] if s["categoria"] is not None]
     categorie = {s["categoria"] for s in evidenziati}
     assert categorie == {"PERSONA", "IMPORTO"}, categorie
-    assert all(s["span_id"] for s in evidenziati)
+    assert all(s["tag"] for s in evidenziati)
     assert all(s["mascherato"] for s in evidenziati), "spec §2 decisione 4: tutto acceso"
 
 
-# --- Criterio 2, metà server: gli interruttori cambiano il fascicolo ---------
+# --- Criterio 2, metà server: gli interruttori cambiano il fascicolo -------
 
 
 def test_il_toggle_di_categoria_spegne_il_mascheramento_di_quella_categoria(
-    client, store, ner_finto
+    client_con_rilevatore, store
 ):
     """Criterio 2, metà server, verificato sul fascicolo: `category_enabled` è
-    metà della condizione che `mask.span_attivo` legge, quindi è lì che si vede
-    se il toggle cambia davvero cosa verrà mascherato. Una risposta HTTP che
-    dicesse «spento» senza mutare il fascicolo esporterebbe comunque il dato.
+    metà della condizione che `mask.tabella_attiva` legge, quindi è lì che si
+    vede se il toggle cambia davvero cosa verrà mascherato. Una risposta HTTP
+    che dicesse «spento» senza mutare il fascicolo esporterebbe comunque il
+    dato.
     """
-    ner_finto.append("Mario Rossi")
+    client, finto = client_con_rilevatore(
+        sempre=[
+            Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA),
+            Rilevazione(valore="1.200,00 euro", categoria=Category.IMPORTO),
+        ]
+    )
     carica(client, "uno.txt", UNO)
     client.post(ROTTA_ANALISI)
 
@@ -237,43 +244,55 @@ def test_il_toggle_di_categoria_spegne_il_mascheramento_di_quella_categoria(
     assert persona and not any(s["mascherato"] for s in persona)
 
 
-def test_il_toggle_di_un_singolo_span_non_tocca_gli_altri_della_categoria(
-    client, store, ner_finto
+def test_lo_spegnimento_di_un_tag_non_tocca_gli_altri_tag_della_stessa_categoria(
+    client_con_rilevatore, store
 ):
-    """Criterio 2, metà server. Il controllo sul singolo span è l'altra metà
-    della decisione 4 della spec §2: spegnere un'occorrenza non deve spegnere
-    le altre della stessa categoria, altrimenti sarebbe il toggle di categoria
-    con un altro nome.
+    """Criterio 2, metà server. Nel mondo dei tag la granularità è il *valore*,
+    non la singola occorrenza: spegnere `[PERSONA_1]` deve spegnere tutte le
+    occorrenze di quel valore, ma non deve toccare un altro tag della stessa
+    categoria — altrimenti sarebbe il toggle di categoria con un altro nome.
     """
-    ner_finto.append("Mario Rossi")
-    carica(client, "uno.txt", UNO)
-    esito = client.post(ROTTA_ANALISI).json()
-    [documento] = esito["documenti"]
-    [persona] = [s for s in documento["segmenti"] if s["categoria"] == "PERSONA"]
+    client, finto = client_con_rilevatore(
+        sempre=[
+            Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA),
+            Rilevazione(valore="Luigi Bianchi", categoria=Category.PERSONA),
+        ]
+    )
+    carica(client, "uno.txt", "Mario Rossi e Luigi Bianchi firmano.")
+    client.post(ROTTA_ANALISI)
 
-    risposta = client.post(ROTTA_SPAN, json={"span_id": persona["span_id"], "attivo": False})
+    risposta = client.post(ROTTA_TAG, json={"tag": "[PERSONA_1]", "attivo": False})
 
     assert risposta.status_code == 200, risposta.text
     fascicolo = fascicolo_di(store)
-    spento = [s for s in fascicolo.spans if s.span_id == persona["span_id"]]
-    assert spento and spento[0].enabled is False
-    altri = [s for s in fascicolo.spans if s.span_id != persona["span_id"]]
-    assert altri and all(s.enabled for s in altri)
+    assert fascicolo.tags["[PERSONA_1]"].stato.value == "DISATTIVATO"
+    assert fascicolo.tags["[PERSONA_2]"].stato.value != "DISATTIVATO"
     assert fascicolo.category_enabled[Category.PERSONA] is True, "la categoria resta accesa"
+    [documento] = risposta.json()["documenti"]
+    spento = [s for s in documento["segmenti"] if s["tag"] == "[PERSONA_1]"]
+    acceso = [s for s in documento["segmenti"] if s["tag"] == "[PERSONA_2]"]
+    assert spento and not any(s["mascherato"] for s in spento)
+    assert acceso and all(s["mascherato"] for s in acceso)
 
 
-def test_uno_span_che_non_esiste_e_un_404_con_una_spiegazione(client, store, ner_finto):
-    """Un id inventato non deve passare in silenzio: senza il controllo la
-    route non muterebbe niente e risponderebbe 200, e la pagina mostrerebbe
-    acceso uno span che l'utente crede di aver spento."""
-    ner_finto.append("Mario Rossi")
-    carica(client, "uno.txt", UNO)
+def test_un_tag_inesistente_e_un_404(client_con_rilevatore):
+    client, finto = client_con_rilevatore(sempre=[])
+    client.post(ROTTA_DOCUMENTI, files=_file("a.txt", "niente."))
     client.post(ROTTA_ANALISI)
 
-    risposta = client.post(ROTTA_SPAN, json={"span_id": "inventato", "attivo": False})
+    risposta = client.post(
+        ROTTA_TAG, json={"tag": "[PERSONA_99]", "attivo": False}
+    )
 
     assert risposta.status_code == 404
-    assert "inventato" in risposta.json()["errore"]
+    assert "PERSONA_99" in risposta.json()["errore"]
+
+
+def test_la_revisione_non_parla_piu_di_ambiguita(client_con_rilevatore):
+    client, finto = client_con_rilevatore(sempre=[])
+    client.post(ROTTA_DOCUMENTI, files=_file("a.txt", "niente."))
+
+    assert "ambiguita" not in client.post(ROTTA_ANALISI).json()
 
 
 # --- La UI eseguita per davvero ---------------------------------------------
@@ -323,13 +342,13 @@ def campi_delle_rotte() -> list[tuple[str, set[str], set[str]]]:
     """Per ogni rotta del fascicolo: il percorso, i nomi dei suoi parametri e i
     campi del modello che ne descrive il corpo.
 
-    `eval_str=True` non è un dettaglio: `routes_fascicolo.py` ha
-    `from __future__ import annotations`, quindi senza di quello le annotazioni
-    restano stringhe, nessun `issubclass` scatta, e ogni test che cerca i campi
-    del corpo passerebbe su un insieme vuoto — verde senza aver guardato
-    niente. È il difetto che questo stesso test ha intercettato su di sé.
+    `eval_str=True` non è un dettaglio: senza di quello, con annotazioni
+    lasciate come stringhe da qualche import che tornasse a introdurre
+    `from __future__ import annotations`, nessun `issubclass` scatterebbe e
+    ogni test che cerca i campi del corpo passerebbe su un insieme vuoto —
+    verde senza aver guardato niente.
     """
-    router = crea_router(SessionStore())
+    router = crea_router(SessionStore(), RilevatoreFinto())
     rotte = []
     for rotta in router.routes:
         parametri = inspect.signature(rotta.endpoint, eval_str=True).parameters
@@ -347,7 +366,7 @@ def segmenti_di(esito: dict) -> list[dict]:
 
 
 def evidenze_di(esito: dict) -> list[dict]:
-    return [segmento for segmento in segmenti_di(esito) if segmento["span_id"] is not None]
+    return [segmento for segmento in segmenti_di(esito) if segmento["tag"] is not None]
 
 
 @senza_node
@@ -375,7 +394,7 @@ def test_l_analisi_evidenzia_il_testo_originale_distinguendo_le_categorie():
     assert {e["categoria"] for e in evidenze} == {"PERSONA", "IMPORTO"}
     classi = {e["classe"] for e in evidenze}
     assert len(classi) == 2, f"le due categorie sono dipinte con la stessa classe: {classi}"
-    assert all(e["tag"] == "mark" for e in evidenze), (
+    assert all(e["elemento"] == "mark" for e in evidenze), (
         "l'evidenziazione deve essere marcata anche per chi non vede i colori"
     )
     assert all(e["mascherato"] == "1" for e in evidenze), "spec §2 decisione 4"
@@ -459,9 +478,9 @@ def test_spegnere_la_categoria_dalla_pagina_spegne_le_sue_occorrenze_nella_pagin
 
 @senza_node
 def test_cliccare_una_singola_occorrenza_ne_chiede_lo_spegnimento():
-    """Criterio 2, metà UI, sul singolo span. Il bersaglio del click è
-    l'elemento vero disegnato dalla pagina, trovato per il suo `data-span-id`:
-    un rendering che non lo portasse non sarebbe cliccabile per nessuno, e qui
+    """Criterio 2, metà UI, sul singolo tag. Il bersaglio del click è
+    l'elemento vero disegnato dalla pagina, trovato per il suo `data-tag`: un
+    rendering che non lo portasse non sarebbe cliccabile per nessuno, e qui
     fallisce.
 
     `attivo: false` è dedotto dallo stato disegnato, non da un contatore nel
@@ -470,11 +489,11 @@ def test_cliccare_una_singola_occorrenza_ne_chiede_lo_spegnimento():
     """
     esito = esito_della_ui("revisione-span-spento")
 
-    inviati = [t for t in esito["tentativi"] if t["url"].endswith("/span")]
+    inviati = [t for t in esito["tentativi"] if t["url"].endswith("/tag")]
     assert len(inviati) == 1, f"richieste partite: {[t['url'] for t in esito['tentativi']]}"
     corpo = json.loads(inviati[0]["corpo"])
     assert corpo["attivo"] is False
-    assert corpo["span_id"].endswith(":IMPORTO"), corpo["span_id"]
+    assert corpo["tag"] == "[IMPORTO_1]", corpo["tag"]
     [importo] = [e for e in evidenze_di(esito) if e["categoria"] == "IMPORTO"]
     assert importo["mascherato"] == "0"
     [persona] = [e for e in evidenze_di(esito) if e["categoria"] == "PERSONA"]
@@ -495,7 +514,7 @@ def test_il_corpo_dei_toggle_ha_i_nomi_che_le_rotte_aspettano():
 
     for scenario, rotta in (
         ("revisione-categoria-spenta", "/api/fascicolo/categoria"),
-        ("revisione-span-spento", "/api/fascicolo/span"),
+        ("revisione-span-spento", "/api/fascicolo/tag"),
     ):
         esito = esito_della_ui(scenario)
         [inviato] = [t for t in esito["tentativi"] if t["url"] == rotta]
@@ -519,16 +538,15 @@ def test_un_analisi_rifiutata_arriva_in_pagina_col_suo_messaggio():
 
 
 @senza_node
-def test_la_pagina_dice_lo_stato_e_quante_ambiguita_sono_in_coda():
-    """Criterio 4, metà UI. Lo stato e la coda sono verificati nel fascicolo da
-    `test_dopo_l_analisi_lo_stato_e_pending_review_e_la_coda_e_popolata`; qui
-    si verifica l'altra metà, cioè che l'utente lo venga a sapere invece di
-    doverlo dedurre dal fatto che la pagina è cambiata.
+def test_la_pagina_dice_lo_stato_del_fascicolo():
+    """Criterio 4, metà UI. Lo stato è verificato nel fascicolo da
+    `test_dopo_l_analisi_lo_stato_e_pending_review`; qui si verifica l'altra
+    metà, cioè che l'utente lo venga a sapere invece di doverlo dedurre dal
+    fatto che la pagina è cambiata.
     """
     esito = esito_della_ui("revisione-analisi")
 
     assert "PENDING_REVIEW" in esito["stato"]
-    assert "1" in esito["stato"], "il numero di ambiguità in coda deve comparire"
     assert "undefined" not in esito["stato"]
 
 
@@ -581,7 +599,7 @@ def percorsi_di(valore, prefisso: str = "") -> set[str]:
 
 @senza_node
 def test_il_payload_dello_scenario_ha_la_forma_di_quello_che_la_rotta_serve(
-    client, store, ner_finto
+    client_con_rilevatore,
 ):
     """Il buco che resta aperto sotto tutti i test dell'harness: gli scenari
     sono scritti a mano, quindi possono descrivere un payload che il server non
@@ -593,13 +611,15 @@ def test_il_payload_dello_scenario_ha_la_forma_di_quello_che_la_rotta_serve(
     Il confronto è sulla forma e non sui valori: un campo aggiunto o rinominato
     da una parte sola fa fallire qui, e il rimedio è aggiornare lo scenario.
     """
-    ner_finto.append("Mario Rossi")
+    client, finto = client_con_rilevatore(
+        sempre=[Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+    )
     carica(client, "uno.txt", UNO)
     vero = client.post(ROTTA_ANALISI).json()
 
-    finto = esito_della_ui("revisione-analisi")["payload_servito"]
+    finto_payload = esito_della_ui("revisione-analisi")["payload_servito"]
 
-    assert percorsi_di(finto) == percorsi_di(vero)
+    assert percorsi_di(finto_payload) == percorsi_di(vero)
 
 
 # --- Criterio 3: il testo non è modificabile in nessun punto -----------------
@@ -607,10 +627,10 @@ def test_il_payload_dello_scenario_ha_la_forma_di_quello_che_la_rotta_serve(
 
 def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
     """Criterio 3, e la decisione 2 della spec §2: il testo estratto è
-    immutabile, l'utente agisce solo sugli span. Un campo modificabile
+    immutabile, l'utente agisce solo sui tag. Un campo modificabile
     permetterebbe di reintrodurre dati reali *dopo* il riconoscimento — cioè
-    dati che nessuno span copre e che uscirebbero in chiaro dall'export — e di
-    spostare i caratteri sotto gli offset degli span già trovati.
+    dati che nessun tag copre e che uscirebbero in chiaro dall'export — e di
+    spostare i caratteri sotto le regioni già trovate.
 
     Verificato sul sorgente della pagina e non sull'harness: il DOM finto non
     ha attributi, quindi non può distinguere un contenitore modificabile da uno
