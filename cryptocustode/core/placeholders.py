@@ -20,6 +20,29 @@ import re
 # sostituzione del ripristino (spec §11, passo 5).
 SEGNAPOSTO = re.compile(r"\[[A-Z]+_\d+\]")
 
+# Lo stesso formato di `SEGNAPOSTO`, con l'indice catturato.
+_INDICE = re.compile(r"\[[A-Z]+_(\d+)\]")
+
+
+def indice_di(segnaposto: str) -> int:
+    """L'indice dentro un segnaposto: `[PERSONA_3]` → `3`.
+
+    Sta qui e non presso chi ne ha bisogno per la ragione dichiarata in cima al
+    modulo: il formato ha un solo posto in cui vive. La fusione di due tag legge
+    da qui quale dei due è il più vecchio, cioè quale segnaposto sopravvive
+    (spec §5), e una regex scritta altrove divergerebbe dal costruttore senza
+    che un test se ne accorga.
+
+    Un segnaposto malformato è un errore di programmazione e non un dato
+    dell'utente — `costruisci_segnaposto` è l'unica cosa che ne produce — quindi
+    solleva, invece di restituire un indice inventato che deciderebbe in
+    silenzio quale dei due tag bruciare.
+    """
+    trovato = _INDICE.fullmatch(segnaposto)
+    if trovato is None:
+        raise ValueError(f"non è un segnaposto: {segnaposto!r}")
+    return int(trovato.group(1))
+
 
 def costruisci_segnaposto(categoria: str, indice: int) -> str:
     """Il segnaposto di una categoria a un dato indice.

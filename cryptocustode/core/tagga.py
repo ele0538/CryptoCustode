@@ -89,19 +89,38 @@ def tagga(testo: str, tabella: dict[str, Tag]) -> Mascheratura:
     Un valore più lungo rivendica prima di uno più corto, e un valore corto non
     può rivendicare dentro una regione già presa: è ciò che impedisce a `Rossi`
     di finire dentro `Mario Rossi`.
+
+    Le varianti di un tag — le altre scritture che una fusione accettata gli ha
+    messo sotto — vengono sostituite come il valore canonico, e concorrono
+    all'ordine **insieme** a tutti gli altri, non dentro il proprio tag. È la
+    differenza che conta: ordinare i tag e poi guardarne le scritture una per
+    una lascerebbe una variante corta di un tag mordere dentro un valore lungo
+    di un altro.
+
+    Il ripristino, invece, non conosce le varianti: `dizionario_di` mappa il
+    segnaposto sul solo valore canonico, quindi dopo una fusione il round-trip
+    della §8 non è più un'identità sul testo originale — la variante torna
+    scritta come il valore canonico. È la perdita che l'utente accetta quando
+    dice che le due scritture sono la stessa cosa, ed è confinata ai tag che ha
+    fuso lui.
     """
     rivendicate: list[Regione] = []
     occupato = [False] * len(testo)
 
-    for tag in sorted(tabella.values(), key=lambda t: _ordine_totale(t.valore)):
-        if not tag.valore:
-            continue
+    scritture = [
+        (scrittura, tag)
+        for tag in tabella.values()
+        for scrittura in (tag.valore, *tag.varianti)
+        if scrittura
+    ]
+
+    for scrittura, tag in sorted(scritture, key=lambda coppia: _ordine_totale(coppia[0])):
         inizio = 0
         while True:
-            trovato = testo.find(tag.valore, inizio)
+            trovato = testo.find(scrittura, inizio)
             if trovato == -1:
                 break
-            fine = trovato + len(tag.valore)
+            fine = trovato + len(scrittura)
             if any(occupato[trovato:fine]):
                 # Sovrapposta a una regione già presa da un valore più lungo:
                 # si riparte dal carattere successivo, perché l'occorrenza

@@ -79,6 +79,44 @@ class Tag:
     valore: str
     occorrenze: int
     stato: StatoTag
+    varianti: tuple[str, ...] = ()
+    """Le altre scritture che questo segnaposto copre, dopo una fusione accettata.
+
+    Nascono vuote e restano vuote finché l'utente non accetta un suggerimento:
+    l'euristica sui nomi non fonde niente da sé (spec §7). `valore` resta il
+    valore **canonico**, cioè quello che il ripristino rimette al posto del
+    segnaposto; le varianti vengono sostituite nel testo ma non tornano indietro
+    come erano scritte, ed è il senso stesso di aver detto che sono la stessa
+    cosa.
+
+    Una tupla e non un insieme: `Tag` è congelato, viene confrontato nei test e
+    serializzato nel vault, e un insieme darebbe un ordine — quindi un JSON —
+    diverso a ogni esecuzione.
+    """
+
+
+@dataclass
+class FusioneSuggerita:
+    """Due tag che l'euristica sui nomi giudica la stessa cosa (spec §7).
+
+    È un suggerimento e **non blocca niente**. La coda bloccante di
+    `feat/p6-disambiguazione` — `SAME_NAME_NO_CF`, due persone diverse con lo
+    stesso nome — non è portata e non è portabile: `assegna_tag` deduplica per
+    valore esatto e il modello non restituisce offset, quindi due omonimi sono
+    un tag solo per costruzione e non c'è niente da separare. Resta il limite
+    noto 2 della spec §16.
+
+    `fusione_id` è deterministico (`tag_a+tag_b`) e non un UUID: l'analisi è
+    rieseguibile, e un identificativo nuovo a ogni giro farebbe mandare alla
+    pagina già aperta un id che non esiste più.
+    """
+
+    fusione_id: str
+    categoria: Category
+    tag_a: str
+    """Il segnaposto più vecchio dei due: è quello che sopravvive alla fusione."""
+    tag_b: str
+    risolta: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,6 +159,13 @@ class Fascicolo:
     Per tag e non per valore perché è il tag l'identificativo che la UI
     rimanda indietro quando l'utente spegne una riga, ed è il tag la chiave
     del dizionario di ripristino.
+    """
+    fusioni: list[FusioneSuggerita] = field(default_factory=list)
+    """La coda dei suggerimenti di fusione, decisi e non.
+
+    I decisi restano in coda invece di essere cancellati: è ciò che impedisce
+    all'analisi successiva di riproporre una coppia che l'utente ha già
+    guardato e lasciato separata.
     """
     analizzati: set[str] = field(default_factory=set)
     """I `doc_id` già passati dal rilevatore.

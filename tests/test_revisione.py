@@ -766,8 +766,15 @@ def test_lo_script_non_costruisce_nessun_elemento_modificabile():
         creati = set(re.findall(r'createElement\(\s*"([a-zA-Z]+)"', script))
         assert creati, f"atteso che {nome} costruisca qualche elemento"
         assert "textarea" not in creati, nome
+        # `button` sta accanto a `checkbox` e non allarga la guardia: un
+        # `<button type="button">` non riceve testo, e il criterio è sempre
+        # quello — nessun elemento costruito dallo script deve poter accettare
+        # caratteri dall'utente. Un `text`, un `search` o un `email` qui sono
+        # rossi, ed è l'unica cosa che questa riga deve saper distinguere.
         tipi = set(re.findall(r'\.type\s*=\s*"([^"]+)"', script))
-        assert tipi <= {"checkbox"}, f"{nome} crea campi di immissione: {sorted(tipi)}"
+        assert tipi <= {"checkbox", "button"}, (
+            f"{nome} crea campi di immissione: {sorted(tipi)}"
+        )
 
 
 def test_nessuna_rotta_del_fascicolo_accetta_un_testo_da_sostituire():

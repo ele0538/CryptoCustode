@@ -35,6 +35,7 @@ from starlette.formparsers import MultiPartParser
 
 from cryptocustode.ai.gemini import VARIABILE_CHIAVE, RilevatoreGemini
 from cryptocustode.api.routes_fascicolo import crea_router
+from cryptocustode.api.routes_fusioni import crea_router as crea_router_fusioni
 from cryptocustode.api.routes_vault import crea_router as crea_router_vault
 from cryptocustode.core.errors import (
     AIKeyMissing,
@@ -319,6 +320,10 @@ def crea_app(
     # lo sostituiscono per intero. Riceve lo **stesso** store, altrimenti
     # salverebbe un fascicolo diverso da quello che l'utente sta revisionando.
     app.include_router(crea_router_vault(store))
+    # I suggerimenti di fusione hanno un router loro perche' non sono un passo
+    # della revisione: non bloccano niente e il fascicolo che li ignora e'
+    # esattamente quello di prima (spec 7).
+    app.include_router(crea_router_fusioni(store))
     app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)
 
     @app.get("/", include_in_schema=False)

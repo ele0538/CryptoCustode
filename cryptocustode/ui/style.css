@@ -694,3 +694,65 @@ mark.evidenza.spenta {
      cosa sotto di se'. */
   min-height: 1.2em;
 }
+
+/* --------------------------------------------------------------------------
+   Suggerimenti di fusione (issue #51).
+
+   La regola di stile che conta qui non e' estetica: i due bottoni di una
+   proposta hanno lo stesso peso visivo, sempre. Dare risalto a «fondi»
+   spingerebbe verso l'errore che la spec 7 dichiara irreversibile — fondere
+   due persone diverse rivela il nome di una al posto dell'altra — mentre
+   lasciarle separate degrada soltanto la qualita' della risposta dell'IA.
+   -------------------------------------------------------------------------- */
+
+.fusioni-elenco {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.fusione {
+  padding: 0.7rem 0.9rem;
+  background: var(--carta);
+  border: 1px solid var(--bordo);
+  border-radius: 12px;
+}
+
+.fusione.decisa {
+  /* Le decise restano in elenco, spente: e' il verbale di cio' che l'utente ha
+     gia' guardato, e toglierle farebbe sembrare che il suggerimento non sia
+     mai esistito. */
+  opacity: 0.6;
+}
+
+.fusione-domanda {
+  margin: 0;
+  font-weight: 600;
+}
+
+.fusione-segnaposti {
+  margin: 0.2rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.fusione-scelte {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+/* Nessuna delle due pillole e' `scura`: sono sorelle, e la pagina non deve
+   suggerire quale premere. */
+.fusione-scelte .pillola {
+  flex: 0 1 auto;
+}
+
+#stato-fusioni {
+  margin-top: 0.6rem;
+  min-height: 1.2em;
+}

@@ -164,6 +164,28 @@
             con cui era stato chiuso — e un modulo solo obbligherebbe a
             disabilitare meta' dei campi a seconda del bottone premuto.
           -->
+          <!--
+            Suggerimenti di fusione (spec 7, issue #51). Sta prima del vault e
+            dopo la revisione perche' e' li' che serve: si guarda quando i tag
+            ci sono gia'. Non blocca niente e si puo' ignorare per sempre.
+          -->
+          <section class="riquadro fusioni" id="card-fusioni" aria-labelledby="titolo-fusioni">
+            <h2 id="titolo-fusioni" class="etichetta-sezione">Somiglianze fra i nomi</h2>
+            <p class="suggerimento tenue">
+              Due scritture diverse possono indicare la stessa persona o la
+              stessa azienda &mdash; &laquo;Mario Rossi&raquo; e &laquo;M.
+              Rossi&raquo;. Se lo sono, conviene che condividano un segnaposto:
+              all&rsquo;IA esterna arriverebbero altrimenti come due soggetti
+              diversi. CryptoCustode non lo decide da s&eacute;: propone, e
+              finch&eacute; non rispondi restano separate.
+            </p>
+            <button type="button" id="cerca-somiglianze" class="pillola scura">
+              Cerca somiglianze
+            </button>
+            <p id="stato-fusioni" class="tenue" aria-live="polite"></p>
+            <ul id="fusioni" class="fusioni-elenco"></ul>
+          </section>
+
           <section class="riquadro vault" id="card-vault" aria-labelledby="titolo-vault">
             <h2 id="titolo-vault" class="etichetta-sezione">Vault: salva e riapri</h2>
             <p class="suggerimento tenue">
@@ -210,6 +232,7 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script src="/static/fusioni.js"></script>
     <script src="/static/vault.js"></script>
   </body>
 </html>

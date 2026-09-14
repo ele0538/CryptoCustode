@@ -17,6 +17,7 @@ from cryptocustode.core.models import (
     Category,
     Document,
     Fascicolo,
+    FusioneSuggerita,
     State,
     StatoTag,
     Tag,
@@ -30,7 +31,14 @@ ITERAZIONI_KDF = 600_000
 # leggere un blob v2 richiederebbe di tenere in vita `Span`, `Entity` e
 # `Ambiguity` solo per tradurli, e non esiste alcun vault v2 reale da
 # convertire — l'esportazione che lo avrebbe scritto arriva in fase 2.
-VAULT_VERSION = 3
+#
+# Versione 4: i tag portano le `varianti` e il fascicolo la coda delle fusioni
+# suggerite (issue #51). Un blob v3 non ha quelle due chiavi, e leggerlo senza
+# alzare la versione lo farebbe morire su un `KeyError` che `carica` traduce nel
+# messaggio indistinguibile della password sbagliata: l'utente andrebbe a
+# cercare una password che funziona benissimo. La versione esiste per dire la
+# verità in questi casi.
+VAULT_VERSION = 4
 
 _LUNGHEZZA_SALT = 16
 _LUNGHEZZA_NONCE = 12
@@ -76,8 +84,19 @@ def _a_dizionario(fascicolo: Fascicolo) -> dict:
                 "valore": t.valore,
                 "occorrenze": t.occorrenze,
                 "stato": t.stato.value,
+                "varianti": list(t.varianti),
             }
             for t in fascicolo.tags.values()
+        ],
+        "fusioni": [
+            {
+                "fusione_id": f.fusione_id,
+                "categoria": f.categoria.value,
+                "tag_a": f.tag_a,
+                "tag_b": f.tag_b,
+                "risolta": f.risolta,
+            }
+            for f in fascicolo.fusioni
         ],
         "analizzati": sorted(fascicolo.analizzati),
         "category_enabled": {
@@ -126,7 +145,8 @@ def _verifica_versione(versione: object) -> None:
         raise VaultVersionNotSupported(
             f"questo vault è in formato {versione} e CryptoCustode legge solo "
             f"il formato {VAULT_VERSION}: il formato è cambiato quando il "
-            "motore è passato all'IA, e i fascicoli vecchi vanno rianalizzati."
+            "motore è passato all'IA e quando i tag hanno preso le varianti, e "
+            "i fascicoli vecchi vanno rianalizzati."
         )
 
 
@@ -151,9 +171,20 @@ def _da_dizionario(dati: dict) -> Fascicolo:
                 valore=t["valore"],
                 occorrenze=t["occorrenze"],
                 stato=StatoTag(t["stato"]),
+                varianti=tuple(t["varianti"]),
             )
             for t in dati["tags"]
         },
+        fusioni=[
+            FusioneSuggerita(
+                fusione_id=f["fusione_id"],
+                categoria=Category(f["categoria"]),
+                tag_a=f["tag_a"],
+                tag_b=f["tag_b"],
+                risolta=f["risolta"],
+            )
+            for f in dati["fusioni"]
+        ],
         analizzati=set(dati["analizzati"]),
         category_enabled={
             Category(nome): attiva for nome, attiva in dati["category_enabled"].items()
