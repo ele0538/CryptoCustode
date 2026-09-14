@@ -320,6 +320,25 @@ def crea_app(
                     ),
                 )
         return await chiama(richiesta)
+    @app.middleware("http")
+    async def non_conservare_gli_statici(richiesta: Request, chiama):
+        """Gli statici non si mettono in cache.
+
+        Un'applicazione locale si aggiorna sostituendo i file sul posto, e il
+        browser non ha modo di accorgersene: dopo un aggiornamento la pagina
+        continua a usare il CSS e il JavaScript vecchi, e l'utente vede un
+        difetto gia' corretto — o peggio, uno script nuovo contro un foglio di
+        stile vecchio. E' successo qui durante lo sviluppo, con una regola
+        `[hidden]` nuova ignorata per un quarto d'ora.
+
+        Non costa niente: i file arrivano da questo stesso computer, e il
+        risparmio di banda che la cache offre non esiste sul loopback.
+        """
+        risposta = await chiama(richiesta)
+        if richiesta.url.path.startswith("/static/"):
+            risposta.headers["Cache-Control"] = "no-store"
+        return risposta
+
     app.mount("/static", StaticFiles(directory=UI), name="static")
     app.include_router(crea_router(store, rilevatore))
     app.include_router(crea_router_config(configurazione))
