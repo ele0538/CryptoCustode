@@ -142,6 +142,28 @@ def segmenti_di(fascicolo: Fascicolo, documento: Document) -> list[dict]:
     return segmenti
 
 
+def totali_di(fascicolo: Fascicolo) -> dict:
+    """Le quattro cifre grandi della scheda, calcolate dal fascicolo.
+
+    Prima vivevano in un accumulatore del JavaScript, sommato a ogni
+    caricamento. Un accumulatore non è una copia innocua dello stato: non
+    sopravvive al refresh, e soprattutto non ha modo di **diminuire** — dopo
+    lo svuotamento del fascicolo continuerebbe a dichiarare i caratteri di
+    documenti che non ci sono più. Calcolarle qui le rende una funzione del
+    fascicolo, cioè giuste per costruzione in entrambi i casi (issue #50).
+    """
+    return {
+        "documenti": len(fascicolo.documents),
+        "massimo_documenti": Fascicolo.MAX_DOCUMENTI,
+        "pagine": sum(len(documento.page_offsets) for documento in fascicolo.documents),
+        "caratteri": sum(len(documento.text) for documento in fascicolo.documents),
+        "avvisi": sum(
+            len(segnaposto_preesistenti(documento.text))
+            for documento in fascicolo.documents
+        ),
+    }
+
+
 def revisione(fascicolo: Fascicolo) -> dict:
     """Tutto quello che serve alla pagina di revisione, in un payload solo.
 
@@ -189,6 +211,50 @@ def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
     far partire il client Gemini vero.
     """
     router = APIRouter(prefix="/api/fascicolo", tags=["fascicolo"])
+
+    @router.get("", response_model=None)
+    async def stato() -> dict:
+        """Tutto ciò che serve a ridisegnare la pagina da zero (issue #50).
+
+        Esiste perché la pagina non aveva **nessun** posto da cui rileggere il
+        fascicolo: i quattro POST rispondevano solo a chi li premeva, quindi un
+        F5 azzerava la UI mentre `SessionStore` teneva il fascicolo per tutta la
+        vita del processo. Da lì i tre sintomi che sembravano bug distinti —
+        la scheda a zero, il duplicato rifiutato a ragione, i documenti vecchi
+        che riaffioravano in revisione — ed erano lo stesso: la pagina e il
+        server non erano più d'accordo su cosa fosse caricato.
+
+        È una `GET` e non un `POST` perché non muta niente: chi ricarica la
+        pagina non deve poter cambiare il fascicolo per il fatto di guardarlo.
+        Serve anche alla riapertura del vault, che ha lo stesso bisogno di
+        ridisegnare tutto dopo aver sostituito il fascicolo.
+
+        Il fascicolo vuoto **non** è un errore qui, al contrario di `/analisi`:
+        è la risposta giusta alla domanda «cosa c'è dentro?» quando non c'è
+        ancora niente, ed è lo stato in cui la pagina si trova al primo avvio.
+        """
+        fascicolo = fascicolo_attivo(store)
+        return revisione(fascicolo) | {"totali": totali_di(fascicolo)}
+
+    @router.delete("", response_model=None)
+    async def svuota() -> dict:
+        """Butta via il fascicolo attivo e ne mette uno vuoto al suo posto.
+
+        Senza questa rotta l'utente che incontra il rifiuto dell'omonimo non
+        aveva **nessuna** via d'uscita dentro l'applicazione: il solo modo di
+        ricominciare era chiudere il programma e riaprirlo, cioè buttare via
+        davvero tutto il lavoro invece di quel documento. Il rifiuto era
+        corretto e restava senza rimedio, che è il difetto vero della #50.
+
+        Sostituisce il fascicolo invece di svuotare quello che c'è: `state`,
+        `approval_hash`, `counters`, `tags` e `analizzati` devono tornare tutti
+        al valore iniziale insieme, e ripulirli campo per campo è il genere di
+        elenco a cui si dimentica una riga il giorno che il fascicolo ne
+        guadagna una.
+        """
+        store.salva(fascicolo_vuoto(ID_FASCICOLO_ATTIVO))
+        fascicolo = fascicolo_attivo(store)
+        return revisione(fascicolo) | {"totali": totali_di(fascicolo)}
 
     @router.post("/documenti", status_code=201, response_model=None)
     async def carica_documento(file: list[UploadFile]) -> dict | JSONResponse:
@@ -243,6 +309,11 @@ def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
             "testo": documento.text,
             "caratteri": len(documento.text),
             "pagine": len(documento.page_offsets),
+            # Gli stessi totali della `GET`, così la pagina si ridisegna dopo
+            # un caricamento senza doverli sommare da sé: l'accumulatore nel
+            # JavaScript era la metà della #50 che sopravviveva anche al
+            # ridisegno, perché nessuno lo faceva mai scendere.
+            "totali": totali_di(fascicolo),
             "documenti_nel_fascicolo": len(fascicolo.documents),
             # Servito, non duplicato nel JavaScript: il "di 10" della UI
             # veniva da una costante scritta a mano, che avrebbe mentito al

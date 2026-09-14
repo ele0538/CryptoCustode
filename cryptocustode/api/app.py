@@ -34,9 +34,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.formparsers import MultiPartParser
 
 from cryptocustode.ai.gemini import VARIABILE_CHIAVE, RilevatoreGemini
+from cryptocustode.api.routes_config import crea_router_config
 from cryptocustode.api.routes_fascicolo import crea_router
 from cryptocustode.api.routes_fusioni import crea_router as crea_router_fusioni
 from cryptocustode.api.routes_vault import crea_router as crea_router_vault
+from cryptocustode.config.stato import Configurazione
 from cryptocustode.core.errors import (
     AIKeyMissing,
     AIResponseInvalid,
@@ -235,6 +237,7 @@ def crea_app(
     al_pronto: AlPronto | None = None,
     store: SessionStore | None = None,
     rilevatore: Rilevatore | None = None,
+    configurazione: Configurazione | None = None,
     tetto_richiesta: int = TETTO_RICHIESTA,
 ) -> FastAPI:
     """L'app HTTP: serve la pagina della UI, i suoi statici e le route del fascicolo.
@@ -259,8 +262,14 @@ def crea_app(
     """
     if store is None:
         store = SessionStore()
+    if configurazione is None:
+        configurazione = Configurazione()
+    # Dopo la configurazione, e non prima: il rilevatore di produzione ne legge
+    # modello e chiave a ogni chiamata, quindi costruirlo senza vuol dire
+    # inchiodarlo ai valori dell'ambiente e rendere inefficace la pagina di
+    # configurazione, che continuerebbe a salvare senza che nulla cambi.
     if rilevatore is None:
-        rilevatore = RilevatoreGemini()
+        rilevatore = RilevatoreGemini(configurazione=configurazione)
 
     @asynccontextmanager
     async def ciclo_di_vita(app: FastAPI):
@@ -324,6 +333,7 @@ def crea_app(
     # della revisione: non bloccano niente e il fascicolo che li ignora e'
     # esattamente quello di prima (spec 7).
     app.include_router(crea_router_fusioni(store))
+    app.include_router(crea_router_config(configurazione))
     app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)
 
     @app.get("/", include_in_schema=False)
@@ -385,7 +395,9 @@ def esegui_uvicorn(app: FastAPI, host: str, porta: int) -> None:
 PIANO_ATTESTATO = "CRYPTOCUSTODE_GEMINI_PIANO"
 
 
-def verifica_configurazione_ia(ambiente: Mapping[str, str]) -> None:
+def verifica_configurazione_ia(
+    ambiente: Mapping[str, str], configurazione: "Configurazione | None" = None
+) -> None:
     """Rifiuta l'avvio se la chiave manca o il piano non è attestato (D8).
 
     L'attestazione è una dichiarazione dell'utente, non una verifica: l'API non
@@ -393,11 +405,23 @@ def verifica_configurazione_ia(ambiente: Mapping[str, str]) -> None:
     controllarlo. Serve comunque, e non è teatro: costringe chi avvia a leggere
     perché il piano gratuito non va bene, prima che il primo documento parta.
     """
+    # Una chiave salvata sul disco basta per partire, anche se e' ancora
+    # cifrata: la passphrase si chiede nella pagina. Uccidere qui il processo
+    # perche' la variabile d'ambiente non c'e' impedirebbe di **arrivare** alla
+    # pagina in cui la chiave si scrive, cioe' renderebbe la configurazione
+    # raggiungibile solo a chi e' gia' configurato.
+    if configurazione is not None and (
+        configurazione.pronta or configurazione.impostazioni.chiave_cifrata is not None
+    ):
+        return
     if not ambiente.get(VARIABILE_CHIAVE):
         raise SystemExit(
-            f"{VARIABILE_CHIAVE} non è impostata. CryptoCustode manda i tuoi "
-            "documenti a Gemini per farli analizzare: senza chiave non può "
-            "partire."
+            "Non c'è nessuna chiave di Gemini: né salvata nella configurazione, "
+            f"né nella variabile d'ambiente {VARIABILE_CHIAVE}. CryptoCustode "
+            "manda i tuoi documenti a Gemini per farli analizzare, quindi senza "
+            "chiave non può partire.\n"
+            f"Imposta {VARIABILE_CHIAVE} per questo avvio: dalla pagina potrai "
+            "poi salvarne una cifrata, e da lì in avanti basterà la passphrase."
         )
     if ambiente.get(PIANO_ATTESTATO) != "pagamento":
         raise SystemExit(
@@ -422,6 +446,7 @@ def avvia(*, esegui: Esegui = esegui_uvicorn, apri: Apri = webbrowser.open) -> N
     scheda del browser mostrerebbe all'utente una pagina che si romperà al
     primo «Analizza», invece di un messaggio chiaro in console.
     """
-    verifica_configurazione_ia(os.environ)
-    app = crea_app(al_pronto=lambda: apri(INDIRIZZO))
+    configurazione = Configurazione()
+    verifica_configurazione_ia(os.environ, configurazione)
+    app = crea_app(al_pronto=lambda: apri(INDIRIZZO), configurazione=configurazione)
     esegui(app, HOST, PORTA)

@@ -10,6 +10,7 @@ invece di una promessa.
 
 import json
 import os
+from dataclasses import dataclass
 from typing import Callable
 
 from cryptocustode.ai.prompt import MODELLO, SCHEMA_RILEVAZIONI, istruzioni
@@ -22,8 +23,27 @@ from cryptocustode.core.models import Category, Rilevazione
 
 VARIABILE_CHIAVE = "CRYPTOCUSTODE_GEMINI_API_KEY"
 
-Chiamata = Callable[[str, str, str, dict, str], str]
-"""`(modello, istruzioni, testo, schema, chiave) -> JSON grezzo`.
+@dataclass(frozen=True)
+class Risposta:
+    """Cosa torna da una chiamata: il JSON grezzo e quanto e' costata.
+
+    I token stanno qui e non in un attributo del rilevatore perche' sono una
+    proprieta' **della singola chiamata**: chi inietta una `Chiamata` finta nei
+    test decide anche quanti token ha finto di consumare, e il conteggio si
+    prova senza toccare la rete come tutto il resto di questo modulo.
+
+    Zero token e' il valore onesto quando il fornitore non li dichiara: meglio
+    un totale che sottostima in modo visibile di una stima inventata qui, che
+    l'utente leggerebbe come un importo vero.
+    """
+
+    testo: str
+    token_input: int = 0
+    token_output: int = 0
+
+
+Chiamata = Callable[[str, str, str, dict, str], Risposta]
+"""`(modello, istruzioni, testo, schema, chiave) -> Risposta`.
 
 La chiave passa come parametro e non si rilegge dall'ambiente dentro la
 chiamata: `RilevatoreGemini` è già la fonte della chiave — ricevuta nel
@@ -53,7 +73,16 @@ def chiamata_reale(modello: str, sistema: str, testo: str, schema: dict, chiave:
             temperature=0,
         ),
     )
-    return risposta.text
+    # `usage_metadata` e' il punto in cui Gemini dice quanto ha consumato, ed e'
+    # l'unico: il conteggio non si puo' ricostruire a valle contando le parole.
+    # Veniva buttato via insieme all'oggetto risposta, e con esso ogni
+    # possibilita' di dire all'utente quanto sta spendendo.
+    uso = getattr(risposta, "usage_metadata", None)
+    return Risposta(
+        testo=risposta.text,
+        token_input=getattr(uso, "prompt_token_count", 0) or 0,
+        token_output=getattr(uso, "candidates_token_count", 0) or 0,
+    )
 
 
 class RilevatoreGemini:
@@ -64,10 +93,35 @@ class RilevatoreGemini:
         chiave: str | None = None,
         modello: str = MODELLO,
         chiama: Chiamata | None = None,
+        configurazione=None,
     ) -> None:
+        """`configurazione`, quando c'e', ha la precedenza su `chiave` e `modello`.
+
+        E' il verso giusto della precedenza: la configurazione e' la cosa che
+        l'utente ha scritto nella pagina un momento fa, mentre gli altri due
+        argomenti sono i default di costruzione. Al contrario, un modello
+        passato qui vincerebbe silenziosamente su quello appena scelto, e la
+        pagina mostrerebbe un modello diverso da quello davvero interrogato.
+
+        Resta accettata la coppia `chiave`/`modello` senza configurazione,
+        perche' e' cosi' che ogni test costruisce il rilevatore.
+        """
+        self._configurazione = configurazione
         self._chiave = chiave if chiave is not None else os.environ.get(VARIABILE_CHIAVE)
         self._modello = modello
         self._chiama = chiama if chiama is not None else chiamata_reale
+
+    @property
+    def _chiave_corrente(self) -> str | None:
+        if self._configurazione is not None and self._configurazione.chiave:
+            return self._configurazione.chiave
+        return self._chiave
+
+    @property
+    def _modello_corrente(self) -> str:
+        if self._configurazione is not None:
+            return self._configurazione.modello
+        return self._modello
 
     def rileva(self, testo: str) -> list[Rilevazione]:
         """Le rilevazioni di Gemini su questo testo.
@@ -87,24 +141,38 @@ class RilevatoreGemini:
         log del server grazie a `from errore`: lì la chiave non è comunque più
         esposta di quanto già sia.
         """
-        if not self._chiave:
+        chiave = self._chiave_corrente
+        if not chiave:
             raise AIKeyMissing(
-                f"la variabile d'ambiente {VARIABILE_CHIAVE} non è impostata: "
-                "senza chiave di Gemini l'analisi non può partire. La chiave "
-                "deve appartenere a un progetto con fatturazione attiva, "
-                "perché sul piano gratuito i termini di Gemini vietano l'invio "
-                "di dati personali."
+                "manca la chiave di Gemini: senza, l'analisi non può partire. "
+                "Scrivila nella pagina di configurazione (il pulsante in alto a "
+                f"destra), oppure imposta {VARIABILE_CHIAVE}. La chiave deve "
+                "appartenere a un progetto con fatturazione attiva, perché sul "
+                "piano gratuito i termini di Gemini vietano l'invio di dati "
+                "personali."
             )
         try:
-            grezza = self._chiama(
-                self._modello, istruzioni(), testo, SCHEMA_RILEVAZIONI, self._chiave
+            risposta = self._chiama(
+                self._modello_corrente,
+                istruzioni(),
+                testo,
+                SCHEMA_RILEVAZIONI,
+                chiave,
             )
         except Exception as errore:
             raise AIUnavailable(
                 "il servizio di analisi non è raggiungibile, il fascicolo è "
                 f"intatto: riprova. Tipo di errore: {type(errore).__name__}."
             ) from errore
-        return _traduci(grezza)
+        # Il consumo si registra **prima** di tradurre: i token sono stati
+        # spesi anche quando la risposta e' malformata, e non contarli in quel
+        # caso farebbe sparire dal totale proprio le chiamate andate storte —
+        # cioe' quelle su cui uno vorrebbe sapere quanto ha buttato.
+        if self._configurazione is not None:
+            self._configurazione.registra(
+                risposta.token_input, risposta.token_output
+            )
+        return _traduci(risposta.testo)
 
 
 def _traduci(grezza: str) -> list[Rilevazione]:

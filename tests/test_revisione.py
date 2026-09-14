@@ -735,14 +735,42 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
 
     assert "contenteditable" not in pagina
     assert "<textarea" not in pagina
-    tipi = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', pagina, flags=re.S))
-    # `password` è entrato con la card del vault (issue #51) e non intacca il
-    # criterio: quello che l'invariante protegge è il *testo del documento*, e
-    # da un campo password non entra nel fascicolo niente che l'export possa
-    # far uscire in chiaro. La lista resta corta e chiusa apposta: è il punto in
-    # cui ci si accorge di un campo di testo aggiunto per comodità.
-    assert tipi <= {"file", "password"}, (
-        f"la pagina ha campi di immissione inattesi: {sorted(tipi)}"
+
+    # Due sezioni della pagina hanno per forza dei campi da scrivere: la
+    # configurazione (modello, prezzi, chiave, passphrase) e il vault (le due
+    # password). Ammettere quei tipi **in blocco** svuoterebbe la guardia:
+    # passerebbe anche un campo di testo aggiunto un domani accanto al
+    # documento, che è esattamente la cosa che qui si vuole rendere
+    # impossibile.
+    #
+    # Quindi non si allarga l'elenco dei tipi, si guarda **dove** stanno. Ogni
+    # zona che può scrivere va dichiarata qui per id, una riga per zona: fuori
+    # da quelle, gli unici campi ammessi restano quelli di prima. Il criterio
+    # regge quando le zone crescono, e continua a far rosso se un campo
+    # scrivibile compare dove si legge il testo.
+    ZONE_CHE_SCRIVONO = {
+        'id="pannello-config"': {"text", "number", "password"},
+        'id="card-vault"': {"file", "password"},
+    }
+
+    fuori = pagina
+    for marcatore, ammessi in ZONE_CHE_SCRIVONO.items():
+        inizio = fuori.index(marcatore)
+        fine = fuori.index("</section>", inizio)
+        dentro = fuori[inizio:fine]
+        fuori = fuori[:inizio] + fuori[fine:]
+
+        # Dentro la zona: nessun campo che possa contenere il testo di un
+        # documento. `textarea` è già escluso sopra per tutta la pagina.
+        tipi_zona = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', dentro, flags=re.S))
+        assert tipi_zona <= ammessi, (
+            f"la zona {marcatore} ha campi inattesi: {sorted(tipi_zona)}"
+        )
+
+    tipi = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', fuori, flags=re.S))
+    assert tipi <= {"file"}, (
+        "fuori dalle zone che scrivono la pagina ha campi di immissione "
+        f"inattesi: {sorted(tipi)}"
     )
 
 
