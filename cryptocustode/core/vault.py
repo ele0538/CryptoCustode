@@ -14,23 +14,23 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from cryptocustode.core.errors import VaultUnreadable, VaultVersionNotSupported
 from cryptocustode.core.models import (
-    Ambiguity,
-    AmbiguityKind,
     Category,
     Document,
-    Entity,
     Fascicolo,
-    Source,
-    Span,
     State,
+    StatoTag,
+    Tag,
 )
 
 MAGIC = b"CCV1"
 ITERAZIONI_KDF = 600_000
-# Versione 2: le entità non portano più il campo `cf` (spec §7, issue #12). Un
-# blob di versione 1 resta leggibile — la chiave `cf` in più viene ignorata —
-# ma la politica sulle versioni diverse dalla corrente la fissa la issue #17.
-VAULT_VERSION = 2
+# Versione 3: `spans`, `entities` e `ambiguities` lasciano il posto alla
+# tabella dei tag (spec §5 del 2026-09-14), perché il motore ad IA non lavora
+# più per offset nel testo. È una rottura deliberata e non solo in avanti:
+# leggere un blob v2 richiederebbe di tenere in vita `Span`, `Entity` e
+# `Ambiguity` solo per tradurli, e non esiste alcun vault v2 reale da
+# convertire — l'esportazione che lo avrebbe scritto arriva in fase 2.
+VAULT_VERSION = 3
 
 _LUNGHEZZA_SALT = 16
 _LUNGHEZZA_NONCE = 12
@@ -69,45 +69,20 @@ def _a_dizionario(fascicolo: Fascicolo) -> dict:
             }
             for d in fascicolo.documents
         ],
-        "spans": [
+        "tags": [
             {
-                "span_id": s.span_id,
-                "doc_id": s.doc_id,
-                "start": s.start,
-                "end": s.end,
-                "category": s.category.value,
-                "source": s.source.value,
-                "entity_id": s.entity_id,
-                "enabled": s.enabled,
+                "tag": t.tag,
+                "categoria": t.categoria.value,
+                "valore": t.valore,
+                "occorrenze": t.occorrenze,
+                "stato": t.stato.value,
             }
-            for s in fascicolo.spans
+            for t in fascicolo.tags.values()
         ],
-        "entities": {
-            chiave: {
-                "entity_id": e.entity_id,
-                "category": e.category.value,
-                "placeholder": e.placeholder,
-                "canonical_value": e.canonical_value,
-                # I set non sono serializzabili in JSON: ordinati per rendere il
-                # blob riproducibile a parità di contenuto.
-                "variants": sorted(e.variants),
-            }
-            for chiave, e in fascicolo.entities.items()
-        },
+        "analizzati": sorted(fascicolo.analizzati),
         "category_enabled": {
             categoria.value: attiva for categoria, attiva in fascicolo.category_enabled.items()
         },
-        "ambiguities": [
-            {
-                "ambiguity_id": a.ambiguity_id,
-                "kind": a.kind.value,
-                "category": a.category.value,
-                "candidate_entity_ids": list(a.candidate_entity_ids),
-                "occurrence_span_ids": list(a.occurrence_span_ids),
-                "resolved": a.resolved,
-            }
-            for a in fascicolo.ambiguities
-        ],
         "state": fascicolo.state.value,
         "approval_hash": fascicolo.approval_hash,
         # Nell'elenco della spec §10: senza i contatori gli indici dei
@@ -119,13 +94,20 @@ def _a_dizionario(fascicolo: Fascicolo) -> dict:
 
 
 def _verifica_versione(versione: object) -> None:
-    """Rifiuta un vault scritto da una versione più recente di questa.
+    """Rifiuta un vault scritto da una versione diversa da questa, in entrambe
+    le direzioni.
 
-    La guardia chiude solo in avanti: un formato più vecchio resta leggibile,
-    altrimenti aggiornare l'applicazione butterebbe via il lavoro dell'utente.
-    Un formato più nuovo invece va rifiutato *prima* che ne esista uno che si
-    limita ad aggiungere chiavi, perché quello verrebbe caricato ignorandole in
+    Un formato più nuovo va rifiutato *prima* che ne esista uno che si limita
+    ad aggiungere chiavi, perché quello verrebbe caricato ignorandole in
     silenzio e l'utente non saprebbe di aver perso qualcosa (issue #17).
+
+    Un formato più vecchio, a partire dalla versione 3, non è più leggibile:
+    è una rottura deliberata rispetto alla promessa fatta dalla spec §10 del
+    2026-09-10. Tenerla avrebbe voluto dire mantenere in vita `Span`, `Entity`
+    e `Ambiguity` solo per tradurli nella tabella dei tag, e non esiste alcun
+    vault v2 reale da convertire: l'esportazione che lo avrebbe scritto arriva
+    solo in fase 2. Il messaggio lo dice all'utente in chiaro, invece di farlo
+    incappare in una diagnosi incomprensibile più a valle.
 
     Una versione che non è un intero è un payload corrotto, non un formato:
     `ValueError` la fa ricadere nel messaggio indistinguibile di `carica`. Il
@@ -139,6 +121,12 @@ def _verifica_versione(versione: object) -> None:
             f"questo vault usa il formato {versione}, mentre questa versione di "
             f"CryptoCustode ne legge al massimo {VAULT_VERSION}: aggiorna "
             "l'applicazione per aprirlo"
+        )
+    if versione < VAULT_VERSION:
+        raise VaultVersionNotSupported(
+            f"questo vault è in formato {versione} e CryptoCustode legge solo "
+            f"il formato {VAULT_VERSION}: il formato è cambiato quando il "
+            "motore è passato all'IA, e i fascicoli vecchi vanno rianalizzati."
         )
 
 
@@ -156,43 +144,20 @@ def _da_dizionario(dati: dict) -> Fascicolo:
             )
             for d in dati["documents"]
         ],
-        spans=[
-            Span(
-                span_id=s["span_id"],
-                doc_id=s["doc_id"],
-                start=s["start"],
-                end=s["end"],
-                category=Category(s["category"]),
-                source=Source(s["source"]),
-                entity_id=s["entity_id"],
-                enabled=s["enabled"],
+        tags={
+            t["tag"]: Tag(
+                tag=t["tag"],
+                categoria=Category(t["categoria"]),
+                valore=t["valore"],
+                occorrenze=t["occorrenze"],
+                stato=StatoTag(t["stato"]),
             )
-            for s in dati["spans"]
-        ],
-        entities={
-            chiave: Entity(
-                entity_id=e["entity_id"],
-                category=Category(e["category"]),
-                placeholder=e["placeholder"],
-                canonical_value=e["canonical_value"],
-                variants=set(e["variants"]),
-            )
-            for chiave, e in dati["entities"].items()
+            for t in dati["tags"]
         },
+        analizzati=set(dati["analizzati"]),
         category_enabled={
             Category(nome): attiva for nome, attiva in dati["category_enabled"].items()
         },
-        ambiguities=[
-            Ambiguity(
-                ambiguity_id=a["ambiguity_id"],
-                kind=AmbiguityKind(a["kind"]),
-                category=Category(a["category"]),
-                candidate_entity_ids=list(a["candidate_entity_ids"]),
-                occurrence_span_ids=list(a["occurrence_span_ids"]),
-                resolved=a["resolved"],
-            )
-            for a in dati["ambiguities"]
-        ],
         state=State(dati["state"]),
         approval_hash=dati["approval_hash"],
         counters={Category(nome): valore for nome, valore in dati["counters"].items()},
@@ -222,11 +187,11 @@ def carica(blob: bytes, password: str) -> Fascicolo:
     """Decifra un vault e ricostruisce il fascicolo.
 
     Solleva `VaultUnreadable` per qualunque motivo di fallimento, con lo stesso
-    messaggio in tutti i casi tranne uno: un vault scritto in un formato più
-    recente di quello leggibile qui solleva `VaultVersionNotSupported`, che ne
-    è una sottoclasse e porta un messaggio proprio. Quell'unica eccezione si
-    raggiunge solo *dopo* una decifratura riuscita, quindi non dice nulla a chi
-    non ha già la password (issue #17).
+    messaggio in tutti i casi tranne uno: un vault scritto in un formato
+    diverso da quello letto qui — più vecchio o più nuovo — solleva
+    `VaultVersionNotSupported`, che ne è una sottoclasse e porta un messaggio
+    proprio. Quell'unica eccezione si raggiunge solo *dopo* una decifratura
+    riuscita, quindi non dice nulla a chi non ha già la password (issue #17).
     """
     if len(blob) <= _FINE_INTESTAZIONE or blob[:4] != MAGIC:
         raise VaultUnreadable(_MESSAGGIO_ILLEGGIBILE)
