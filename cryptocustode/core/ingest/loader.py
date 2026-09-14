@@ -3,7 +3,11 @@
 import hashlib
 import uuid
 
-from cryptocustode.core.errors import DuplicateFilename, FascicoloFull
+from cryptocustode.core.errors import (
+    DuplicateFilename,
+    EmptyDocument,
+    FascicoloFull,
+)
 from cryptocustode.core.ingest.pdf_loader import carica_pdf
 from cryptocustode.core.ingest.txt_loader import carica_txt
 from cryptocustode.core.models import Document, Fascicolo
@@ -32,6 +36,16 @@ def costruisci_documento(filename: str, contenuto: bytes) -> Document:
         testo, page_offsets = carica_pdf(contenuto)
     else:
         testo, page_offsets = carica_txt(contenuto), [0]
+    # Il controllo e' sul documento finito, non sulla singola pagina: una pagina
+    # bianca in mezzo a un contratto resta legittima, un documento che di
+    # caratteri non ne ha nemmeno uno no. Sta qui e non nei due loader perche'
+    # il buco era identico in entrambi — `carica_txt` restituisce la stringa
+    # vuota senza fiatare, e soli spazi sono UTF-8 validissimo.
+    if not testo.strip():
+        raise EmptyDocument(
+            f"documento vuoto: {filename} non contiene testo da mascherare, "
+            "il file non e' stato caricato"
+        )
     return Document(
         doc_id=f"d_{uuid.uuid4().hex[:12]}",
         filename=filename,

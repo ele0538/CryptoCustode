@@ -46,6 +46,7 @@ from cryptocustode.core.errors import (
     AIUnavailable,
     CryptoCustodeError,
     DuplicateFilename,
+    EmptyDocument,
     ExportNotAllowed,
     FascicoloFull,
     FascicoloNotFound,
@@ -174,6 +175,7 @@ class PortaOccupata(RuntimeError):
 STATO_HTTP: dict[type[CryptoCustodeError], int] = {
     InvalidEncoding: 422,
     ScannedDocumentRejected: 422,
+    EmptyDocument: 422,
     FascicoloFull: 422,
     DuplicateFilename: 422,
     FascicoloNotFound: 404,

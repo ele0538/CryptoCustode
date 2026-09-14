@@ -4,6 +4,7 @@ import pytest
 
 from cryptocustode.core.errors import (
     DuplicateFilename,
+    EmptyDocument,
     FascicoloFull,
     InvalidEncoding,
 )
@@ -158,3 +159,40 @@ def test_piu_segnaposto_preesistenti_in_ordine():
 def test_un_quasi_segnaposto_non_viene_segnalato():
     # La forma canonica è [MAIUSCOLE_CIFRE]: queste non lo sono.
     assert segnaposto_preesistenti("[persona_1] e [PERSONA] e [1_PERSONA]") == []
+
+
+def test_un_documento_senza_testo_non_entra_nel_fascicolo():
+    """Un PDF di sole pagine bianche — nessun testo e nessuna immagine — passava
+    l'esame delle scansioni una pagina per volta: «pagina bianca senza immagini,
+    non contiene nulla da proteggere, passa». Nessuno guardava il documento
+    intero, e il risultato entrava nel fascicolo con zero caratteri.
+
+    Non è un caso di scuola. Quel documento costava un'analisi a Gemini, usciva
+    come file mascherato vuoto, e falliva al ripristino con «il file è vuoto»:
+    l'utente lo scopriva in fondo a un giro intero, invece che nell'unico
+    momento in cui il rifiuto è ancora gratis.
+    """
+    with pytest.raises(EmptyDocument):
+        costruisci_documento("scansione.pdf", pdf_di_prova(["bianca"]))
+
+
+def test_una_pagina_bianca_accanto_a_una_con_testo_resta_ammessa():
+    """Il contrappeso del test qui sopra, e il motivo per cui la regola sta sul
+    documento e non sulla pagina: un documento con una pagina bianca in mezzo ha
+    comunque testo da proteggere, e continua a entrare. È la decisione già presa
+    da `test_pagina_bianca_senza_immagini_e_accettata`, che questa regola non
+    deve revocare di straforo.
+    """
+    doc = costruisci_documento("misto.pdf", pdf_di_prova(["testo", "bianca"]))
+
+    assert "Contratto di locazione" in doc.text
+
+
+def test_un_txt_di_soli_spazi_non_entra_nel_fascicolo():
+    """Stessa regola, altro formato. Il buco era identico: `carica_txt` decodifica
+    e restituisce, e una stringa di soli spazi è UTF-8 validissimo. La regola sta
+    nella facciata proprio per valere su entrambi i formati senza essere scritta
+    due volte.
+    """
+    with pytest.raises(EmptyDocument):
+        costruisci_documento("vuoto.txt", "   \n\n\t".encode("utf-8"))

@@ -31,6 +31,7 @@ from cryptocustode.core.errors import (
     AIResponseInvalid,
     AIUnavailable,
     DuplicateFilename,
+    EmptyDocument,
     ExportNotAllowed,
     FascicoloFull,
     FascicoloNotFound,
@@ -303,6 +304,7 @@ def test_la_tabella_degli_stati_trascrive_la_spec():
     assert STATO_HTTP == {
         InvalidEncoding: 422,
         ScannedDocumentRejected: 422,
+        EmptyDocument: 422,
         FascicoloFull: 422,
         DuplicateFilename: 422,
         FascicoloNotFound: 404,

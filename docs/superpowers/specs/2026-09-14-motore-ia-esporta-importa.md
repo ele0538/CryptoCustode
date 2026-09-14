@@ -504,7 +504,7 @@ ricostruito e cosa no è peggio di un errore.
 ## 12. Errori
 
 Dei tredici casi della §13 precedente ne restano validi dodici: `UnresolvedAmbiguities`
-sparisce con il sottosistema che lo generava (§5). Se ne aggiungono quattro:
+sparisce con il sottosistema che lo generava (§5). Se ne aggiungono cinque:
 
 | Situazione | Errore | HTTP | Messaggio |
 |---|---|---|---|
@@ -512,6 +512,7 @@ sparisce con il sottosistema che lo generava (§5). Se ne aggiungono quattro:
 | Gemini irraggiungibile, in timeout, o in errore di trasporto | `AIUnavailable` | **503** | servizio non raggiungibile, il fascicolo è intatto, riprova |
 | Risposta che lo schema non accetta, o valori fuori dall'enum delle categorie | `AIResponseInvalid` | **502** | il modello ha risposto in un formato non valido, il fascicolo è intatto |
 | Nessun vault corrisponde al file importato | `VaultNotFound` | **404** | nessun fascicolo per questo file, con i candidati se ce ne sono |
+| Documento la cui estrazione non rende un solo carattere | `EmptyDocument` | **422** | il file non contiene testo da mascherare e non è stato caricato |
 
 **Perché 503 per la chiave mancante e non 500.** Non è un difetto del server: è una
 dipendenza non configurata, cioè un servizio temporaneamente non disponibile per una
@@ -520,6 +521,18 @@ ragione che l'utente può rimuovere. Il messaggio deve dire come.
 **Perché 502 per la risposta fuori schema.** Il gateway a monte ha risposto male. È
 distinto dal 503 perché la reazione dell'utente è diversa: sul 503 riprova, sul 502
 riprova *e* se si ripete c'è qualcosa da segnalare.
+
+**Perché `EmptyDocument` è distinto da `ScannedDocumentRejected`.** Una scansione ha
+del contenuto che l'applicazione non sa leggere; un documento vuoto non ne ha affatto, e
+all'utente le due cose suggeriscono rimedi diversi — la prima si risolve con un OCR, la
+seconda dicendo che ha caricato il file sbagliato. Il verdetto sulle scansioni si dà una
+pagina per volta, e la riga «pagina bianca senza immagini: passa» della §12 resta valida:
+una pagina bianca in mezzo a un contratto non deve bloccare il contratto. `EmptyDocument`
+guarda invece il **documento finito**, che è il livello a cui nessuno guardava: un PDF di
+sole pagine bianche entrava nel fascicolo con zero caratteri, costava un'analisi a Gemini,
+usciva come file mascherato vuoto e falliva al ripristino con «il file è vuoto». La regola
+vive nella facciata `costruisci_documento` e non nei due loader, perché il buco era
+identico per i TXT: soli spazi sono UTF-8 validissimo.
 
 **La chiave non compare mai in un messaggio d'errore**, nemmeno troncata.
 

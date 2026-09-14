@@ -18,6 +18,21 @@ class ScannedDocumentRejected(CryptoCustodeError):
     """PDF con almeno una pagina che è una scansione."""
 
 
+class EmptyDocument(CryptoCustodeError):
+    """Documento la cui estrazione non ha reso un solo carattere di testo.
+
+    Non e' lo stesso di `ScannedDocumentRejected`, e per questo ha un nome suo:
+    una scansione ha del contenuto che l'app non sa leggere, un documento vuoto
+    non ne ha affatto. Il verdetto sulle scansioni si da' una pagina per volta,
+    e la riga «pagina bianca senza immagini: passa» e' giusta — una pagina
+    bianca in mezzo a un contratto non deve bloccare il contratto. Ma nessuno
+    guardava il documento finito, e un PDF di sole pagine bianche entrava nel
+    fascicolo con zero caratteri: costava un'analisi, usciva come file
+    mascherato vuoto, e falliva al ripristino con «il file e' vuoto». Questo
+    errore sposta quella scoperta all'unico momento in cui e' ancora gratis.
+    """
+
+
 class FascicoloFull(CryptoCustodeError):
     """Undicesimo documento in un fascicolo."""
 
