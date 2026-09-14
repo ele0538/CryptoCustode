@@ -36,7 +36,12 @@ from cryptocustode.core.mask import tabella_attiva
 from cryptocustode.core.models import Category, Document, Fascicolo, StatoTag, fascicolo_vuoto
 from cryptocustode.core.rilevatore import Rilevatore
 from cryptocustode.core.tagga import assegna_tag, conta_occorrenze, tagga
-from cryptocustode.state.session import SessionStore, analisi_completata
+from cryptocustode.state.session import (
+    SessionStore,
+    analisi_completata,
+    approva,
+    export_sanitized_text,
+)
 
 ID_FASCICOLO_ATTIVO = "f_attivo"
 """Un fascicolo attivo per volta (spec §1), quindi un identificativo fisso.
@@ -365,6 +370,49 @@ def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
         fascicolo.analizzati.update(d.doc_id for d in da_analizzare)
         analisi_completata(fascicolo)
         return revisione(fascicolo)
+
+    @router.post("/approvazione", response_model=None)
+    async def approvazione() -> dict | JSONResponse:
+        """PENDING_REVIEW -> APPROVED, firmando il testo mascherato (spec §8).
+
+        Il gate di esportazione pretende l'approvazione, e l'approvazione
+        calcola l'hash del mascherato corrente: e' quella firma che, piu'
+        tardi, permette a `export_sanitized_text` di accorgersi se il testo e'
+        cambiato dopo. Approvare e esportare in un colpo solo toglierebbe
+        proprio questo — non ci sarebbe piu' alcun intervallo in cui una
+        mutazione possa essere rilevata.
+
+        Lo stato sbagliato e' un 409 e non un 422: la richiesta e' comprensibile
+        e ben formata, e' la risorsa a non essere pronta. `ValueError` non e'
+        un errore di dominio e non passa dalla tabella della §13, quindi la
+        traduzione avviene qui.
+        """
+        fascicolo = fascicolo_attivo(store)
+        try:
+            approva(fascicolo)
+        except ValueError as errore:
+            return JSONResponse(status_code=409, content={"errore": str(errore)})
+        return revisione(fascicolo) | {"totali": totali_di(fascicolo)}
+
+    @router.get("/esportazione", response_model=None)
+    async def esportazione() -> dict:
+        """L'unico punto HTTP da cui esce il testo mascherato (spec §4, §8).
+
+        Non costruisce niente: chiama `export_sanitized_text`, che e' il gate
+        coi suoi tre controlli — il fascicolo esiste, e' APPROVED, e il testo
+        mascherato corrente produce ancora l'hash approvato. Rifarli qui
+        significherebbe averne due versioni che divergono, e quella che decide
+        sarebbe la meno sorvegliata.
+
+        `ExportNotAllowed` e `IntegrityError` sono gia' nella tabella della
+        §13 (409 entrambi) e arrivano all'utente dal gestore dell'app: qui non
+        si cattura niente apposta.
+
+        Il payload e' `{nome_file: testo_mascherato}` e nient'altro: nessun
+        testo originale, nessuna tabella dei tag. Chi riceve questa risposta
+        non deve poter risalire ai dati veri.
+        """
+        return {"documenti": export_sanitized_text(ID_FASCICOLO_ATTIVO, store)}
 
     @router.post("/categoria", response_model=None)
     async def cambia_categoria(comando: ToggleCategoria) -> dict:

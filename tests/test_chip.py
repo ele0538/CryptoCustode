@@ -32,6 +32,8 @@ INDIRIZZO_DI_PROVA = "http://127.0.0.1:8765"
 ROTTA_DEL_PASSO = {
     "carica": "/api/fascicolo/documenti",
     "revisione": "/api/fascicolo/analisi",
+    "approvazione": "/api/fascicolo/approvazione",
+    "esportazione": "/api/fascicolo/esportazione",
     "vault": "/api/vault/salva",
 }
 """La rotta che rende vero ogni passo acceso.

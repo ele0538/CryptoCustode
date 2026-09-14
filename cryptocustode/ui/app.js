@@ -251,7 +251,13 @@ async function chiedi(rotta, corpo) {
   return esito;
 }
 
+// Quante categorie sono accese adesso. Serve all'avviso prima dell'export, e
+// si legge dall'ultimo payload servito invece di contare le caselle disegnate:
+// le caselle sono il riflesso dello stato, non lo stato.
+let categorieAccese = 0;
+
 function disegnaInterruttori(elenco) {
+  categorieAccese = elenco.filter((voce) => voce.attiva).length;
   categorie.replaceChildren();
   for (const voce of elenco) {
     const etichetta = document.createElement("label");
@@ -444,3 +450,139 @@ svuota.addEventListener("click", async () => {
 
 // `defer` non serve: lo script è in fondo al body, quindi il DOM c'è già.
 leggiStato().then(ridisegnaTutto);
+
+
+// --- Approvazione ed esportazione (issue #7, comandi in pagina) --------------
+//
+// Il testo mascherato esce da una sola porta, `GET /api/fascicolo/esportazione`,
+// che a sua volta passa dal gate di `export_sanitized_text`. Qui non si
+// costruisce niente e non si maschera niente: comporre il mascherato nella
+// pagina significherebbe avere una seconda versione di quel calcolo, e sarebbe
+// quella non sorvegliata a finire negli appunti dell'utente.
+
+const ROTTA_APPROVAZIONE = "/api/fascicolo/approvazione";
+const ROTTA_ESPORTAZIONE = "/api/fascicolo/esportazione";
+
+const approvaBottone = document.getElementById("approva");
+const copiaBottone = document.getElementById("copia");
+const scaricaBottone = document.getElementById("scarica");
+const statoEsportazione = document.getElementById("stato-esportazione");
+const anteprimaExport = document.getElementById("anteprima-export");
+
+function esportazionePermessa(permessa) {
+  copiaBottone.disabled = !permessa;
+  scaricaBottone.disabled = !permessa;
+}
+
+// Un documento solo esce nudo; piu' documenti vanno separati, altrimenti chi
+// incolla non sa dove finisce l'uno e comincia l'altro.
+function unisci(documenti) {
+  const nomi = Object.keys(documenti);
+  if (nomi.length === 1) {
+    return documenti[nomi[0]];
+  }
+  return nomi
+    .map((nome) => `===== ${nome} =====\n${documenti[nome]}`)
+    .join("\n\n");
+}
+
+// Un fascicolo nuovo non maschera niente: si accende cio' che serve. E' una
+// decisione di prodotto presa apposta — chi conosce il documento decide cosa
+// nascondere — ma ha un bordo tagliente che adesso e' a un clic di distanza:
+// caricare, approvare ed esportare senza toccare un interruttore consegna il
+// documento **in chiaro**. Il gate non lo impedisce e non deve: l'utente ha il
+// diritto di esportare un documento che non contiene niente da nascondere.
+// Quello che si puo' fare e' non lasciarglielo fare per distrazione.
+function confermaSeNienteMascherato() {
+  if (categorieAccese > 0) {
+    return true;
+  }
+  return window.confirm(
+    "Nessuna categoria è accesa: il testo uscirà IN CHIARO, con i dati "
+      + "personali come sono nel documento originale.\n\n"
+      + "Se volevi mascherarli, annulla e accendi gli interruttori nella "
+      + "sezione «Rivedi il testo».\n\n"
+      + "Esportare lo stesso?"
+  );
+}
+
+async function prendiEsportazione() {
+  let risposta;
+  try {
+    risposta = await fetch(ROTTA_ESPORTAZIONE);
+  } catch (errore) {
+    statoEsportazione.textContent = "L'applicazione non risponde: è ancora avviata?";
+    return null;
+  }
+  let esito = null;
+  try {
+    esito = await risposta.json();
+  } catch (errore) {
+    esito = null;
+  }
+  if (!risposta.ok) {
+    // Il 409 qui e' quasi sempre uno dei due casi del gate: non approvato, o
+    // testo cambiato dopo l'approvazione. Il messaggio del dominio lo dice, e
+    // arriva all'utente cosi' com'e'.
+    statoEsportazione.textContent = messaggioDiErrore(esito, risposta.status);
+    return null;
+  }
+  return esito.documenti;
+}
+
+approvaBottone.addEventListener("click", async () => {
+  statoEsportazione.textContent = "Approvazione in corso…";
+  const esito = await chiedi(ROTTA_APPROVAZIONE);
+  if (esito === null) {
+    // `chiedi` ha gia' scritto il motivo in `stato-analisi`; qui si toglie il
+    // "in corso" invece di lasciarlo acceso su un'operazione finita male.
+    statoEsportazione.textContent = statoAnalisi.textContent;
+    return;
+  }
+  disegna(esito);
+  esportazionePermessa(true);
+  statoEsportazione.textContent =
+    "Fascicolo approvato: il testo mascherato è firmato e puoi esportarlo. " +
+    "Se tocchi ancora gli interruttori, riapprova prima di esportare.";
+});
+
+copiaBottone.addEventListener("click", async () => {
+  if (!confermaSeNienteMascherato()) {
+    return;
+  }
+  const documenti = await prendiEsportazione();
+  if (documenti === null) {
+    return;
+  }
+  const testo = unisci(documenti);
+  try {
+    await navigator.clipboard.writeText(testo);
+    statoEsportazione.textContent =
+      "Copiato negli appunti: puoi incollarlo nell'IA esterna.";
+  } catch (errore) {
+    // Gli appunti possono essere negati dal browser. Mostrare il testo e' il
+    // ripiego onesto: l'utente lo seleziona a mano invece di restare senza.
+    anteprimaExport.textContent = testo;
+    anteprimaExport.hidden = false;
+    statoEsportazione.textContent =
+      "Il browser non mi lascia usare gli appunti: eccolo qui sotto, selezionalo e copialo.";
+  }
+});
+
+scaricaBottone.addEventListener("click", async () => {
+  if (!confermaSeNienteMascherato()) {
+    return;
+  }
+  const documenti = await prendiEsportazione();
+  if (documenti === null) {
+    return;
+  }
+  const blob = new Blob([unisci(documenti)], { type: "text/plain;charset=utf-8" });
+  const indirizzo = URL.createObjectURL(blob);
+  const collegamento = document.createElement("a");
+  collegamento.href = indirizzo;
+  collegamento.download = "mascherato.txt";
+  collegamento.click();
+  URL.revokeObjectURL(indirizzo);
+  statoEsportazione.textContent = "Scaricato come mascherato.txt.";
+});

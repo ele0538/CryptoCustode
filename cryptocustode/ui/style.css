@@ -299,6 +299,48 @@ h1 {
   font-size: 0.8rem;
 }
 
+/* --- Approvazione ed esportazione ----------------------------------------- */
+
+.comandi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.8rem 0 0.4rem;
+}
+
+.comandi button {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.comandi .pillola.chiara:hover:not(:disabled),
+.comandi .pillola.chiara:focus-visible:not(:disabled) {
+  border-color: var(--bordo, rgba(0, 0, 0, 0.15));
+}
+
+/* Disabilitato e' uno stato onesto qui: copiare prima dell'approvazione non
+   fallirebbe in modo confuso, fallirebbe al gate con un 409 — meglio che il
+   bottone dica prima che non e' il momento. */
+.comandi button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Il ripiego per quando il browser nega gli appunti: il testo si vede e si
+   seleziona a mano. `pre` e non `textarea` — non deve essere modificabile. */
+.anteprima-export {
+  margin: 0.8rem 0 0;
+  padding: 0.9rem;
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--chip, rgba(0, 0, 0, 0.04));
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
+}
+
 .didascalia {
   margin: 0.9rem 0 1.4rem;
   max-width: 62rem;

@@ -44,13 +44,13 @@
               </svg>
               Revisione
             </span>
-            <span class="passo inattivo" aria-disabled="true" title="Non ancora collegato alla pagina">
+            <span class="passo fatto">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                 <circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" />
               </svg>
               Approvazione
             </span>
-            <span class="passo inattivo" aria-disabled="true" title="Non ancora collegato alla pagina">
+            <span class="passo fatto">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                 <path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M19 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1h5" />
               </svg>
@@ -72,12 +72,12 @@
         </header>
 
         <p class="didascalia">
-          Carica i documenti, rivedili, cerca le somiglianze fra i nomi e chiudi
-          il fascicolo in un vault cifrato: queste parti funzionano.
-          Approvazione, esportazione e ripristino restano spenti perch&eacute;
-          non hanno ancora una rotta &mdash; non &egrave; la pagina a mancare,
-          &egrave; il comando che non esiste ancora.
-          L'analisi manda il testo a Gemini: non &egrave; un'elaborazione locale.
+          Carica, rivedi, approva, esporta e metti al sicuro nel vault: questo
+          giro funziona. Resta spento il ripristino &mdash; rimettere i dati veri
+          nella risposta dell'IA &mdash; che non ha ancora un comando qui. I passi
+          qui sopra dicono a che punto sei: non sono pulsanti, i comandi stanno
+          nelle schede. L'analisi manda il testo a Gemini: non &egrave;
+          un'elaborazione locale.
         </p>
 
         <main>
@@ -230,6 +230,24 @@
             <p id="stato-analisi" class="tenue" aria-live="polite"></p>
             <div id="categorie" class="categorie"></div>
             <div id="documenti" class="documenti"></div>
+          </section>
+
+          <section class="riquadro esportazione" aria-labelledby="titolo-esportazione">
+            <h2 id="titolo-esportazione" class="etichetta-sezione">Approva ed esporta</h2>
+            <p class="suggerimento tenue">
+              L'approvazione firma il testo mascherato cos&igrave; com'&egrave; adesso.
+              Da quel momento ogni modifica agli interruttori la annulla, e va rifatta:
+              &egrave; quella firma che garantisce che il testo esportato sia
+              esattamente quello che hai approvato. Esce solo il testo con i
+              segnaposto &mdash; mai l'originale, mai la tabella dei tag.
+            </p>
+            <div class="comandi">
+              <button type="button" id="approva" class="pillola scura">Approva il fascicolo</button>
+              <button type="button" id="copia" class="pillola chiara" disabled>Copia il testo mascherato</button>
+              <button type="button" id="scarica" class="pillola chiara" disabled>Scarica</button>
+            </div>
+            <p id="stato-esportazione" class="tenue" aria-live="polite"></p>
+            <pre id="anteprima-export" class="anteprima-export" hidden></pre>
           </section>
 
           <section class="esiti-sezione" aria-labelledby="titolo-esiti">
