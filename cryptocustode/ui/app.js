@@ -656,3 +656,90 @@ scaricaBottone.addEventListener("click", async () => {
   URL.revokeObjectURL(indirizzo);
   statoEsportazione.textContent = "Scaricato come mascherato.txt.";
 });
+
+
+// --- Ripristino della risposta dell'IA (issue #8) ---------------------------
+//
+// L'altra meta' del prodotto: il mascheramento senza questo e' a senso unico.
+// Nessuna sostituzione avviene qui — il testo va al server, che ha il
+// dizionario, e torna ripristinato. Tenere la mappa `segnaposto -> valore` nel
+// JavaScript significherebbe farla uscire dal processo, che e' esattamente cio'
+// che l'invariante 4 della spec §4 tiene dentro.
+
+const ROTTA_RIPRISTINO = "/api/fascicolo/ripristino";
+
+const moduloRipristino = document.getElementById("modulo-ripristino");
+const rispostaIA = document.getElementById("risposta-ia");
+const statoRipristino = document.getElementById("stato-ripristino");
+const esitoRipristino = document.getElementById("esito-ripristino");
+const testoRipristinato = document.getElementById("testo-ripristinato");
+const copiaRipristinato = document.getElementById("copia-ripristinato");
+const scaricaRipristinato = document.getElementById("scarica-ripristinato");
+
+moduloRipristino.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const risposta = rispostaIA.value;
+  if (risposta.trim() === "") {
+    statoRipristino.textContent = "Incolla prima la risposta dell'IA.";
+    return;
+  }
+  statoRipristino.textContent = "Ripristino in corso…";
+
+  let http;
+  try {
+    http = await fetch(ROTTA_RIPRISTINO, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ risposta }),
+    });
+  } catch (errore) {
+    statoRipristino.textContent = "L'applicazione non risponde: è ancora avviata?";
+    return;
+  }
+
+  let esito = null;
+  try {
+    esito = await http.json();
+  } catch (errore) {
+    esito = null;
+  }
+
+  if (!http.ok) {
+    // Il messaggio del dominio dice **quali** segnaposto hanno fermato il
+    // ripristino, ed e' gia' in italiano: arriva all'utente com'e'. Il
+    // riquadro del risultato si nasconde, perche' un esito vecchio lasciato
+    // in pagina accanto a un errore si legge come se fosse il nuovo.
+    statoRipristino.textContent = messaggioDiErrore(esito, http.status);
+    esitoRipristino.hidden = true;
+    return;
+  }
+
+  testoRipristinato.textContent = esito.ripristinato;
+  esitoRipristino.hidden = false;
+  statoRipristino.textContent =
+    "Ripristinato: sotto c'è il testo coi dati veri al posto dei segnaposto. " +
+    "Contiene dati personali — trattalo come l'originale.";
+});
+
+copiaRipristinato.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(testoRipristinato.textContent);
+    statoRipristino.textContent = "Copiato negli appunti.";
+  } catch (errore) {
+    statoRipristino.textContent =
+      "Il browser non mi lascia usare gli appunti: selezionalo qui sotto e copialo a mano.";
+  }
+});
+
+scaricaRipristinato.addEventListener("click", () => {
+  const blob = new Blob([testoRipristinato.textContent], {
+    type: "text/plain;charset=utf-8",
+  });
+  const indirizzo = URL.createObjectURL(blob);
+  const collegamento = document.createElement("a");
+  collegamento.href = indirizzo;
+  collegamento.download = "ripristinato.txt";
+  collegamento.click();
+  URL.revokeObjectURL(indirizzo);
+  statoRipristino.textContent = "Scaricato come ripristinato.txt.";
+});

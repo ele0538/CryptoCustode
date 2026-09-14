@@ -34,6 +34,7 @@ ROTTA_DEL_PASSO = {
     "revisione": "/api/fascicolo/analisi",
     "approvazione": "/api/fascicolo/approvazione",
     "esportazione": "/api/fascicolo/esportazione",
+    "ripristino": "/api/fascicolo/ripristino",
     "vault": "/api/vault/salva",
 }
 """La rotta che rende vero ogni passo acceso.
@@ -119,10 +120,22 @@ def test_la_didascalia_non_smentisce_i_chip(pagina):
     # «restano spenti approvazione ed esportazione» è italiano quanto il
     # contrario.
     periodi = [p for p in re.split(r"[.;]", testo) if "spent" in p]
-    if not periodi:
-        pytest.skip("la didascalia non dichiara nessun passo spento")
-
     accesi = [nome for nome, acceso in chip(pagina) if acceso]
+    spenti = [nome for nome, acceso in chip(pagina) if not acceso]
+
+    if not periodi:
+        # Saltare qui era un buco: una didascalia che non nomina nessuno
+        # spento passava il controllo **anche** con dei chip grigi in pagina,
+        # cioè proprio nel caso in cui l'utente non ha modo di sapere perché
+        # quel passo non risponde. È il difetto della #42 preso dall'altro
+        # verso: lì la pagina prometteva meno di quello che faceva, qui
+        # prometterebbe di più.
+        assert not spenti, (
+            "la didascalia non dice che nulla è spento, ma questi passi lo "
+            f"sono: {spenti}. Nominali, o accendili."
+        )
+        pytest.skip("nessun passo spento da dichiarare: la didascalia è muta a ragione")
+
     for periodo in periodi:
         for nome in accesi:
             assert nome not in periodo, (

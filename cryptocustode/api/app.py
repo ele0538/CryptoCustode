@@ -36,6 +36,7 @@ from starlette.formparsers import MultiPartParser
 from cryptocustode.ai.gemini import VARIABILE_CHIAVE, RilevatoreGemini
 from cryptocustode.api.routes_config import crea_router_config
 from cryptocustode.api.routes_fascicolo import crea_router
+from cryptocustode.api.routes_restore import crea_router_ripristino
 from cryptocustode.api.routes_fusioni import crea_router as crea_router_fusioni
 from cryptocustode.api.routes_vault import crea_router as crea_router_vault
 from cryptocustode.config.stato import Configurazione
@@ -353,6 +354,7 @@ def crea_app(
     # esattamente quello di prima (spec 7).
     app.include_router(crea_router_fusioni(store))
     app.include_router(crea_router_config(configurazione))
+    app.include_router(crea_router_ripristino(store))
     app.add_exception_handler(CryptoCustodeError, rispondi_all_errore_di_dominio)
 
     @app.get("/", include_in_schema=False)

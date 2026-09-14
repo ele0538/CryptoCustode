@@ -56,6 +56,7 @@ ROTTA_TAG = "/api/fascicolo/tag"
 ROTTA_STATO = "/api/fascicolo"
 ROTTA_APPROVAZIONE = "/api/fascicolo/approvazione"
 ROTTA_ESPORTAZIONE = "/api/fascicolo/esportazione"
+ROTTA_RIPRISTINO = "/api/fascicolo/ripristino"
 
 HARNESS = Path(__file__).parent / "ui_harness.mjs"
 
@@ -737,7 +738,6 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
     pagina = (UI / "index.html").read_text(encoding="utf-8").lower()
 
     assert "contenteditable" not in pagina
-    assert "<textarea" not in pagina
 
     # Due sezioni della pagina hanno per forza dei campi da scrivere: la
     # configurazione (modello, prezzi, chiave, passphrase) e il vault (le due
@@ -754,6 +754,12 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
     ZONE_CHE_SCRIVONO = {
         'id="pannello-config"': {"text", "number", "password", "checkbox"},
         'id="card-vault"': {"file", "password"},
+        # Il ripristino ha bisogno di un'area di testo: l'utente incolla la
+        # risposta dell'IA, che è lunga quanto un documento. Non e' un'eccezione
+        # alla decisione 2 della §2 — quel testo non entra nel fascicolo, viene
+        # letto, sostituito e restituito — ma e' l'unico `textarea` ammesso in
+        # tutta la pagina, e lo e' solo qui dentro.
+        'id="card-ripristino"': {"textarea"},
     }
 
     fuori = pagina
@@ -764,11 +770,20 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
         fuori = fuori[:inizio] + fuori[fine:]
 
         # Dentro la zona: nessun campo che possa contenere il testo di un
-        # documento. `textarea` è già escluso sopra per tutta la pagina.
+        # documento, e nessuna area di testo che non sia dichiarata qui sopra.
         tipi_zona = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', dentro, flags=re.S))
+        if "<textarea" in dentro:
+            tipi_zona.add("textarea")
         assert tipi_zona <= ammessi, (
             f"la zona {marcatore} ha campi inattesi: {sorted(tipi_zona)}"
         )
+
+    # `textarea` fuori dalle zone dichiarate resta vietato in assoluto: e' il
+    # controllo che prima era globale, e non si e' indebolito — si e' spostato
+    # dopo l'esclusione delle zone, come gia' quello sugli `input`.
+    assert "<textarea" not in fuori, (
+        "fuori dalle zone che scrivono la pagina ha un'area di testo"
+    )
 
     tipi = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', fuori, flags=re.S))
     assert tipi <= {"file"}, (
@@ -950,3 +965,104 @@ class TestTogliereUnDocumento:
 
         assert esito.json()["categorie"] == []
         assert esito.json()["totali"]["documenti"] == 0
+
+
+# --- Ripristino della risposta dell'IA (#8) ----------------------------------
+
+
+class TestIlRipristino:
+    """La §11: nessun esito parziale, mai."""
+
+    def _fascicolo_mascherato(self, client_con_rilevatore):
+        """Un fascicolo vero, approvato, col suo testo mascherato preso
+        dall'export — non costruito a mano."""
+        client, _ = client_con_rilevatore(
+            sempre=[Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+        )
+        carica(client, "a.txt", "Il sig. Mario Rossi paga il canone.")
+        client.post(ROTTA_ANALISI)
+        client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": True})
+        client.post(ROTTA_APPROVAZIONE)
+        mascherato = client.get(ROTTA_ESPORTAZIONE).json()["documenti"]["a.txt"]
+        return client, mascherato
+
+    def test_il_giro_e_chiuso_dal_motore_non_dall_occhio(self, client_con_rilevatore):
+        """Il criterio che la #8 chiede per nome: il segnaposto non è scritto a
+        mano nel test, è quello che il motore ha davvero generato e che
+        l'export ha davvero consegnato. Se generatore e matcher smettessero di
+        concordare sulla forma, questo test se ne accorgerebbe; uno che
+        costruisse `[PERSONA_1]` da sé no.
+        """
+        client, mascherato = self._fascicolo_mascherato(client_con_rilevatore)
+        assert "[PERSONA_1]" in mascherato, "atteso che l'export consegni il segnaposto"
+
+        esito = client.post(ROTTA_RIPRISTINO, json={"risposta": mascherato})
+
+        assert esito.status_code == 200
+        assert esito.json()["ripristinato"] == "Il sig. Mario Rossi paga il canone."
+
+    def test_ripristina_dentro_una_risposta_piu_lunga(self, client_con_rilevatore):
+        """La risposta dell'IA non è il documento: lo contiene e ci aggiunge del
+        suo. Il testo attorno ai segnaposto deve restare intatto."""
+        client, mascherato = self._fascicolo_mascherato(client_con_rilevatore)
+        risposta = f"Certamente. Ecco la bozza:\n\n{mascherato}\n\nFammi sapere."
+
+        esito = client.post(ROTTA_RIPRISTINO, json={"risposta": risposta})
+
+        assert esito.json()["ripristinato"] == (
+            "Certamente. Ecco la bozza:\n\n"
+            "Il sig. Mario Rossi paga il canone.\n\nFammi sapere."
+        )
+
+    def test_un_segnaposto_sconosciuto_ferma_tutto(self, client_con_rilevatore):
+        """Non un ripristino parziale: un testo in cui l'utente non sa quali
+        dati siano veri e quali no è peggio di un errore (spec §11)."""
+        client, mascherato = self._fascicolo_mascherato(client_con_rilevatore)
+
+        esito = client.post(
+            ROTTA_RIPRISTINO, json={"risposta": f"{mascherato} e [PERSONA_99]"}
+        )
+
+        assert esito.status_code == 422
+        assert "[PERSONA_99]" in esito.json()["errore"]
+        assert "Mario Rossi" not in esito.text, (
+            "nessun ripristino parziale: il valore vero non deve uscire insieme "
+            "all'errore"
+        )
+
+    def test_un_segnaposto_alterato_ferma_tutto(self, client_con_rilevatore):
+        """L'IA rimaneggia i segnaposto più spesso di quanto si creda: minuscole,
+        trattino al posto del trattino basso, parentesi persa."""
+        client, mascherato = self._fascicolo_mascherato(client_con_rilevatore)
+
+        esito = client.post(ROTTA_RIPRISTINO, json={"risposta": "ciao [persona_1]"})
+
+        assert esito.status_code == 422
+        assert "Mario Rossi" not in esito.text
+
+    def test_senza_fascicolo_e_un_404_non_un_segnaposto_sconosciuto(self, client):
+        """Un fascicolo assente non deve travestirsi da segnaposto sbagliato:
+        manderebbe l'utente a cercare l'errore nella risposta dell'IA invece che
+        nel fascicolo che non ha caricato."""
+        assert client.post(ROTTA_RIPRISTINO, json={"risposta": "[PERSONA_1]"}).status_code == 404
+
+    def test_il_dizionario_non_esce_mai_dal_processo(self, client_con_rilevatore):
+        """L'invariante 4 della §4. La rotta ha i valori in chiaro sotto mano:
+        è quella da cui la mappa uscirebbe più facilmente."""
+        client, mascherato = self._fascicolo_mascherato(client_con_rilevatore)
+
+        esito = client.post(ROTTA_RIPRISTINO, json={"risposta": mascherato})
+
+        assert set(esito.json()) == {"ripristinato"}
+
+    def test_ripristina_anche_dopo_aver_spento_il_tag(self, client_con_rilevatore):
+        """Una risposta ottenuta prima che l'utente cambiasse idea in revisione
+        resta ripristinabile: il contrario trasformerebbe un cambio di idea in
+        un errore su un testo che era corretto quando è stato generato."""
+        client, mascherato = self._fascicolo_mascherato(client_con_rilevatore)
+        client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": False})
+
+        esito = client.post(ROTTA_RIPRISTINO, json={"risposta": mascherato})
+
+        assert esito.status_code == 200
+        assert "Mario Rossi" in esito.json()["ripristinato"]

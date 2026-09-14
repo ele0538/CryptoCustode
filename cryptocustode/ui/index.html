@@ -56,7 +56,7 @@
               </svg>
               Esportazione
             </span>
-            <span class="passo inattivo" aria-disabled="true" title="Non ancora collegato alla pagina">
+            <span class="passo fatto">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                 <path d="M3 12a9 9 0 019-9 9 9 0 017 3.5" /><path d="M19 3v4h-4" /><path d="M21 12a9 9 0 01-9 9 9 9 0 01-7-3.5" /><path d="M5 21v-4h4" />
               </svg>
@@ -72,9 +72,9 @@
         </header>
 
         <p class="didascalia">
-          Carica, rivedi, approva, esporta e metti al sicuro nel vault: questo
-          giro funziona. Resta spento il ripristino &mdash; rimettere i dati veri
-          nella risposta dell'IA &mdash; che non ha ancora un comando qui. I passi
+          Il giro &egrave; completo: carichi, rivedi che cosa nascondere, approvi,
+          esporti il testo coi segnaposto, lo dai all'IA esterna e rimetti i dati
+          veri nella sua risposta. Il vault salva e riapre il fascicolo. I passi
           qui sopra dicono a che punto sei: non sono pulsanti, i comandi stanno
           nelle schede. L'analisi manda il testo a Gemini: non &egrave;
           un'elaborazione locale.
@@ -249,6 +249,31 @@
             </div>
             <p id="stato-esportazione" class="tenue" aria-live="polite"></p>
             <pre id="anteprima-export" class="anteprima-export" hidden></pre>
+          </section>
+
+          <section class="riquadro ripristino" id="card-ripristino" aria-labelledby="titolo-ripristino">
+            <h2 id="titolo-ripristino" class="etichetta-sezione">Ripristina la risposta</h2>
+            <p class="suggerimento tenue">
+              Incolla qui la risposta che ti ha dato l'IA esterna: i segnaposto
+              tornano a essere i dati veri. Se un segnaposto non &egrave; nostro o
+              &egrave; stato storpiato dall'IA, il ripristino si ferma e non
+              restituisce niente &mdash; un testo ripristinato a met&agrave;, in cui
+              non sai quali dati siano veri e quali no, &egrave; peggio di un errore.
+            </p>
+            <form id="modulo-ripristino" class="modulo-ripristino">
+              <label for="risposta-ia">Risposta dell'IA</label>
+              <textarea id="risposta-ia" rows="8" spellcheck="false"
+                placeholder="Incolla qui il testo che ti &egrave; tornato indietro, coi segnaposto dentro."></textarea>
+              <button type="submit" class="pillola scura">Ripristina i dati veri</button>
+            </form>
+            <p id="stato-ripristino" class="tenue" aria-live="polite"></p>
+            <div id="esito-ripristino" hidden>
+              <div class="comandi">
+                <button type="button" id="copia-ripristinato" class="pillola chiara">Copia il testo ripristinato</button>
+                <button type="button" id="scarica-ripristinato" class="pillola chiara">Scarica</button>
+              </div>
+              <pre id="testo-ripristinato" class="anteprima-export"></pre>
+            </div>
           </section>
 
           <section class="esiti-sezione" aria-labelledby="titolo-esiti">
