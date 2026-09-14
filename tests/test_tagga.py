@@ -1,13 +1,19 @@
 """`assegna_tag` e `tagga`: dai valori del modello al testo mascherato (spec §7)."""
 
 from cryptocustode.core.models import Category, Rilevazione, StatoTag
-from cryptocustode.core.tagga import assegna_tag
+from cryptocustode.core.tagga import assegna_tag, tagga
 
 VUOTI: dict[Category, int] = {}
 
 
 def _rilevazione(valore: str, categoria: Category = Category.PERSONA) -> Rilevazione:
     return Rilevazione(valore=valore, categoria=categoria)
+
+
+def _tabella(*valori_e_categorie) -> dict:
+    rilevazioni = [Rilevazione(valore=v, categoria=c) for v, c in valori_e_categorie]
+    tabella, _ = assegna_tag(rilevazioni, {}, VUOTI)
+    return tabella
 
 
 class TestAssegnaTag:
@@ -94,3 +100,77 @@ class TestAssegnaTag:
         assegna_tag([_rilevazione("Mario Rossi")], tabella_iniziale, contatori_iniziali)
         assert tabella_iniziale == {}
         assert contatori_iniziali == {}
+
+
+class TestTagga:
+    def test_sostituisce_il_valore_col_suo_tag(self):
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        assert tagga("Il sig. Mario Rossi paga.", tabella).mascherato == (
+            "Il sig. [PERSONA_1] paga."
+        )
+
+    def test_sostituisce_tutte_le_occorrenze(self):
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        risultato = tagga("Mario Rossi e ancora Mario Rossi.", tabella)
+        assert risultato.mascherato == "[PERSONA_1] e ancora [PERSONA_1]."
+        assert len(risultato.regioni) == 2
+
+    def test_il_valore_piu_lungo_rivendica_per_primo(self):
+        """Senza l'ordinamento per lunghezza, `Rossi` verrebbe taggato dentro
+        `Mario Rossi` e produrrebbe `Mario [PERSONA_2]`."""
+        tabella = _tabella(
+            ("Mario Rossi", Category.PERSONA), ("Rossi", Category.PERSONA)
+        )
+        assert tagga("Mario Rossi.", tabella).mascherato == "[PERSONA_1]."
+
+    def test_il_valore_corto_prende_solo_le_occorrenze_che_restano(self):
+        tabella = _tabella(
+            ("Mario Rossi", Category.PERSONA), ("Rossi", Category.PERSONA)
+        )
+        mascherato = tagga("Mario Rossi e il dott. Rossi.", tabella).mascherato
+        assert mascherato == "[PERSONA_1] e il dott. [PERSONA_2]."
+
+    def test_una_sottostringa_dentro_una_parola_piu_lunga_viene_comunque_presa(self):
+        """`Rossi` dentro `Rossini` è un falso positivo del modello, non di
+        `tagga`: la ricerca è letterale e non conosce i confini di parola. Il
+        test fissa il comportamento perché sia una scelta visibile e non una
+        sorpresa — chi vorrà cambiarlo saprà cosa sta cambiando."""
+        tabella = _tabella(("Rossi", Category.PERSONA))
+        assert tagga("Rossini canta.", tabella).mascherato == "[PERSONA_1]ni canta."
+
+    def test_la_ricerca_e_sensibile_alle_maiuscole(self):
+        """La controparte del vincolo di letteralità imposto al modello: senza
+        confronto esatto l'identità del round-trip non varrebbe, perché al
+        ripristino tornerebbe il valore con la grafia sbagliata."""
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        assert tagga("ROSSI MARIO paga.", tabella).mascherato == "ROSSI MARIO paga."
+
+    def test_un_valore_assente_lascia_il_testo_intatto(self):
+        tabella = _tabella(("Luigi Bianchi", Category.PERSONA))
+        risultato = tagga("Mario Rossi paga.", tabella)
+        assert risultato.mascherato == "Mario Rossi paga."
+        assert risultato.regioni == []
+
+    def test_le_regioni_si_riferiscono_al_testo_originale(self):
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        testo = "Il sig. Mario Rossi paga."
+        regione = tagga(testo, tabella).regioni[0]
+        assert testo[regione.start:regione.end] == "Mario Rossi"
+        assert regione.tag == "[PERSONA_1]"
+
+    def test_le_regioni_sono_ordinate_per_inizio(self):
+        tabella = _tabella(
+            ("Mario Rossi", Category.PERSONA), ("ACME s.r.l.", Category.AZIENDA)
+        )
+        regioni = tagga("ACME s.r.l. paga a Mario Rossi.", tabella).regioni
+        assert [r.start for r in regioni] == sorted(r.start for r in regioni)
+
+    def test_e_deterministica(self):
+        tabella = _tabella(
+            ("Mario Rossi", Category.PERSONA), ("Rossi", Category.PERSONA)
+        )
+        testo = "Mario Rossi, poi Rossi, poi Mario Rossi."
+        assert tagga(testo, tabella).mascherato == tagga(testo, tabella).mascherato
+
+    def test_il_testo_vuoto_non_esplode(self):
+        assert tagga("", _tabella(("Mario Rossi", Category.PERSONA))).mascherato == ""

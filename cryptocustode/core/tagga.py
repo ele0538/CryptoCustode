@@ -73,3 +73,55 @@ def assegna_tag(
             stato=StatoTag.NON_TROVATO,
         )
     return nuova, contati
+
+
+def tagga(testo: str, tabella: dict[str, Tag]) -> Mascheratura:
+    """Sostituisce nel testo i valori della tabella con i rispettivi tag.
+
+    La ricerca è **esatta**: sensibile a maiuscole, accenti, punteggiatura e
+    spaziatura, senza alcuna normalizzazione. È la controparte del vincolo di
+    letteralità imposto al modello nella §6, e ciò che rende vera l'identità
+    `unmask(tagga(testo, tabella).mascherato, mappa) == testo` della §8: se qui
+    si accettasse una corrispondenza approssimata, al ripristino tornerebbe un
+    valore diverso da quello che c'era, e il round-trip non sarebbe più
+    un'identità ma una somiglianza.
+
+    Un valore più lungo rivendica prima di uno più corto, e un valore corto non
+    può rivendicare dentro una regione già presa: è ciò che impedisce a `Rossi`
+    di finire dentro `Mario Rossi`.
+    """
+    rivendicate: list[Regione] = []
+    occupato = [False] * len(testo)
+
+    for tag in sorted(tabella.values(), key=lambda t: _ordine_totale(t.valore)):
+        if not tag.valore:
+            continue
+        inizio = 0
+        while True:
+            trovato = testo.find(tag.valore, inizio)
+            if trovato == -1:
+                break
+            fine = trovato + len(tag.valore)
+            if any(occupato[trovato:fine]):
+                # Sovrapposta a una regione già presa da un valore più lungo:
+                # si riparte dal carattere successivo, perché l'occorrenza
+                # buona potrebbe cominciare dentro quella scartata.
+                inizio = trovato + 1
+                continue
+            occupato[trovato:fine] = [True] * (fine - trovato)
+            rivendicate.append(Regione(start=trovato, end=fine, tag=tag.tag))
+            inizio = fine
+
+    rivendicate.sort(key=lambda regione: regione.start)
+
+    # Da destra a sinistra: così ogni sostituzione lascia validi gli offset di
+    # quelle ancora da applicare (spec §9 del 2026-09-10).
+    mascherato = testo
+    for regione in reversed(rivendicate):
+        mascherato = mascherato[: regione.start] + regione.tag + mascherato[regione.end :]
+
+    return Mascheratura(
+        mascherato=mascherato,
+        tags=list(tabella.values()),
+        regioni=rivendicate,
+    )
