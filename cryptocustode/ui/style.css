@@ -640,3 +640,57 @@ mark.evidenza.spenta {
 .cat-CATASTO {
   background: var(--cat-catasto);
 }
+
+/* --------------------------------------------------------------------------
+   Vault (issue #9, cablato dalla #51).
+
+   In coda al foglio per una ragione di convivenza fra sessioni, non di
+   cascata: questo blocco non ridefinisce niente di quello che sta sopra, usa i
+   token gia' esistenti e tocca solo classi e id che nascono con la card del
+   vault. Chi lavora piu' in alto nel file non incontra queste righe.
+   -------------------------------------------------------------------------- */
+
+.riquadro.vault {
+  /* Il bordo a sinistra e' l'unico segnale che questa scheda non e' un passo
+     della revisione: il fascicolo esce da qui, e conviene che si veda prima di
+     leggere il titolo. */
+  border-left: 3px solid var(--accento);
+}
+
+/* I due moduli sono fratelli e vanno separati: senza questa riga «Salva» e
+   «Scegli un .vault» finiscono sulla stessa linea visiva quando la scheda e'
+   larga, e sembrano un modulo solo con quattro controlli. */
+#modulo-vault-apri {
+  border-top: 1px solid var(--bordo);
+  padding-top: 0.9rem;
+}
+
+/* `.etichetta` di suo e' un'etichetta di blocco sopra un valore; dentro un
+   modulo in flex deve stare in riga con il campo che nomina. */
+.riquadro.vault .modulo .etichetta {
+  margin: 0;
+}
+
+.riquadro.vault input[type="password"] {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.45rem 0.7rem;
+  font: inherit;
+  color: var(--inchiostro);
+  background: var(--carta);
+  border: 1px solid var(--bordo);
+  border-radius: 999px;
+}
+
+.riquadro.vault input[type="password"]:focus-visible {
+  outline: 2px solid var(--accento);
+  outline-offset: 1px;
+}
+
+#stato-vault {
+  margin-top: 0.6rem;
+  /* Riservato anche da vuoto: il messaggio compare dopo il salvataggio, e
+     senza altezza minima la scheda si allungherebbe di scatto spostando ogni
+     cosa sotto di se'. */
+  min-height: 1.2em;
+}

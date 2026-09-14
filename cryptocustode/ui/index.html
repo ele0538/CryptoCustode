@@ -154,6 +154,45 @@
             <h2 id="titolo-esiti" class="etichetta-sezione">Esiti, un file per riga</h2>
             <ul id="esiti" class="esiti" aria-live="polite"></ul>
           </section>
+
+          <!--
+            Vault (issue #9, cablato dalla #51). Sta in coda al flusso perche'
+            non e' un passo della revisione: e' il modo in cui il fascicolo
+            sopravvive alla chiusura del programma. Due moduli distinti e non
+            uno solo con due bottoni, perche' salvare e riaprire chiedono cose
+            diverse — uno una password nuova, l'altro un file piu' la password
+            con cui era stato chiuso — e un modulo solo obbligherebbe a
+            disabilitare meta' dei campi a seconda del bottone premuto.
+          -->
+          <section class="riquadro vault" id="card-vault" aria-labelledby="titolo-vault">
+            <h2 id="titolo-vault" class="etichetta-sezione">Vault: salva e riapri</h2>
+            <p class="suggerimento tenue">
+              Il fascicolo esce da qui cifrato, in un file solo: documenti,
+              tabella dei tag e contatori dei segnaposto. La password non viene
+              salvata da nessuna parte e non &egrave; recuperabile &mdash; se la
+              dimentichi, il vault non si riapre.
+            </p>
+
+            <form id="modulo-vault-salva" class="modulo">
+              <label class="etichetta" for="vault-password-salva">Password del vault</label>
+              <input type="password" id="vault-password-salva" name="password"
+                     autocomplete="new-password" placeholder="Scegli una password" />
+              <button type="submit" class="pillola scura">Salva il fascicolo</button>
+            </form>
+
+            <form id="modulo-vault-apri" class="modulo">
+              <input type="file" id="vault-file" name="file" class="nascosto-accessibile"
+                     accept=".vault,application/octet-stream" />
+              <label class="pillola chiara" for="vault-file">Scegli un .vault</label>
+              <span id="vault-file-scelto" class="tenue">Nessun vault scelto</span>
+              <label class="etichetta" for="vault-password-apri">Password</label>
+              <input type="password" id="vault-password-apri" name="password"
+                     autocomplete="current-password" placeholder="La password del vault" />
+              <button type="submit" class="pillola scura">Riapri</button>
+            </form>
+
+            <p id="stato-vault" class="tenue" aria-live="polite"></p>
+          </section>
         </main>
 
         <footer class="barra-bassa">
@@ -171,5 +210,6 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script src="/static/vault.js"></script>
   </body>
 </html>

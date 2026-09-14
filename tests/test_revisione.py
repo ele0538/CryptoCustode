@@ -736,7 +736,14 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
     assert "contenteditable" not in pagina
     assert "<textarea" not in pagina
     tipi = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', pagina, flags=re.S))
-    assert tipi <= {"file"}, f"la pagina ha campi di immissione inattesi: {sorted(tipi)}"
+    # `password` è entrato con la card del vault (issue #51) e non intacca il
+    # criterio: quello che l'invariante protegge è il *testo del documento*, e
+    # da un campo password non entra nel fascicolo niente che l'export possa
+    # far uscire in chiaro. La lista resta corta e chiusa apposta: è il punto in
+    # cui ci si accorge di un campo di testo aggiunto per comodità.
+    assert tipi <= {"file", "password"}, (
+        f"la pagina ha campi di immissione inattesi: {sorted(tipi)}"
+    )
 
 
 def test_lo_script_non_costruisce_nessun_elemento_modificabile():
@@ -745,15 +752,22 @@ def test_lo_script_non_costruisce_nessun_elemento_modificabile():
     disegnata da `app.js`. Gli unici `input` che lo script costruisce sono le
     caselle di spunta degli interruttori.
     """
-    script = (UI / "app.js").read_text(encoding="utf-8")
+    # Tutti gli script della pagina, non più il solo `app.js`: dalla issue #51
+    # ce n'è più di uno, e un file nuovo che nessuno controlla è esattamente il
+    # modo in cui questo criterio smetterebbe di valere senza che si veda.
+    nomi = sorted(percorso.name for percorso in UI.glob("*.js"))
+    assert nomi, "attesi degli script nella cartella della UI"
 
-    assert "contentEditable" not in script
-    assert "designMode" not in script
-    creati = set(re.findall(r'createElement\(\s*"([a-zA-Z]+)"', script))
-    assert creati, "atteso che lo script costruisca gli elementi della revisione"
-    assert "textarea" not in creati
-    tipi = set(re.findall(r'\.type\s*=\s*"([^"]+)"', script))
-    assert tipi <= {"checkbox"}, f"lo script crea campi di immissione: {sorted(tipi)}"
+    for nome in nomi:
+        script = (UI / nome).read_text(encoding="utf-8")
+
+        assert "contentEditable" not in script, nome
+        assert "designMode" not in script, nome
+        creati = set(re.findall(r'createElement\(\s*"([a-zA-Z]+)"', script))
+        assert creati, f"atteso che {nome} costruisca qualche elemento"
+        assert "textarea" not in creati, nome
+        tipi = set(re.findall(r'\.type\s*=\s*"([^"]+)"', script))
+        assert tipi <= {"checkbox"}, f"{nome} crea campi di immissione: {sorted(tipi)}"
 
 
 def test_nessuna_rotta_del_fascicolo_accetta_un_testo_da_sostituire():
