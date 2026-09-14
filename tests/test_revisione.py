@@ -40,9 +40,9 @@ from pydantic import BaseModel
 
 from cryptocustode.api.app import UI, crea_app
 from cryptocustode.api.routes_fascicolo import ID_FASCICOLO_ATTIVO, crea_router
-from cryptocustode.core.models import Category, Rilevazione, State
+from cryptocustode.core.models import Category, Rilevazione, State, StatoTag
 from cryptocustode.state.session import SessionStore
-from tests.doppi import RilevatoreFinto
+from tests.doppi import RilevatoreCheFallisceSuAlcuniTesti, RilevatoreFinto
 
 INDIRIZZO_DI_PROVA = "http://127.0.0.1:8765"
 """L'app accetta solo il loopback nell'intestazione `Host` (`HOST_CONSENTITI`),
@@ -93,10 +93,14 @@ def client_con_rilevatore(store):
     appoggerà. Lo stack si chiude allo smontaggio della fixture, chiudendo con
     sé anche il client — la stessa pulizia che la fixture `client` ottiene dal
     suo `with`.
+
+    `rilevatore`, se passato, scavalca `RilevatoreFinto`: serve ai test che
+    devono provare un fallimento a metà giro (spec §6), per cui `RilevatoreFinto`
+    non basta — non solleva mai, risponde solo quello che gli si è detto.
     """
     with ExitStack() as stack:
-        def costruisci(**kwargs):
-            finto = RilevatoreFinto(**kwargs)
+        def costruisci(rilevatore=None, **kwargs):
+            finto = rilevatore if rilevatore is not None else RilevatoreFinto(**kwargs)
             app = crea_app(store=store, rilevatore=finto)
             client = stack.enter_context(TestClient(app, base_url=INDIRIZZO_DI_PROVA))
             return client, finto
@@ -190,6 +194,62 @@ def test_l_analisi_di_un_fascicolo_vuoto_e_rifiutata_invece_di_promuoverlo(clien
     assert risposta.status_code == 422
     assert "documento" in risposta.json()["errore"]
     assert fascicolo_di(store).state is State.DRAFT
+
+
+def test_un_rilevatore_che_fallisce_a_meta_giro_lascia_il_fascicolo_intatto(
+    client_con_rilevatore, store
+):
+    """Spec §6, verificato sulla rotta vera — `tests/test_matrice_consegna.py`
+    e `tests/test_documenti_di_verifica.py` verificano la stessa promessa, ma
+    contro una copia della sequenza della rotta, non contro la rotta stessa.
+
+    Il fallimento arriva apposta sul **secondo** documento, non sul primo: un
+    doppio che sollevasse già alla prima chiamata passerebbe anche se la rotta
+    scrivesse il fascicolo dopo ogni documento invece che a fine giro, che è
+    esattamente il difetto che questo test deve poter vedere.
+    """
+    doppio = RilevatoreCheFallisceSuAlcuniTesti(
+        {UNO: [Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]}
+    )
+    client, _ = client_con_rilevatore(rilevatore=doppio)
+    carica(client, "uno.txt", UNO)
+    carica(client, "due.txt", DUE)
+
+    risposta = client.post(ROTTA_ANALISI)
+
+    assert risposta.status_code == 502, risposta.text
+    fascicolo = fascicolo_di(store)
+    assert fascicolo.tags == {}
+    assert all(contatore == 0 for contatore in fascicolo.counters.values())
+    assert fascicolo.analizzati == set()
+    assert fascicolo.state is State.DRAFT
+
+
+def test_riaccendere_un_tag_non_trovato_non_lo_marca_applicato(
+    client_con_rilevatore, store
+):
+    """Un tag `NON_TROVATO` — il modello ha nominato un valore che nel testo
+    non compare alla lettera, quindi zero occorrenze — non deve diventare
+    `APPLICATO` solo perché l'utente lo riaccende: sarebbe una riga che
+    dichiara una sostituzione mai avvenuta, e nella direzione insicura, quella
+    che fa credere mascherato un dato rimasto in chiaro. Irraggiungibile dalla
+    UI di oggi, che disegna solo i tag con almeno una regione — ma la tabella
+    della fase 2 mostra anche `NON_TROVATO`, e da lì lo diventa.
+    """
+    client, finto = client_con_rilevatore(
+        sempre=[Rilevazione(valore="Nome Assente", categoria=Category.PERSONA)]
+    )
+    carica(client, "uno.txt", UNO)
+    client.post(ROTTA_ANALISI)
+    assert fascicolo_di(store).tags["[PERSONA_1]"].stato is StatoTag.NON_TROVATO
+
+    client.post(ROTTA_TAG, json={"tag": "[PERSONA_1]", "attivo": False})
+    risposta = client.post(ROTTA_TAG, json={"tag": "[PERSONA_1]", "attivo": True})
+
+    assert risposta.status_code == 200, risposta.text
+    tag = fascicolo_di(store).tags["[PERSONA_1]"]
+    assert tag.occorrenze == 0
+    assert tag.stato is StatoTag.NON_TROVATO
 
 
 # --- Criterio 1, metà server: i segmenti coprono il testo originale ---------
@@ -500,7 +560,7 @@ def test_cliccare_una_singola_occorrenza_ne_chiede_lo_spegnimento():
     JavaScript: cliccare su un'occorrenza accesa la spegne, e questo è il solo
     posto in cui quel verso si vede.
     """
-    esito = esito_della_ui("revisione-span-spento")
+    esito = esito_della_ui("revisione-tag-spento")
 
     inviati = [t for t in esito["tentativi"] if t["url"].endswith("/tag")]
     assert len(inviati) == 1, f"richieste partite: {[t['url'] for t in esito['tentativi']]}"
@@ -527,7 +587,7 @@ def test_il_corpo_dei_toggle_ha_i_nomi_che_le_rotte_aspettano():
 
     for scenario, rotta in (
         ("revisione-categoria-spenta", "/api/fascicolo/categoria"),
-        ("revisione-span-spento", "/api/fascicolo/tag"),
+        ("revisione-tag-spento", "/api/fascicolo/tag"),
     ):
         esito = esito_della_ui(scenario)
         [inviato] = [t for t in esito["tentativi"] if t["url"] == rotta]

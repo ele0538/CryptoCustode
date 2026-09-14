@@ -3,21 +3,9 @@ import itertools
 import pytest
 
 from cryptocustode.core.errors import MalformedPlaceholder, UnknownPlaceholder
-from cryptocustode.core.models import Category, Rilevazione
-from cryptocustode.core.tagga import assegna_tag
+from cryptocustode.core.models import Category
 from cryptocustode.core.unmask import SEGNAPOSTO, ripristina
-
-
-def _genera_placeholder(tabella, contatori, categoria, valore):
-    """Il rimpiazzo di `prossimo_placeholder`, cancellata con `core/entities.py`:
-    `assegna_tag` è il generatore vero, qui invocato con una `Rilevazione` di
-    un valore mai visto, e si legge la stringa del tag dalla tabella che
-    restituisce."""
-    nuova, contati = assegna_tag(
-        [Rilevazione(valore=valore, categoria=categoria)], tabella, contatori
-    )
-    generato = next(tag.tag for tag in nuova.values() if tag.valore == valore)
-    return generato, nuova, contati
+from tests.doppi import _genera_placeholder
 
 
 def dizionario():

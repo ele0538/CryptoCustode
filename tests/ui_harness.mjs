@@ -215,7 +215,7 @@ const SCENARI = {
       },
     ],
   },
-  "revisione-span-spento": {
+  "revisione-tag-spento": {
     risposte: [
       { stato: 200, json: revisioneFinta() },
       { stato: 200, json: revisioneFinta({ importo: false }) },

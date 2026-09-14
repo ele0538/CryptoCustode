@@ -118,8 +118,22 @@ NOMI_DALLA_SPEC = _errori_dichiarati_dalle_spec()
 @pytest.mark.parametrize("percorso, sezione, colonna", TABELLE)
 def test_la_tabella_della_spec_resta_leggibile(percorso, sezione, colonna):
     """Se un giorno una di queste tabelle cambia forma, questo test fallisce
-    per primo e dice che è cambiato il documento, non il codice."""
-    assert _errori_di_tabella(percorso, sezione, colonna)
+    per primo e dice che è cambiato il documento, non il codice.
+
+    Non basta che l'insieme sia non vuoto: se la colonna scivolasse su quella
+    vicina, `_errori_di_tabella` tornerebbe comunque non vuoto — pieno di
+    prosa invece di nomi di classi — e questo test passerebbe mentre
+    `test_esistono_tutti_gli_errori_della_spec` fallirebbe al posto suo,
+    puntando chi legge su `errors.py`, dove il problema non è. Un nome che non
+    è un identificatore Python è il segnale che la colonna letta non è più
+    quella giusta.
+    """
+    nomi = _errori_di_tabella(percorso, sezione, colonna)
+    assert nomi
+    assert all(nome.isidentifier() for nome in nomi), (
+        f"la colonna {colonna!r} di {percorso} non contiene solo nomi di "
+        f"classi: {sorted(nomi)}"
+    )
 
 
 def test_esistono_tutti_gli_errori_della_spec():

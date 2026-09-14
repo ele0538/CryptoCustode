@@ -22,7 +22,7 @@ loopback: il giorno in cui questa app venisse esposta, vanno chiuse.
 import os
 import socket
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -374,7 +374,7 @@ def esegui_uvicorn(app: FastAPI, host: str, porta: int) -> None:
 PIANO_ATTESTATO = "CRYPTOCUSTODE_GEMINI_PIANO"
 
 
-def verifica_configurazione_ia(ambiente: dict[str, str]) -> None:
+def verifica_configurazione_ia(ambiente: Mapping[str, str]) -> None:
     """Rifiuta l'avvio se la chiave manca o il piano non è attestato (D8).
 
     L'attestazione è una dichiarazione dell'utente, non una verifica: l'API non

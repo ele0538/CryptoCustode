@@ -69,3 +69,72 @@ def test_l_hash_cambia_se_cambia_il_mascherato():
     dopo_fascicolo = _fascicolo()
     dopo_fascicolo.category_enabled[Category.PERSONA] = False
     assert hash_approvazione(dopo_fascicolo) != prima
+
+
+# --- Ordinamento dei documenti dentro l'hash --------------------------------
+#
+# `tests/test_mask.py` è stato riscritto da capo durante la fase IA, e con lui
+# sono spariti i test che seguono: `hash_approvazione` ordina ancora per
+# `(filename, doc_id)`, e quel correttivo del doc_id era già stato aggiunto
+# come revisione in una fase precedente di questo stesso progetto. Senza un
+# test a difenderlo, qualcuno potrebbe toglierlo senza che nessuno se ne
+# accorga — ed è l'unica cosa che sta fra «l'utente ha approvato questo
+# testo» ed «esce dall'esportazione».
+
+
+def test_l_hash_non_dipende_dall_ordine_di_inserimento_dei_documenti():
+    """L'ordinamento per `(filename, doc_id)` dentro `hash_approvazione` rende
+    il digest indipendente dall'ordine di caricamento: senza, due sessioni che
+    caricano gli stessi documenti in ordine diverso otterrebbero due hash
+    diversi per lo stesso contenuto approvato, e il controllo di integrità
+    diventerebbe rumore."""
+    rilevazioni = [Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+
+    fascicolo_a = fascicolo_vuoto("f1")
+    fascicolo_a.documents.append(_documento("d1", "a.txt", "Mario Rossi paga."))
+    fascicolo_a.documents.append(_documento("d2", "b.txt", "Mario Rossi firma."))
+    fascicolo_a.tags, fascicolo_a.counters = assegna_tag(
+        rilevazioni, fascicolo_a.tags, fascicolo_a.counters
+    )
+
+    fascicolo_b = fascicolo_vuoto("f1")
+    fascicolo_b.documents.append(_documento("d2", "b.txt", "Mario Rossi firma."))
+    fascicolo_b.documents.append(_documento("d1", "a.txt", "Mario Rossi paga."))
+    fascicolo_b.tags, fascicolo_b.counters = assegna_tag(
+        rilevazioni, fascicolo_b.tags, fascicolo_b.counters
+    )
+
+    assert hash_approvazione(fascicolo_a) == hash_approvazione(fascicolo_b)
+
+
+def test_due_documenti_con_lo_stesso_nome_si_ordinano_per_doc_id():
+    """Il correttivo del `doc_id` nell'ordinamento: due documenti con lo
+    stesso `filename` sono un caso legittimo (l'omonimia non è più
+    intercettata nella corsia IA, spec §16 limite noto 2), e senza il
+    tiebreak si ordinerebbero secondo l'ordine in cui `sorted` li ha trovati
+    in lista — cioè l'ordine di inserimento — vanificando la proprietà appena
+    sopra proprio nel caso in cui il nome file non basta a distinguerli."""
+    rilevazioni = [Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+
+    fascicolo_a = fascicolo_vuoto("f1")
+    fascicolo_a.documents.append(_documento("d2", "a.txt", "Mario Rossi firma qui."))
+    fascicolo_a.documents.append(_documento("d1", "a.txt", "Mario Rossi paga qui."))
+    fascicolo_a.tags, fascicolo_a.counters = assegna_tag(
+        rilevazioni, fascicolo_a.tags, fascicolo_a.counters
+    )
+
+    fascicolo_b = fascicolo_vuoto("f1")
+    fascicolo_b.documents.append(_documento("d1", "a.txt", "Mario Rossi paga qui."))
+    fascicolo_b.documents.append(_documento("d2", "a.txt", "Mario Rossi firma qui."))
+    fascicolo_b.tags, fascicolo_b.counters = assegna_tag(
+        rilevazioni, fascicolo_b.tags, fascicolo_b.counters
+    )
+
+    assert hash_approvazione(fascicolo_a) == hash_approvazione(fascicolo_b)
+
+
+def test_l_hash_e_esadecimale_a_64_caratteri():
+    """SHA-256 in forma esadecimale: 32 byte, due cifre esadecimali per byte."""
+    digest = hash_approvazione(_fascicolo())
+    assert len(digest) == 64
+    assert all(carattere in "0123456789abcdef" for carattere in digest)

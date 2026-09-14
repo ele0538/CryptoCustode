@@ -326,8 +326,17 @@ def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
                 content={"errore": f"nessun tag {comando.tag!r} nel fascicolo: "
                                    "ricarica la revisione"},
             )
+        # Riaccendere un tag non lo rende `APPLICATO` a occhi chiusi: un tag
+        # `NON_TROVATO` ha zero occorrenze nel testo (il modello lo ha
+        # nominato, ma non compare alla lettera), e marcarlo `APPLICATO`
+        # dichiarerebbe una sostituzione mai avvenuta — nella direzione
+        # sbagliata, quella che fa credere mascherato un dato che è rimasto in
+        # chiaro. Spegnerlo resta incondizionato: `DISATTIVATO` è una scelta
+        # dell'utente, non un fatto sul testo.
         nuovo_stato = (
-            StatoTag.APPLICATO if comando.attivo else StatoTag.DISATTIVATO
+            (StatoTag.APPLICATO if tag.occorrenze else StatoTag.NON_TROVATO)
+            if comando.attivo
+            else StatoTag.DISATTIVATO
         )
         fascicolo.tags[comando.tag] = replace(tag, stato=nuovo_stato)
         return revisione(fascicolo)

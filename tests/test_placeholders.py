@@ -9,24 +9,10 @@ invisibile. Con il formato dichiarato in tre punti, un generatore che emettesse
 import pytest
 
 from cryptocustode.core.ingest.loader import segnaposto_preesistenti
-from cryptocustode.core.models import Category, Rilevazione
+from cryptocustode.core.models import Category
 from cryptocustode.core.placeholders import SEGNAPOSTO, costruisci_segnaposto
-from cryptocustode.core.tagga import assegna_tag
 from cryptocustode.core.unmask import ripristina
-
-
-def _genera_placeholder(tabella, contatori, categoria, valore):
-    """Il rimpiazzo di `prossimo_placeholder`, cancellata con `core/entities.py`.
-
-    `assegna_tag` è il generatore vero: qui gli si passa una `Rilevazione` di
-    un valore mai visto prima, cosicché produca sempre un segnaposto nuovo per
-    `categoria`, e si legge la stringa del tag dalla tabella che restituisce.
-    """
-    nuova, contati = assegna_tag(
-        [Rilevazione(valore=valore, categoria=categoria)], tabella, contatori
-    )
-    generato = next(tag.tag for tag in nuova.values() if tag.valore == valore)
-    return generato, nuova, contati
+from tests.doppi import _genera_placeholder
 
 
 def test_il_costruttore_produce_la_forma_canonica():

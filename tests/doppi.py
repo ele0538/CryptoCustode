@@ -5,7 +5,9 @@ nome, non fixture: un test che ne vuole uno lo costruisce con gli argomenti che
 gli servono, invece di ricevere quello che la fixture ha deciso.
 """
 
-from cryptocustode.core.models import Rilevazione
+from cryptocustode.core.errors import AIResponseInvalid
+from cryptocustode.core.models import Category, Rilevazione
+from cryptocustode.core.tagga import assegna_tag
 
 
 class RilevatoreFinto:
@@ -30,3 +32,39 @@ class RilevatoreFinto:
         if testo in self._per_testo:
             return list(self._per_testo[testo])
         return list(self._sempre) if self._sempre is not None else []
+
+
+class RilevatoreCheFallisceSuAlcuniTesti:
+    """Un `Rilevatore` che risponde normalmente ai testi che conosce e
+    solleva `AIResponseInvalid` — come farebbe il client vero su una risposta
+    fuori schema (spec §6) — su ogni altro testo.
+
+    Serve a provare che un fallimento a **metà** di un'analisi con più
+    documenti lascia il fascicolo intatto: `RilevatoreFinto` non fa al caso,
+    perché non solleva mai. E il fallimento deve poter arrivare su un
+    documento che non è il primo, altrimenti il test passerebbe anche contro
+    una rotta che scrivesse il fascicolo dopo ogni documento invece che a
+    fine giro.
+    """
+
+    def __init__(self, rilevazioni_per_testo: dict[str, list[Rilevazione]]) -> None:
+        self._per_testo = rilevazioni_per_testo
+
+    def rileva(self, testo: str) -> list[Rilevazione]:
+        if testo not in self._per_testo:
+            raise AIResponseInvalid("la risposta del modello non rispetta lo schema")
+        return list(self._per_testo[testo])
+
+
+def _genera_placeholder(tabella, contatori, categoria: Category, valore: str):
+    """Il rimpiazzo di `prossimo_placeholder`, cancellata con `core/entities.py`.
+
+    `assegna_tag` è il generatore vero: qui gli si passa una `Rilevazione` di
+    un valore mai visto prima, cosicché produca sempre un segnaposto nuovo per
+    `categoria`, e si legge la stringa del tag dalla tabella che restituisce.
+    """
+    nuova, contati = assegna_tag(
+        [Rilevazione(valore=valore, categoria=categoria)], tabella, contatori
+    )
+    generato = next(tag.tag for tag in nuova.values() if tag.valore == valore)
+    return generato, nuova, contati

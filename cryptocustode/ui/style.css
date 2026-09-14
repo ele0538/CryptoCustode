@@ -1,5 +1,10 @@
-/* UI vanilla, senza framework e senza web font (spec §2, decisioni 1 e 6: l'app
-   non fa chiamate di rete, e una richiesta a un servizio di font lo sarebbe).
+/* UI vanilla, senza framework e senza web font. La decisione 6 della spec §2
+   del 2026-09-10 — «nessuna chiamata di rete» — è stata ritirata dalla spec
+   del 2026-09-14: l'analisi manda già il testo dei documenti a Gemini, che è
+   l'unico host esterno che l'app contatta. La regola resta comunque giusta,
+   solo per una ragione diversa: un servizio di font sarebbe un secondo host,
+   non necessario e non esaminato, e ogni host in più è superficie in più da
+   fidarsi senza motivo.
 
    Linguaggio visivo: superficie grigio caldo dentro un telaio charcoal molto
    arrotondato, card bianche con raggi ampi e ombre morbide, chip a pillola,
