@@ -125,3 +125,35 @@ def tagga(testo: str, tabella: dict[str, Tag]) -> Mascheratura:
         tags=list(tabella.values()),
         regioni=rivendicate,
     )
+
+
+def conta_occorrenze(
+    tabella: dict[str, Tag], mascherature: list[Mascheratura]
+) -> dict[str, Tag]:
+    """Aggiorna occorrenze e stato sull'insieme dei documenti del fascicolo.
+
+    Quante volte un dato compaia, e se compaia affatto, è una proprietà del
+    fascicolo: `tagga` lavora su un documento per volta e non può saperlo.
+
+    I tag `DISATTIVATO` restano tali. Spegnere un tag è una decisione
+    dell'utente sulla riservatezza, e un conteggio non ha titolo per revocarla:
+    senza questa guardia, il primo ricalcolo dopo un toggle rimetterebbe in
+    maschera un dato che l'utente ha chiesto di lasciare in chiaro.
+    """
+    quante: dict[str, int] = {}
+    for mascheratura in mascherature:
+        for regione in mascheratura.regioni:
+            quante[regione.tag] = quante.get(regione.tag, 0) + 1
+
+    aggiornata: dict[str, Tag] = {}
+    for chiave, tag in tabella.items():
+        if tag.stato is StatoTag.DISATTIVATO:
+            aggiornata[chiave] = tag
+            continue
+        totale = quante.get(tag.tag, 0)
+        aggiornata[chiave] = replace(
+            tag,
+            occorrenze=totale,
+            stato=StatoTag.APPLICATO if totale else StatoTag.NON_TROVATO,
+        )
+    return aggiornata

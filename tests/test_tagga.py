@@ -1,7 +1,9 @@
 """`assegna_tag` e `tagga`: dai valori del modello al testo mascherato (spec §7)."""
 
+from dataclasses import replace
+
 from cryptocustode.core.models import Category, Rilevazione, StatoTag
-from cryptocustode.core.tagga import assegna_tag, tagga
+from cryptocustode.core.tagga import assegna_tag, conta_occorrenze, tagga
 
 VUOTI: dict[Category, int] = {}
 
@@ -174,3 +176,45 @@ class TestTagga:
 
     def test_il_testo_vuoto_non_esplode(self):
         assert tagga("", _tabella(("Mario Rossi", Category.PERSONA))).mascherato == ""
+
+
+class TestContaOccorrenze:
+    def test_un_tag_trovato_diventa_applicato(self):
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        aggiornata = conta_occorrenze(tabella, [tagga("Mario Rossi.", tabella)])
+        assert aggiornata["[PERSONA_1]"].stato is StatoTag.APPLICATO
+        assert aggiornata["[PERSONA_1]"].occorrenze == 1
+
+    def test_somma_le_occorrenze_di_tutti_i_documenti(self):
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        mascherature = [
+            tagga("Mario Rossi e Mario Rossi.", tabella),
+            tagga("Ancora Mario Rossi.", tabella),
+        ]
+        assert conta_occorrenze(tabella, mascherature)["[PERSONA_1]"].occorrenze == 3
+
+    def test_un_tag_che_nessun_documento_contiene_resta_non_trovato(self):
+        """Il caso della §7: il modello ha normalizzato il valore. Il tag resta
+        visibile, perché ignorarlo lascerebbe il dato in chiaro in silenzio."""
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        aggiornata = conta_occorrenze(tabella, [tagga("ROSSI MARIO.", tabella)])
+        assert aggiornata["[PERSONA_1]"].stato is StatoTag.NON_TROVATO
+        assert aggiornata["[PERSONA_1]"].occorrenze == 0
+
+    def test_non_riaccende_un_tag_spento_dall_utente(self):
+        """Spegnere un tag è una decisione dell'utente sulla riservatezza: un
+        conteggio non può revocarla. Senza questa guardia, ricalcolare le
+        occorrenze dopo un toggle rimetterebbe in maschera un dato che l'utente
+        ha chiesto di lasciare in chiaro."""
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        spenta = {
+            chiave: replace(tag, stato=StatoTag.DISATTIVATO)
+            for chiave, tag in tabella.items()
+        }
+        aggiornata = conta_occorrenze(spenta, [tagga("Mario Rossi.", spenta)])
+        assert aggiornata["[PERSONA_1]"].stato is StatoTag.DISATTIVATO
+
+    def test_non_muta_la_tabella_ricevuta(self):
+        tabella = _tabella(("Mario Rossi", Category.PERSONA))
+        conta_occorrenze(tabella, [tagga("Mario Rossi.", tabella)])
+        assert tabella["[PERSONA_1]"].occorrenze == 0
