@@ -301,6 +301,50 @@ h1 {
 
 /* --- Approvazione ed esportazione ----------------------------------------- */
 
+/* Il bilancio di cio' che uscira'. Due stati e non uno: "tutto mascherato" e'
+   un'informazione tranquilla, "qualcosa esce in chiaro" e' un avvertimento, e
+   vestirli uguale li farebbe leggere uguale. */
+.bilancio {
+  margin: 0.6rem 0 0;
+  font-size: 0.92rem;
+}
+
+.bilancio:empty {
+  display: none;
+}
+
+.bilancio.sereno {
+  color: var(--tenue);
+}
+
+.bilancio.allarme {
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  border-left: 3px solid var(--rifiuto, #b3261e);
+  background: color-mix(in srgb, var(--rifiuto, #b3261e) 8%, transparent);
+  color: var(--inchiostro);
+  font-weight: 500;
+}
+
+/* L'intestazione di ogni documento: il nome a sinistra, il comando per
+   toglierlo a destra. */
+.documento-testa {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.documento-testa h3 {
+  margin: 0;
+}
+
+.togli-documento {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.7rem;
+}
+
 .comandi {
   display: flex;
   flex-wrap: wrap;
@@ -753,15 +797,31 @@ mark.evidenza {
   -webkit-box-decoration-break: clone;
 }
 
-/* Uno span spento resta riconoscibile ma smette di sembrare mascherato: il
-   colore se ne va e resta il contorno tratteggiato. Senza questa regola
-   l'unica differenza fra «verrà mascherato» e «resterà in chiaro» sarebbe
-   invisibile, che è esattamente la decisione che l'utente deve poter vedere. */
+/* Acceso = verra' sostituito da un segnaposto. Il fondo pieno della categoria
+   lo dice gia'; il barrato lo conferma, ed e' qui che il barrato ha senso —
+   sul dato che sparisce davvero, non su quello che resta. */
+mark.evidenza:not(.spenta) {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* Uno span spento **resta in chiaro**: e' il dato che uscira' leggibile
+   dall'esportazione. Il barrato che stava qui diceva l'opposto — barrare
+   significa "questo viene tolto" in qualunque interfaccia, quindi la pagina
+   mostrava i dati NON protetti con l'aspetto di quelli protetti, ed e' il
+   primo malinteso che un utente vero ha avuto guardandola.
+
+   Ora lo spento e' vestito da avvertimento e non da risultato: sottolineatura
+   ondulata rossa, la convenzione universale di "qui c'e' qualcosa che non va".
+   Chi guarda il documento vede in rosso esattamente cio' che sta per
+   consegnare in chiaro. */
 mark.evidenza.spenta {
   background: transparent;
-  color: var(--tenue);
-  outline: 1px dashed var(--tenue);
-  text-decoration: line-through;
+  color: inherit;
+  outline: none;
+  text-decoration: underline wavy var(--rifiuto, #b3261e);
+  text-underline-offset: 0.22em;
+  text-decoration-thickness: 1.5px;
 }
 
 /* Un colore per categoria: sono le classi che `app.js` scrive come

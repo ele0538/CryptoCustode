@@ -41,6 +41,7 @@ from cryptocustode.state.session import (
     analisi_completata,
     approva,
     export_sanitized_text,
+    registra_mutazione,
 )
 
 ID_FASCICOLO_ATTIVO = "f_attivo"
@@ -334,6 +335,62 @@ def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
             ],
         }
 
+    @router.delete("/documenti/{doc_id}", response_model=None)
+    async def togli_documento(doc_id: str) -> dict | JSONResponse:
+        """Toglie un documento dal fascicolo, anche se gia' analizzato.
+
+        Prima si poteva solo svuotare tutto: chi sbagliava il decimo file
+        rifaceva gli altri nove, e chi voleva togliere un documento gia'
+        analizzato non aveva proprio modo di farlo.
+
+        **Le occorrenze vanno ricontate, e non e' un dettaglio.** I tag sono
+        del fascicolo, non del documento: `[PERSONA_1]` puo' comparire in tre
+        documenti, e togliendone uno il conteggio scende. Senza il ricalcolo la
+        pagina continuerebbe a dichiarare occorrenze in un testo che non c'e'
+        piu', e — peggio — un tag potrebbe restare `APPLICATO` mentre il suo
+        valore non compare piu' da nessuna parte.
+
+        Il ricalcolo **non** richiama il rilevatore: `tagga` e' una funzione
+        pura sul testo e sulla tabella esistente, quindi togliere un documento
+        non costa nessuna chiamata a Gemini. Sarebbe il modo piu' silenzioso di
+        spendere soldi che ci sia — un'operazione che l'utente legge come una
+        cancellazione.
+
+        I tag che restano a zero occorrenze vengono **tolti**: nominano un
+        valore che nessun documento del fascicolo contiene piu', e tenerli
+        gonfierebbe i contatori delle categorie e il dizionario di ripristino
+        con voci che non corrispondono a niente. I `DISATTIVATO` fanno
+        eccezione, come ovunque: sono una decisione dell'utente sulla
+        riservatezza, e un conteggio non ha titolo per revocarla.
+        """
+        fascicolo = fascicolo_attivo(store)
+        restanti = [d for d in fascicolo.documents if d.doc_id != doc_id]
+        if len(restanti) == len(fascicolo.documents):
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "errore": f"nessun documento con identificativo {doc_id!r} "
+                    "nel fascicolo: ricarica la pagina"
+                },
+            )
+
+        fascicolo.documents[:] = restanti
+        fascicolo.analizzati.discard(doc_id)
+
+        mascherature = [tagga(d.text, fascicolo.tags) for d in fascicolo.documents]
+        ricontati = conta_occorrenze(fascicolo.tags, mascherature)
+        fascicolo.tags = {
+            chiave: tag
+            for chiave, tag in ricontati.items()
+            if tag.occorrenze > 0 or tag.stato is StatoTag.DISATTIVATO
+        }
+
+        # Togliere un documento cambia il testo che uscirebbe dall'export:
+        # un'approvazione presa su un fascicolo che conteneva quel documento
+        # non vale piu'.
+        registra_mutazione(fascicolo)
+        return revisione(fascicolo) | {"totali": totali_di(fascicolo)}
+
     @router.post("/analisi", response_model=None)
     async def analizza() -> dict | JSONResponse:
         """Fa rilevare i dati sensibili e chiude l'analisi.
@@ -425,6 +482,20 @@ def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
         """
         fascicolo = fascicolo_attivo(store)
         fascicolo.category_enabled[comando.categoria] = comando.attiva
+        # Cambiare un interruttore cambia il testo mascherato, quindi annulla
+        # l'approvazione: e' il mestiere di `registra_mutazione`, che non
+        # veniva chiamata (issue #49). Senza, il fascicolo restava APPROVED con
+        # l'hash vecchio e succedevano due cose, entrambe brutte: premere di
+        # nuovo «Approva» sollevava «impossibile approvare un fascicolo nello
+        # stato APPROVED», cioe' l'utente non poteva riapprovare cio' che aveva
+        # appena cambiato; e la pagina dichiarava APPROVED un fascicolo la cui
+        # firma non corrispondeva piu' a niente.
+        #
+        # Il gate dell'esportazione reggeva comunque — rifiutava con 409 «il
+        # testo e' cambiato dopo l'approvazione» — ma reggeva da solo, ed e'
+        # l'ultima difesa: farla lavorare per un difetto evitabile a monte
+        # significa non accorgersi il giorno che cede.
+        registra_mutazione(fascicolo)
         return revisione(fascicolo)
 
     @router.post("/tag", response_model=None)
@@ -458,6 +529,7 @@ def crea_router(store: SessionStore, rilevatore: Rilevatore) -> APIRouter:
             else StatoTag.DISATTIVATO
         )
         fascicolo.tags[comando.tag] = replace(tag, stato=nuovo_stato)
+        registra_mutazione(fascicolo)
         return revisione(fascicolo)
 
     return router

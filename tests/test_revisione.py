@@ -53,6 +53,9 @@ ROTTA_DOCUMENTI = "/api/fascicolo/documenti"
 ROTTA_ANALISI = "/api/fascicolo/analisi"
 ROTTA_CATEGORIA = "/api/fascicolo/categoria"
 ROTTA_TAG = "/api/fascicolo/tag"
+ROTTA_STATO = "/api/fascicolo"
+ROTTA_APPROVAZIONE = "/api/fascicolo/approvazione"
+ROTTA_ESPORTAZIONE = "/api/fascicolo/esportazione"
 
 HARNESS = Path(__file__).parent / "ui_harness.mjs"
 
@@ -826,3 +829,124 @@ def test_nessuna_rotta_del_fascicolo_accetta_un_testo_da_sostituire():
         "passerebbe su un insieme vuoto"
     )
     assert campi & vietati == set(), f"una rotta accetta del testo: {sorted(campi & vietati)}"
+
+
+# --- I toggle annullano l'approvazione, e si puo' togliere un documento ------
+
+
+class TestUnaModificaDopoLApprovazioneLaAnnulla:
+    """La #49, presa dal verso che l'utente incontra davvero.
+
+    Il gate dell'esportazione reggeva gia': con l'hash vecchio rifiutava con
+    409 «il testo è cambiato dopo l'approvazione», quindi non usciva niente di
+    sbagliato. Ma reggeva **da solo**, ed è l'ultima difesa. A monte l'utente
+    vedeva due cose brutte: la pagina dichiarava APPROVED un fascicolo la cui
+    firma non valeva più, e premere di nuovo «Approva» rispondeva «impossibile
+    approvare un fascicolo nello stato APPROVED», cioè gli si negava di
+    riapprovare esattamente ciò che aveva appena cambiato.
+    """
+
+    def _approvato(self, client_con_rilevatore):
+        client, _ = client_con_rilevatore(
+            sempre=[Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+        )
+        carica(client, "a.txt", "Il sig. Mario Rossi paga.")
+        client.post(ROTTA_ANALISI)
+        client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": True})
+        assert client.post(ROTTA_APPROVAZIONE).json()["stato"] == "APPROVED"
+        return client
+
+    def test_spegnere_una_categoria_riporta_a_pending(self, client_con_rilevatore):
+        client = self._approvato(client_con_rilevatore)
+        esito = client.post(
+            ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": False}
+        )
+        assert esito.json()["stato"] == "PENDING_REVIEW"
+
+    def test_si_puo_riapprovare_dopo_aver_cambiato_idea(self, client_con_rilevatore):
+        """Il sintomo esatto segnalato: prima qui arrivava un 409."""
+        client = self._approvato(client_con_rilevatore)
+        client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": False})
+
+        di_nuovo = client.post(ROTTA_APPROVAZIONE)
+        assert di_nuovo.status_code == 200
+        assert di_nuovo.json()["stato"] == "APPROVED"
+
+    def test_l_hash_nuovo_firma_il_testo_nuovo(self, client_con_rilevatore, store):
+        """Riapprovare non deve solo sbloccare il bottone: deve firmare ciò che
+        c'è adesso. Un hash rimasto quello vecchio farebbe fallire l'export con
+        «il testo è cambiato» su un fascicolo appena approvato."""
+        client = self._approvato(client_con_rilevatore)
+        primo = fascicolo_di(store).approval_hash
+        client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": False})
+        client.post(ROTTA_APPROVAZIONE)
+
+        assert fascicolo_di(store).approval_hash != primo
+        assert client.get(ROTTA_ESPORTAZIONE).status_code == 200
+
+
+class TestTogliereUnDocumento:
+    """Prima si poteva solo svuotare tutto: chi sbagliava il decimo file
+    rifaceva gli altri nove."""
+
+    def _due_documenti(self, client_con_rilevatore):
+        client, finto = client_con_rilevatore(
+            sempre=[Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+        )
+        primo = carica(client, "a.txt", "Il sig. Mario Rossi paga.").json()
+        carica(client, "b.txt", "Anche Mario Rossi firma.")
+        client.post(ROTTA_ANALISI)
+        return client, finto, primo["doc_id"]
+
+    def test_toglie_il_documento_e_aggiorna_i_totali(self, client_con_rilevatore):
+        client, _, doc_id = self._due_documenti(client_con_rilevatore)
+        esito = client.delete(f"{ROTTA_DOCUMENTI}/{doc_id}")
+
+        assert esito.status_code == 200
+        assert esito.json()["totali"]["documenti"] == 1
+        assert [d["filename"] for d in esito.json()["documenti"]] == ["b.txt"]
+
+    def test_un_id_che_non_esiste_e_un_404(self, client_con_rilevatore):
+        """Non un 200 silenzioso: la pagina crederebbe di aver tolto qualcosa."""
+        client, _, _ = self._due_documenti(client_con_rilevatore)
+        assert client.delete(f"{ROTTA_DOCUMENTI}/inventato").status_code == 404
+
+    def test_il_nome_torna_libero(self, client_con_rilevatore):
+        """Il rifiuto degli omonimi non deve sopravvivere al documento."""
+        client, _, doc_id = self._due_documenti(client_con_rilevatore)
+        client.delete(f"{ROTTA_DOCUMENTI}/{doc_id}")
+
+        assert carica(client, "a.txt", "Un altro testo.").status_code == 201
+
+    def test_non_richiama_il_rilevatore(self, client_con_rilevatore):
+        """Togliere un documento non deve costare una chiamata a Gemini: sarebbe
+        il modo più silenzioso di spendere soldi che ci sia, su un'operazione
+        che l'utente legge come una cancellazione."""
+        client, finto, doc_id = self._due_documenti(client_con_rilevatore)
+        prima = len(finto.chiamate)
+        client.delete(f"{ROTTA_DOCUMENTI}/{doc_id}")
+
+        assert len(finto.chiamate) == prima
+
+    def test_annulla_l_approvazione(self, client_con_rilevatore):
+        """Il fascicolo approvato conteneva quel documento: la firma non vale più."""
+        client, _, doc_id = self._due_documenti(client_con_rilevatore)
+        client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": True})
+        client.post(ROTTA_APPROVAZIONE)
+
+        assert client.delete(f"{ROTTA_DOCUMENTI}/{doc_id}").json()["stato"] == (
+            "PENDING_REVIEW"
+        )
+
+    def test_togliere_l_ultimo_documento_svuota_i_tag(self, client_con_rilevatore):
+        """Un tag che nomina un valore che nessun documento contiene più non è
+        una riga da conservare: gonfierebbe i contatori delle categorie e il
+        dizionario di ripristino con voci che non corrispondono a niente."""
+        client, _, doc_id = self._due_documenti(client_con_rilevatore)
+        altro = [d for d in client.get(ROTTA_STATO).json()["documenti"]
+                 if d["filename"] == "b.txt"][0]["doc_id"]
+        client.delete(f"{ROTTA_DOCUMENTI}/{doc_id}")
+        esito = client.delete(f"{ROTTA_DOCUMENTI}/{altro}")
+
+        assert esito.json()["categorie"] == []
+        assert esito.json()["totali"]["documenti"] == 0

@@ -216,14 +216,15 @@ const avvio = document.getElementById("avvia-analisi");
 const statoAnalisi = document.getElementById("stato-analisi");
 const categorie = document.getElementById("categorie");
 const documenti = document.getElementById("documenti");
+const bilancio = document.getElementById("bilancio");
 
 // Le tre richieste della revisione hanno lo stesso corpo di errore del
 // caricamento — `errore` della tabella §13, `detail` di FastAPI, o niente —
 // quindi riusano `messaggioDiErrore`. Restituisce `null` quando la richiesta
 // non è andata: chi chiama non ridisegna, e il motivo resta scritto in pagina
 // invece di sparire in una console che l'utente non guarda.
-async function chiedi(rotta, corpo) {
-  const opzioni = { method: "POST" };
+async function chiedi(rotta, corpo, metodo = "POST") {
+  const opzioni = { method: metodo };
   if (corpo !== undefined) {
     opzioni.headers = { "Content-Type": "application/json" };
     opzioni.body = JSON.stringify(corpo);
@@ -256,8 +257,37 @@ async function chiedi(rotta, corpo) {
 // le caselle sono il riflesso dello stato, non lo stato.
 let categorieAccese = 0;
 
+// Il bilancio di cosa uscira'. Un numero e' piu' difficile da ignorare di un
+// colore, e copre il caso che la sola conferma non copriva: due categorie
+// accese su sei, con l'utente convinto di averle accese tutte (issue #53).
+function disegnaBilancio(elenco) {
+  const mascherati = elenco
+    .filter((voce) => voce.attiva)
+    .reduce((somma, voce) => somma + voce.quanti, 0);
+  const inChiaro = elenco
+    .filter((voce) => !voce.attiva)
+    .reduce((somma, voce) => somma + voce.quanti, 0);
+
+  if (elenco.length === 0) {
+    bilancio.textContent = "";
+    bilancio.className = "bilancio";
+    return;
+  }
+  if (inChiaro === 0) {
+    bilancio.textContent = `Usciranno mascherati tutti i ${mascherati} dati trovati.`;
+    bilancio.className = "bilancio sereno";
+    return;
+  }
+  bilancio.textContent =
+    `Attenzione: di ${mascherati + inChiaro} dati personali trovati, ` +
+    `${mascherati} usciranno mascherati e ${inChiaro} usciranno IN CHIARO. ` +
+    "Sono quelli sottolineati in rosso qui sotto.";
+  bilancio.className = "bilancio allarme";
+}
+
 function disegnaInterruttori(elenco) {
   categorieAccese = elenco.filter((voce) => voce.attiva).length;
+  disegnaBilancio(elenco);
   categorie.replaceChildren();
   for (const voce of elenco) {
     const etichetta = document.createElement("label");
@@ -284,10 +314,28 @@ function disegnaDocumenti(elenco) {
     const riquadro = document.createElement("article");
     riquadro.className = "documento";
 
+    const testa = document.createElement("div");
+    testa.className = "documento-testa";
+
     const titolo = document.createElement("h3");
     titolo.textContent = documento.filename;
     titolo.dataset.filename = documento.filename;
-    riquadro.appendChild(titolo);
+    testa.appendChild(titolo);
+
+    // Il bottone porta il `doc_id`, non il nome del file: e' il nome a essere
+    // scelto dall'utente, e due caricamenti da cartelle diverse possono
+    // condividerlo — il rifiuto degli omonimi lo impedisce oggi, ma legare la
+    // cancellazione a un identificativo stabile costa una riga e non dipende
+    // da quella regola restando vera.
+    const togli = document.createElement("button");
+    togli.type = "button";
+    togli.className = "pillola chiara pericolo togli-documento";
+    togli.textContent = "Togli";
+    togli.dataset.docId = documento.doc_id;
+    togli.dataset.filename = documento.filename;
+    testa.appendChild(togli);
+
+    riquadro.appendChild(testa);
 
     const corpo = document.createElement("p");
     corpo.className = "testo-originale";
@@ -358,6 +406,27 @@ categorie.addEventListener("change", async (evento) => {
 });
 
 documenti.addEventListener("click", async (evento) => {
+  const docId = evento.target.dataset.docId;
+  if (docId !== undefined) {
+    const nome = evento.target.dataset.filename;
+    if (
+      !window.confirm(
+        `Tolgo ${nome} dal fascicolo? Il testo vive solo nella memoria di ` +
+          "questo programma: per riaverlo dovrai ricaricarlo e rianalizzarlo, " +
+          "cioè ripagare una chiamata a Gemini."
+      )
+    ) {
+      return;
+    }
+    const esito = await chiedi(`${ROTTA_STATO}/documenti/${encodeURIComponent(docId)}`, undefined, "DELETE");
+    if (esito !== null) {
+      ridisegnaTutto(esito);
+      statoEsportazione.textContent = "";
+      esportazionePermessa(false);
+    }
+    return;
+  }
+
   const tag = evento.target.dataset.tag;
   if (tag === undefined) {
     return;
@@ -397,6 +466,7 @@ function ridisegnaTutto(stato) {
     categorie.replaceChildren();
     documenti.replaceChildren();
     statoAnalisi.textContent = "";
+    disegnaBilancio([]);
     return;
   }
   disegnaInterruttori(stato.categorie);
