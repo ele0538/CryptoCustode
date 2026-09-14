@@ -44,6 +44,7 @@ const scelta = document.getElementById("scelta-file");
 const esiti = document.getElementById("esiti");
 const conteggio = document.getElementById("conteggio");
 const card = document.getElementById("card-caricamento");
+const cardFascicolo = document.getElementById("card-fascicolo");
 const fileScelti = document.getElementById("file-scelti");
 const svuota = document.getElementById("svuota-fascicolo");
 const avvio = document.getElementById("avvia-analisi");
@@ -52,8 +53,6 @@ const statoAnalisi = document.getElementById("stato-analisi");
 const categorie = document.getElementById("categorie");
 const documenti = document.getElementById("documenti");
 const riquadroEsposizione = document.getElementById("esposizione");
-const mostraDettaglio = document.getElementById("mostra-dettaglio");
-const dettaglio = document.getElementById("dettaglio");
 const tornaCarica = document.getElementById("torna-carica");
 
 const salvaTutto = document.getElementById("salva-tutto");
@@ -149,6 +148,11 @@ function aggiornaMetriche(totali) {
       ? "Nessun documento."
       : `${totali.documenti} di ${totali.massimo_documenti} documenti.`;
   svuota.hidden = totali.documenti === 0;
+  // Quattro cifre grandi che dicono zero sono il peso visivo piu' grosso
+  // della schermata a riposo, e non dicono niente. Restano dove sono — la
+  // struttura non deve saltare al primo caricamento — ma in grigio finche'
+  // non c'e' qualcosa da contare.
+  cardFascicolo.classList.toggle("vuoto", totali.documenti === 0);
   // Analizzare un fascicolo vuoto costerebbe una chiamata a Gemini per
   // ottenere niente: il pulsante resta spento finché non c'è cosa analizzare.
   avvio.disabled = totali.documenti === 0;
@@ -436,13 +440,6 @@ avvio.addEventListener("click", async () => {
 
 tornaCarica.addEventListener("click", () => {
   vaiA("carica");
-});
-
-mostraDettaglio.addEventListener("click", () => {
-  const aperto = dettaglio.hidden;
-  dettaglio.hidden = !aperto;
-  mostraDettaglio.setAttribute("aria-expanded", aperto ? "true" : "false");
-  mostraDettaglio.textContent = aperto ? "Nascondi il testo" : "Mostrami dove";
 });
 
 // Un gestore solo sul contenitore, e non uno per interruttore: gli interruttori

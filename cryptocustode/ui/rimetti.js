@@ -86,6 +86,7 @@ async function leggiStato() {
 usaAltra.addEventListener("click", () => {
   campoAltra.hidden = false;
   usaAltra.hidden = true;
+  usaAltra.setAttribute("aria-expanded", "true");
   passwordVault.focus();
 });
 

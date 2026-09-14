@@ -51,6 +51,22 @@ function elementoFinto(nome) {
       remove(nome) {
         this.classi.delete(nome);
       },
+      // `toggle` con il secondo argomento esplicito: e' la forma che la scheda
+      // del fascicolo usa per accendere e spegnere lo stato "vuoto". Senza,
+      // lo script moriva qui — e non per un difetto suo, ma perche' il doppio
+      // implementava meta' di `classList`.
+      toggle(nome, forza) {
+        const acceso = forza === undefined ? !this.classi.has(nome) : forza;
+        if (acceso) {
+          this.classi.add(nome);
+        } else {
+          this.classi.delete(nome);
+        }
+        return acceso;
+      },
+      contains(nome) {
+        return this.classi.has(nome);
+      },
       classi: null,
     },
     appendChild(figlio) {

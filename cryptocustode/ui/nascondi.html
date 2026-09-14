@@ -71,7 +71,7 @@
               <p class="suggerimento tenue">Oppure trascina i file su questa scheda.</p>
             </section>
 
-            <section class="riquadro fascicolo" aria-labelledby="titolo-fascicolo">
+            <section class="riquadro fascicolo vuoto" id="card-fascicolo" aria-labelledby="titolo-fascicolo">
               <div class="fascicolo-testa">
                 <span class="icona-tonda" aria-hidden="true">
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false">
@@ -107,7 +107,14 @@
               </dl>
             </section>
 
-            <section class="esiti-sezione" aria-labelledby="titolo-esiti">
+            <!--
+              Gli esiti hanno la forma delle altre due schede. Erano l'unico
+              blocco appoggiato sul grigio, e titolo e lista partivano da due
+              indentazioni diverse: dentro la scheda partono dallo stesso bordo.
+              La scheda compare al primo caricamento — lo decide il CSS, che
+              guarda se la lista e' vuota e non puo' andare fuori sincrono.
+            -->
+            <section class="riquadro esiti-sezione" aria-labelledby="titolo-esiti">
               <h2 id="titolo-esiti" class="etichetta-sezione">Esiti, un file per riga</h2>
               <ul id="esiti" class="esiti" aria-live="polite"></ul>
             </section>
@@ -135,9 +142,10 @@
             <!--
               Il riepilogo è il cuore della schermata, e sta in cima perché è
               l'unica cosa che l'utente deve leggere per forza: dice quanti dati
-              usciranno mascherati e quanti in chiaro. Il testo evidenziato, che
-              prima occupava mezza pagina, ora è sotto un pulsante — serve a chi
-              vuole controllare, non a chi deve decidere.
+              usciranno mascherati e quanti in chiaro. Il testo evidenziato lo
+              segue, sempre aperto: chi deve decidere legge il numero e si ferma
+              qui, chi vuole controllare scorre e lo trova già lì — un controllo
+              che bisogna prima scoprire non viene fatto.
             -->
             <section class="riquadro" aria-labelledby="titolo-riepilogo">
               <h2 id="titolo-riepilogo">Ecco che cosa nasconder&ograve;</h2>
@@ -150,16 +158,13 @@
               <div id="categorie" class="categorie"></div>
 
               <div class="comandi">
-                <button type="button" id="mostra-dettaglio" class="pillola chiara" aria-expanded="false">
-                  Mostrami dove
-                </button>
                 <button type="button" id="torna-carica" class="pillola chiara">
                   Torna ai documenti
                 </button>
               </div>
             </section>
 
-            <section class="riquadro dettaglio" id="dettaglio" aria-labelledby="titolo-dettaglio" hidden>
+            <section class="riquadro dettaglio" id="dettaglio" aria-labelledby="titolo-dettaglio">
               <h2 id="titolo-dettaglio" class="etichetta-sezione">Il testo, con i dati trovati</h2>
               <p class="suggerimento tenue">
                 Un colore per categoria. Il testo non si modifica &mdash; si decide

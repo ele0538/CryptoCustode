@@ -54,9 +54,17 @@
               </small>
             </div>
 
+            <!--
+              L'etichetta nomina l'azione e non la diagnosi. Diceva «Questo
+              vault e' stato chiuso con un'altra passphrase», ed essendo sempre
+              in pagina — anche prima che un vault sia stato scelto — si leggeva
+              come il responso di un tentativo fallito invece che come la via
+              d'uscita che e'. Chi lo leggeva si fermava li'.
+            -->
             <p class="suggerimento tenue">
-              <button type="button" id="usa-altra-passphrase" class="come-collegamento" hidden>
-                Questo vault &egrave; stato chiuso con un&rsquo;altra passphrase
+              <button type="button" id="usa-altra-passphrase" class="come-collegamento"
+                      aria-expanded="false" aria-controls="campo-altra-passphrase" hidden>
+                Aprilo con un&rsquo;altra passphrase
               </button>
             </p>
 

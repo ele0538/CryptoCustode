@@ -430,7 +430,7 @@ h1 {
 }
 
 .etichetta-sezione {
-  margin: 0.4rem 0 0.6rem 0.2rem;
+  margin: 0 0 0.7rem;
   color: var(--tenue);
   font-size: 0.85rem;
   font-weight: 500;
@@ -491,6 +491,14 @@ h1 {
   line-height: 1.1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+}
+
+/* Quattro cifre da 2.1rem che dicono zero erano il peso visivo piu' grosso
+   della schermata a riposo, e non dicevano niente. Restano in pagina — la
+   struttura non deve saltare al primo caricamento — ma in grigio finche' non
+   c'e' qualcosa da contare. */
+.fascicolo.vuoto .metrica dd {
+  color: var(--tenue);
 }
 
 .metrica dd small {
@@ -587,6 +595,11 @@ h1 {
 
 /* --- Gli esiti come linea del tempo --------------------------------------- */
 
+/* Le tre liste di esiti dell'applicazione — caricati, scaricati, ripristinati —
+   vivono tutte e tre dentro una scheda bianca. Le righe erano a loro volta
+   schede bianche con ombra: una scheda dentro una scheda, che sul bianco non
+   si stacca da niente e aggiunge solo un bordo sfocato. Qui sono righe piatte,
+   e a distinguerle bastano la linea del tempo e il marcatore. */
 ul.esiti {
   list-style: none;
   position: relative;
@@ -595,24 +608,25 @@ ul.esiti {
   border-left: 2px solid var(--bordo);
 }
 
-ul.esiti:empty {
-  border-left-color: transparent;
-}
-
-ul.esiti:empty::after {
-  content: "Ancora nessun caricamento.";
-  color: var(--tenue);
-  font-size: 0.9rem;
+/* La scheda intera sparisce finche' non si e' caricato niente: a riposo la
+   pagina diceva tre volte la stessa cosa — «Nessun documento.», «Ancora nessun
+   caricamento.» e quattro zeri. E' il CSS a deciderlo, guardando la lista: uno
+   stato calcolato dalla cosa stessa non puo' andare fuori sincrono con lei,
+   come invece potrebbe un `hidden` acceso e spento a mano dallo script. */
+.esiti-sezione:has(ul.esiti:empty) {
+  display: none;
 }
 
 ul.esiti li {
   position: relative;
-  background: var(--carta);
-  border-radius: 18px;
-  box-shadow: var(--ombra-card);
-  padding: 0.85rem 1.1rem;
-  margin-bottom: 0.75rem;
+  border-radius: 12px;
+  padding: 0.5rem 0.85rem;
+  margin-bottom: 0.45rem;
   font-size: 0.93rem;
+}
+
+ul.esiti li:last-child {
+  margin-bottom: 0;
 }
 
 /* Il marcatore sulla linea: colore, segno e parola insieme, mai il colore da
@@ -633,7 +647,9 @@ ul.esiti li::before {
   line-height: 1;
   background: var(--accento);
   color: #ffffff;
-  box-shadow: 0 0 0 4px var(--sfondo);
+  /* L'anello serve a bucare la linea del tempo, quindi e' del colore di cio'
+     che ha dietro: da quando la lista sta dentro una scheda, e' il bianco. */
+  box-shadow: 0 0 0 4px var(--carta);
 }
 
 ul.esiti li.rifiutato::before {
@@ -1222,10 +1238,12 @@ a.marchio.come-collegamento {
   color: inherit;
 }
 
-/* Il passaggio da un passo all'altro. Sta da solo, centrato e staccato dalle
-   schede: e' l'unica cosa da premere quando i documenti sono dentro. */
+/* Il passaggio da un passo all'altro. Sta da solo e staccato dalle schede:
+   e' l'unica cosa da premere quando i documenti sono dentro. Allineato a
+   sinistra come tutto il resto — era centrato, e in una pila di schede
+   allineate a sinistra un secondo asse si legge come uno scarto, non come
+   un'enfasi. A farlo risaltare basta lo stacco verticale. */
 .avanti {
-  text-align: center;
   padding: 1.5rem 0 0.5rem;
 }
 
@@ -1241,11 +1259,12 @@ a.marchio.come-collegamento {
 
 .avanti .suggerimento {
   max-width: 34rem;
-  margin: 0.8rem auto 0;
+  margin: 0.8rem 0 0;
 }
 
-/* Il testo evidenziato, sotto «Mostrami dove»: chiuso di default perche' serve
-   a controllare, non a decidere. */
+/* Il testo evidenziato: sempre in pagina, sotto il riepilogo. Stava dietro un
+   pulsante «Mostrami dove», e un controllo che bisogna prima scoprire non
+   viene fatto — chi deve solo decidere si ferma comunque al riepilogo. */
 .dettaglio {
   border-left: 3px solid var(--accento);
 }
@@ -1269,6 +1288,30 @@ a.marchio.come-collegamento {
   background: var(--chip);
   border-left: 3px solid var(--tenue);
   color: var(--tenue);
+}
+
+/* Il campo della passphrase vecchia: etichetta, casella e spiegazione una sotto
+   l'altra. Era un `div` senza regole con dentro tre elementi in linea, e la
+   riga usciva come una frase sola con in mezzo una casella di testo. Stessa
+   forma dei campi di `.modulo-config`, che e' il pattern gia' in casa; non la
+   riusa direttamente perche' quelle regole sono annidate sotto il modulo della
+   configurazione, e allargarne la portata toccherebbe una schermata che qui
+   non c'entra. */
+#campo-altra-passphrase {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 28rem;
+  margin: 0.7rem 0 0.2rem;
+}
+
+#campo-altra-passphrase input {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--bordo);
+  border-radius: 0.5rem;
+  font: inherit;
+  background: var(--carta);
+  color: inherit;
 }
 
 .esiti .ripristinato {
