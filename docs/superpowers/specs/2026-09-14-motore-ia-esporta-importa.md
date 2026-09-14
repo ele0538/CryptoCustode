@@ -60,6 +60,28 @@ il file esportato è ora esplicitamente fatto per essere riscritto dall'utente, 
 documento che rientra non è più il documento che è uscito. La §11 dice cosa succede
 quando quella riscrittura tocca i tag.
 
+**La decisione 4 («tutte le categorie mascherate di default, incluse date e importi»)
+è ribaltata.** Un fascicolo nuovo **non maschera niente**: tutte e dodici le
+categorie partono spente, e l'utente accende quelle che gli servono.
+
+La ragione è emersa alla prima prova su un documento vero, il 2026-09-14, e la
+decisione è del proprietario del prodotto dopo averla vista all'opera. Con tutto
+mascherato, un contratto di locazione perde il canone, la decorrenza e la scadenza:
+il testo che l'utente consegna all'IA non dice più quanto si paga né quando. La
+prudenza integrale non proteggeva di più — produceva un documento svuotato da
+riaprire pezzo per pezzo, e chi conosce il documento preferisce partire da zero e
+scegliere.
+
+**Il rischio va scritto qui per intero, perché è l'unico posto dove viene deciso.**
+Chi carica un documento, non tocca nessun interruttore e preme Esporta, esporta il
+documento **in chiaro**. Nessun controllo automatico lo ferma, ed è il contrario di
+quello che la decisione 4 originale garantiva. Restano due mitigazioni, entrambe
+deboli e dichiarate tali: l'analisi mostra comunque ogni dato che ha trovato,
+evidenziato e col suo segnaposto accanto, quindi l'utente *vede* cosa sta per
+lasciar passare; e il gate di approvazione lo obbliga a premere un secondo pulsante
+prima che il testo esca. Nessuna delle due sostituisce un default sicuro: la
+sicurezza, in questo disegno, è responsabilità di chi usa lo strumento.
+
 **L'invariante 4 della §4 («il dizionario non appare in nessuna risposta HTTP») è
 emendato.** La tabella di revisione di D7 mostra all'utente, per ogni tag, il valore
 reale che sostituisce: senza quella colonna non c'è niente da rivedere. Il dizionario

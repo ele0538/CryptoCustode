@@ -10,14 +10,11 @@ from cryptocustode.core.errors import (
     VaultVersionNotSupported,
 )
 from cryptocustode.core.models import (
-    Ambiguity,
-    AmbiguityKind,
     Category,
     Document,
-    Entity,
-    Source,
-    Span,
     State,
+    StatoTag,
+    Tag,
     fascicolo_vuoto,
 )
 
@@ -35,34 +32,19 @@ def fascicolo_popolato():
             sha256="a" * 64,
         )
     )
-    fascicolo.spans.append(
-        Span(
-            span_id="d1:0-11:PERSONA",
-            doc_id="d1",
-            start=0,
-            end=11,
-            category=Category.PERSONA,
-            source=Source.NER,
-            entity_id="e1",
-        )
+    fascicolo.tags["[PERSONA_1]"] = Tag(
+        tag="[PERSONA_1]",
+        categoria=Category.PERSONA,
+        valore="Mario Rossi",
+        occorrenze=2,
+        stato=StatoTag.APPLICATO,
     )
-    fascicolo.entities["e1"] = Entity(
-        entity_id="e1",
-        category=Category.PERSONA,
-        placeholder="[PERSONA_1]",
-        canonical_value="Mario Rossi",
-        variants={"Mario Rossi", "M. Rossi"},
-    )
-    fascicolo.ambiguities.append(
-        Ambiguity(
-            ambiguity_id="a1",
-            kind=AmbiguityKind.SAME_NAME_NO_CF,
-            category=Category.PERSONA,
-            candidate_entity_ids=["e1"],
-            occurrence_span_ids=["d1:0-11:PERSONA"],
-        )
-    )
+    fascicolo.analizzati.add("d1")
     fascicolo.counters[Category.PERSONA] = 1
+    # Entrambi scritti a mano, e non lasciati al default: il round trip deve
+    # conservare uno stato **misto**, e uno stato che coincide col default non
+    # proverebbe che sia stato conservato invece che ricostruito da zero.
+    fascicolo.category_enabled[Category.PERSONA] = True
     fascicolo.category_enabled[Category.DATA] = False
     fascicolo.state = State.PENDING_REVIEW
     return fascicolo
@@ -73,24 +55,39 @@ def test_round_trip_conserva_il_fascicolo():
     ricaricato = vault.carica(vault.salva(originale, PASSWORD), PASSWORD)
     assert ricaricato.fascicolo_id == originale.fascicolo_id
     assert ricaricato.documents == originale.documents
-    assert ricaricato.spans == originale.spans
     assert ricaricato.state == originale.state
+    assert ricaricato.tags == originale.tags
+    assert ricaricato.analizzati == originale.analizzati
 
 
-def test_round_trip_conserva_le_entita_con_le_varianti():
-    originale = fascicolo_popolato()
-    ricaricato = vault.carica(vault.salva(originale, PASSWORD), PASSWORD)
-    entita = ricaricato.entities["e1"]
-    assert entita.canonical_value == "Mario Rossi"
-    assert entita.variants == {"Mario Rossi", "M. Rossi"}
-    assert entita.category is Category.PERSONA
-
-
-def test_round_trip_conserva_le_ambiguita():
-    ricaricato = vault.carica(vault.salva(fascicolo_popolato(), PASSWORD), PASSWORD)
-    assert len(ricaricato.ambiguities) == 1
-    assert ricaricato.ambiguities[0].kind is AmbiguityKind.SAME_NAME_NO_CF
-    assert ricaricato.ambiguities[0].blocca_approvazione is True
+def test_il_round_trip_conserva_la_tabella_dei_tag():
+    # Costruiamo i tag come letterali invece di passare per `assegna_tag`: il
+    # vault deve rileggere qualunque `Tag` valido, non solo quelli che quella
+    # funzione produce, e qui copriamo due categorie diverse più uno stato
+    # DISATTIVATO per esercitare davvero il round-trip dell'enum.
+    fascicolo = fascicolo_vuoto("f1")
+    fascicolo.tags = {
+        "[PERSONA_1]": Tag(
+            tag="[PERSONA_1]",
+            categoria=Category.PERSONA,
+            valore="Mario Rossi",
+            occorrenze=2,
+            stato=StatoTag.APPLICATO,
+        ),
+        "[INDIRIZZO_1]": Tag(
+            tag="[INDIRIZZO_1]",
+            categoria=Category.INDIRIZZO,
+            valore="Via Roma 1",
+            occorrenze=1,
+            stato=StatoTag.DISATTIVATO,
+        ),
+    }
+    fascicolo.counters = {Category.PERSONA: 1, Category.INDIRIZZO: 1}
+    fascicolo.analizzati.add("d1")
+    riletto = vault.carica(vault.salva(fascicolo, PASSWORD), PASSWORD)
+    assert riletto.tags == fascicolo.tags
+    assert riletto.counters == fascicolo.counters
+    assert riletto.analizzati == {"d1"}
 
 
 def test_round_trip_conserva_i_contatori():
@@ -229,32 +226,15 @@ def test_il_messaggio_della_versione_futura_e_distinto(monkeypatch):
     assert str(vault.VAULT_VERSION) in messaggio
 
 
-def test_una_versione_piu_vecchia_si_carica_ancora(monkeypatch):
-    """La guardia chiude solo in avanti: un vault scritto prima resta apribile,
-    altrimenti aggiornare l'app butterebbe via il lavoro dell'utente."""
-    blob = _blob_con_versione(monkeypatch, 1)
-    assert vault.carica(blob, PASSWORD).fascicolo_id == "f1"
-
-
-def test_un_vault_v1_con_cf_di_troppo_si_carica_ignorando_la_chiave(monkeypatch):
-    """La promessa scritta accanto a `VAULT_VERSION = 2`: i vault della v1
-    portano un `cf` per entità, caduto con l'emendamento della §7 (issue #12),
-    e devono restare leggibili."""
-    originale = vault._a_dizionario
-
-    def con_cf(fascicolo):
-        dati = originale(fascicolo)
-        dati["vault_version"] = 1
-        for entita in dati["entities"].values():
-            entita["cf"] = "RSSMRC80A01H501W"
-        return dati
-
-    monkeypatch.setattr(vault, "_a_dizionario", con_cf)
-    blob = vault.salva(fascicolo_popolato(), PASSWORD)
-    monkeypatch.undo()
-    ricaricato = vault.carica(blob, PASSWORD)
-    assert ricaricato.entities["e1"].canonical_value == "Mario Rossi"
-    assert not hasattr(ricaricato.entities["e1"], "cf")
+def test_un_vault_di_formato_precedente_non_e_leggibile():
+    """La §10 del 2026-09-10 prometteva che un formato più vecchio restasse
+    leggibile. La promessa cade qui, ed è una rottura deliberata: leggere un
+    vault v2 richiederebbe di tenere in vita `Span`, `Entity` e `Ambiguity`
+    solo per tradurli, e non esiste alcun vault v2 reale — l'esportazione che
+    li avrebbe scritti arriva in fase 2. Il messaggio lo dice all'utente invece
+    di fallire con una diagnosi incomprensibile."""
+    with pytest.raises(VaultVersionNotSupported):
+        vault._verifica_versione(2)
 
 
 def test_una_versione_non_intera_e_illeggibile(monkeypatch):

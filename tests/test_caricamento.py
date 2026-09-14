@@ -27,6 +27,9 @@ from fastapi.testclient import TestClient
 from cryptocustode.api.app import STATO_HTTP, UI, crea_app, stato_http_di
 from cryptocustode.api.routes_fascicolo import ID_FASCICOLO_ATTIVO, crea_router
 from cryptocustode.core.errors import (
+    AIKeyMissing,
+    AIResponseInvalid,
+    AIUnavailable,
     DuplicateFilename,
     ExportNotAllowed,
     FascicoloFull,
@@ -36,12 +39,13 @@ from cryptocustode.core.errors import (
     MalformedPlaceholder,
     ScannedDocumentRejected,
     UnknownPlaceholder,
-    UnresolvedAmbiguities,
     UploadTooLarge,
+    VaultNotFound,
     VaultUnreadable,
     VaultVersionNotSupported,
 )
 from cryptocustode.state.session import SessionStore
+from tests.doppi import RilevatoreFinto
 from tests.pdf_di_prova import pdf_di_prova
 
 ROTTA = "/api/fascicolo/documenti"
@@ -284,8 +288,9 @@ def test_ogni_errore_di_dominio_ha_uno_stato_http_dichiarato():
 
 
 def test_la_tabella_degli_stati_trascrive_la_spec():
-    """`STATO_HTTP` non è una scelta dell'API: è la trascrizione della
-    tabella della spec §13, che è l'autorità.
+    """`STATO_HTTP` non è una scelta dell'API: è la trascrizione delle
+    tabelle della §13 della spec del 2026-09-10 e della §12 della spec del
+    2026-09-14, che sono l'autorità.
 
     Il confronto con un letterale scritto a mano è un rilevatore di
     cambiamenti, e qui è esattamente quello che serve: sei di queste righe
@@ -302,12 +307,15 @@ def test_la_tabella_degli_stati_trascrive_la_spec():
         FascicoloNotFound: 404,
         ExportNotAllowed: 409,
         IntegrityError: 409,
-        UnresolvedAmbiguities: 409,
         UnknownPlaceholder: 422,
         MalformedPlaceholder: 422,
         VaultUnreadable: 422,
         VaultVersionNotSupported: 422,
         UploadTooLarge: 413,
+        AIKeyMissing: 503,
+        AIUnavailable: 503,
+        AIResponseInvalid: 502,
+        VaultNotFound: 404,
     }
 
 
@@ -357,7 +365,7 @@ def test_il_campo_multipart_dello_script_e_quello_che_la_route_aspetta():
     script = (UI / "app.js").read_text(encoding="utf-8")
     [campo] = re.findall(r'corpo\.append\("([^"]+)"', script)
 
-    router = crea_router(SessionStore())
+    router = crea_router(SessionStore(), RilevatoreFinto())
     [rotta] = [r for r in router.routes if getattr(r, "path", "") == ROTTA]
     parametri = set(inspect.signature(rotta.endpoint).parameters)
 

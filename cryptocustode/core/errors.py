@@ -51,10 +51,6 @@ class IntegrityError(CryptoCustodeError):
     """Il testo mascherato è cambiato dopo l'approvazione."""
 
 
-class UnresolvedAmbiguities(CryptoCustodeError):
-    """Approvazione richiesta con ambiguità bloccanti ancora aperte."""
-
-
 class UnknownPlaceholder(CryptoCustodeError):
     """Segnaposto ben formato ma estraneo al dizionario del fascicolo."""
 
@@ -93,4 +89,42 @@ class UploadTooLarge(CryptoCustodeError):
     nel layer HTTP — ma l'errore resta di dominio, così passa dal gate della
     §13 come tutti gli altri e l'utente riceve un messaggio in italiano invece
     di un 500.
+    """
+
+
+class AIKeyMissing(CryptoCustodeError):
+    """Chiave di Gemini assente, o piano non attestato come a pagamento.
+
+    È un 503 e non un 500: non è un difetto del server, è una dipendenza non
+    configurata, cioè un servizio indisponibile per una ragione che l'utente
+    può rimuovere. Il messaggio deve dire come.
+
+    L'attestazione del piano a pagamento è la decisione D8 della spec del
+    2026-09-14: sul piano gratuito i termini di Gemini vietano l'invio di dati
+    personali, e questa applicazione non manda altro.
+    """
+
+
+class AIUnavailable(CryptoCustodeError):
+    """Gemini irraggiungibile, in timeout, o in errore di trasporto.
+
+    Chi la solleva deve aver lasciato il fascicolo esattamente com'era: niente
+    analisi parziale, niente tag a metà (spec §6).
+    """
+
+
+class AIResponseInvalid(CryptoCustodeError):
+    """Risposta che lo schema non accetta, o categoria fuori dall'enum.
+
+    È un 502 e non un 503 perché la reazione dell'utente è diversa: sul 503
+    riprova, sul 502 riprova e, se si ripete, c'è qualcosa da segnalare.
+    """
+
+
+class VaultNotFound(CryptoCustodeError):
+    """Nessun vault corrisponde al file che l'utente sta importando.
+
+    Dichiarato qui in fase 1 benché lo sollevi solo la fase 3: la tabella degli
+    errori è un contratto dell'applicazione, e il test di esaustività la
+    pretende completa. Il repo lo fa già per le righe 409 dell'esportazione.
     """

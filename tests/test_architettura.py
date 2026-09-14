@@ -11,6 +11,14 @@ VIETATI = {
     "uvicorn",
     "starlette",
     "cryptocustode.state",
+    # Dalla spec del 2026-09-14: il fornitore IA è fuori da `core/`, che ne
+    # conosce solo il `Protocol` di `core/rilevatore.py`. Senza queste righe il
+    # primo client scritto dentro `core/` passerebbe senza che nessuno se ne
+    # accorga, e l'invariante resterebbe vero solo per abitudine.
+    "httpx",
+    "requests",
+    "google",
+    "cryptocustode.ai",
 }
 
 # Invariante 2 della spec §4: `mask.py` deve essere deterministica, perché
@@ -97,21 +105,23 @@ def test_core_non_importa_http_ne_stato():
     assert violazioni == [], "core/ deve restare puro:\n" + "\n".join(violazioni)
 
 
-def test_mask_non_importa_filesystem_orologio_ne_random():
-    """Invariante 2 della spec §4. Il gate di integrità dell'esportazione
-    ricalcola l'hash sul testo mascherato e lo confronta con `approval_hash`:
-    se la mascheratura non fosse deterministica, quel confronto fallirebbe a
-    caso e l'unica difesa contro una mutazione dopo l'approvazione cadrebbe."""
-    percorso = CORE / "mask.py"
-    trovati = nomi_vietati_in(
-        percorso.read_text(encoding="utf-8"),
-        pacchetto_del_file(percorso),
-        VIETATI | VIETATI_IN_MASK,
-    )
-    assert trovati == set(), (
-        "core/mask.py deve restare deterministica, ma importa: "
-        + ", ".join(sorted(trovati))
-    )
+def test_il_divieto_di_determinismo_copre_anche_tagga():
+    """`tagga.py` è attraversata da `hash_approvazione` come `mask.py`: se non
+    fosse deterministica, il confronto con `approval_hash` fallirebbe a caso."""
+    for nome in ("mask.py", "tagga.py"):
+        percorso = CORE / nome
+        trovati = nomi_vietati_in(
+            percorso.read_text(encoding="utf-8"),
+            pacchetto_del_file(percorso),
+            VIETATI | VIETATI_IN_MASK,
+        )
+        assert trovati == set(), f"core/{nome} deve restare deterministica: {trovati}"
+
+
+def test_rileva_un_client_http_dentro_core():
+    assert nomi_vietati_in("from google import genai\n", PACCHETTO_DI_PROVA) == {
+        "google", "google.genai"
+    }
 
 
 def test_il_divieto_su_mask_rileva_un_import_di_orologio():
@@ -123,10 +133,11 @@ def test_il_divieto_su_mask_rileva_un_import_di_orologio():
     assert trovati == {"datetime", "datetime.datetime"}
 
 
-def test_il_divieto_su_mask_non_riguarda_gli_altri_moduli_di_core():
-    """`entities.py` usa `uuid` per gli identificativi e resta legittimo: il
-    divieto aggiuntivo è di `mask.py`, non di tutto `core/`."""
-    assert nomi_vietati_in("import uuid\n", PACCHETTO_DI_PROVA) == set()
+def test_il_divieto_di_determinismo_non_riguarda_tutto_core():
+    """`vault.py` usa `os` per salt e nonce e `datetime` per `created_at`, ed
+    è legittimo: il divieto è di `mask.py` e `tagga.py`, non di tutto `core/`."""
+    assert nomi_vietati_in("import os\n", PACCHETTO_DI_PROVA) == set()
+    assert nomi_vietati_in("from datetime import timezone\n", PACCHETTO_DI_PROVA) == set()
 
 
 # --- Test della funzione pura nomi_vietati_in --------------------------------

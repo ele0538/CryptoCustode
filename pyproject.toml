@@ -21,11 +21,20 @@ cryptocustode = ["ui/*.html", "ui/*.css", "ui/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers -p no:cacheprovider"
+addopts = "-q --strict-markers -p no:cacheprovider -m 'not rete'"
 markers = [
-    "lento: test che caricano il modello spaCy",
     "rete: test che richiedono connettività o una API key",
 ]
+# `-m 'not rete'` sopra è ciò che tiene questi test fuori dalla suite di
+# default (spec §4 invariante 5, spec §13): senza, `python -m pytest -q`
+# farebbe chiamate vere a Gemini a ogni esecuzione, su qualunque macchina dove
+# la chiave è impostata — e `verifica_configurazione_ia` la rende obbligatoria
+# per far partire l'applicazione. Costano denaro e mandano testo di documenti
+# a un servizio terzo: due ragioni sufficienti a tenerli fuori per scelta e
+# non per l'assenza accidentale della chiave su questa macchina. Lo `skipif`
+# dentro `tests/test_documenti_di_verifica.py` resta al suo posto come seconda
+# cintura, non come unica: da solo dipendeva da una proprietà della macchina,
+# non del codice. Per eseguirli di proposito: `pytest -m rete`.
 # Due deprecazioni a monte, emesse all'import di `fastapi.testclient` e non da
 # codice nostro: starlette 1.6 preferisce `httpx2` a `httpx` (che la spec §3
 # pinna, e che il TestClient usa comunque senza problemi), e usa un alias di

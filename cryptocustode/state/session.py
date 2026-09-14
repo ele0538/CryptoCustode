@@ -3,53 +3,35 @@
 `state/` può importare `core/`; l'invariante 1 vieta il verso opposto.
 """
 
-from cryptocustode.core.entities import risolvi_ambiguita_omonimia, suggerisci_fusioni
-from cryptocustode.core.errors import (
-    ExportNotAllowed,
-    FascicoloNotFound,
-    IntegrityError,
-    UnresolvedAmbiguities,
-)
+from cryptocustode.core.errors import ExportNotAllowed, FascicoloNotFound, IntegrityError
 from cryptocustode.core.mask import hash_approvazione, maschera_documento
 from cryptocustode.core.models import Fascicolo, State
 
 
 def analisi_completata(fascicolo: Fascicolo) -> None:
-    """DRAFT -> PENDING_REVIEW, popolando le code delle ambiguità.
+    """DRAFT -> PENDING_REVIEW.
 
-    Le due code si calcolano qui e non dentro `analizza_documento` perché le
-    omonimie sono una proprietà del fascicolo intero: hanno senso solo quando
-    tutti i documenti sono stati analizzati. Senza queste due chiamate la coda
-    resterebbe vuota e `approva` non troverebbe mai nulla da bloccare.
+    Prima popolava anche le due code delle ambiguità. Non esistono più: con il
+    contratto B (spec §2 del 2026-09-14) due occorrenze della stessa stringa
+    sono lo stesso tag per costruzione, quindi non c'è più un momento in cui
+    due entità distinte esistano e si possa chiedere all'utente quale sia
+    quale. Il costo è dichiarato al limite noto 2 della §16: l'omonimia fra
+    documenti, che prima era intercettata e bloccante, ora è silenziosa.
     """
-    risolvi_ambiguita_omonimia(fascicolo)
-    suggerisci_fusioni(fascicolo)
     fascicolo.state = State.PENDING_REVIEW
 
 
 def approva(fascicolo: Fascicolo) -> None:
     """PENDING_REVIEW -> APPROVED, calcolando l'hash del testo mascherato.
 
-    Rifiutata se lo stato non è PENDING_REVIEW: la macchina a stati della
-    spec §8 autorizza solo questa transizione. Un DRAFT non ha ancora
-    attraversato `analisi_completata`, quindi approvarlo firmerebbe
-    l'hash del testo non ancora mascherato.
-
-    Rifiutata anche se restano ambiguità bloccanti non risolte: sono le
-    omonimie reali, quelle in cui approvare significherebbe fondere o
-    separare due persone senza che nessuno abbia deciso quale delle due
-    (spec §7).
+    Rifiutata se lo stato non è PENDING_REVIEW: un DRAFT non ha ancora
+    attraversato `analisi_completata`, quindi approvarlo firmerebbe l'hash di
+    un testo non ancora mascherato.
     """
     if fascicolo.state is not State.PENDING_REVIEW:
         raise ValueError(
             f"impossibile approvare un fascicolo nello stato {fascicolo.state.value!r}: "
             "serve PENDING_REVIEW"
-        )
-    bloccanti = [a for a in fascicolo.ambiguities if a.blocca_approvazione]
-    if bloccanti:
-        elenco = ", ".join(a.ambiguity_id for a in bloccanti)
-        raise UnresolvedAmbiguities(
-            f"il fascicolo ha ambiguità da risolvere prima dell'approvazione: {elenco}"
         )
     fascicolo.approval_hash = hash_approvazione(fascicolo)
     fascicolo.state = State.APPROVED

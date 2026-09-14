@@ -29,8 +29,8 @@ function elementoFinto(nome) {
     files: [],
     value: "",
     // `dataset`, `checked` e `replaceChildren` sono arrivati con la revisione
-    // (issue #4): gli interruttori sono caselle di spunta, gli span portano il
-    // proprio identificativo in `data-span-id`, e ogni toggle ridisegna da capo
+    // (issue #4): gli interruttori sono caselle di spunta, le evidenziazioni
+    // portano il proprio tag in `data-tag`, e ogni toggle ridisegna da capo
     // la pagina invece di ritoccarla. Sono aggiunte: nessuno scenario del
     // caricamento le usa, e il loro comportamento non è cambiato.
     dataset: {},
@@ -105,8 +105,8 @@ const CARICATO = {
 // concatenati ricompongono `TESTO_REVISIONE` carattere per carattere, che è la
 // proprietà su cui poggia tutta la revisione (spec §2 decisione 2).
 const TESTO_REVISIONE = "Il sig. Mario Rossi paga 1.200,00 euro.";
-const SPAN_PERSONA = "d_uno:8-19:PERSONA";
-const SPAN_IMPORTO = "d_uno:25-38:IMPORTO";
+const TAG_PERSONA = "[PERSONA_1]";
+const TAG_IMPORTO = "[IMPORTO_1]";
 
 function revisioneFinta({ persona = true, importo = true } = {}) {
   return {
@@ -115,23 +115,22 @@ function revisioneFinta({ persona = true, importo = true } = {}) {
       { categoria: "PERSONA", attiva: persona, quanti: 1 },
       { categoria: "IMPORTO", attiva: importo, quanti: 1 },
     ],
-    ambiguita: { totale: 1, bloccanti: 1 },
     documenti: [
       {
         doc_id: "d_uno",
         filename: "uno.txt",
         segmenti: [
-          { testo: "Il sig. ", span_id: null, categoria: null, mascherato: false, segnaposto: null },
+          { testo: "Il sig. ", tag: null, categoria: null, mascherato: false, segnaposto: null },
           {
-            testo: "Mario Rossi", span_id: SPAN_PERSONA, categoria: "PERSONA",
-            mascherato: persona, segnaposto: "[PERSONA_1]",
+            testo: "Mario Rossi", tag: TAG_PERSONA, categoria: "PERSONA",
+            mascherato: persona, segnaposto: TAG_PERSONA,
           },
-          { testo: " paga ", span_id: null, categoria: null, mascherato: false, segnaposto: null },
+          { testo: " paga ", tag: null, categoria: null, mascherato: false, segnaposto: null },
           {
-            testo: "1.200,00 euro", span_id: SPAN_IMPORTO, categoria: "IMPORTO",
-            mascherato: importo, segnaposto: "[IMPORTO_1]",
+            testo: "1.200,00 euro", tag: TAG_IMPORTO, categoria: "IMPORTO",
+            mascherato: importo, segnaposto: TAG_IMPORTO,
           },
-          { testo: ".", span_id: null, categoria: null, mascherato: false, segnaposto: null },
+          { testo: ".", tag: null, categoria: null, mascherato: false, segnaposto: null },
         ],
       },
     ],
@@ -216,14 +215,14 @@ const SCENARI = {
       },
     ],
   },
-  "revisione-span-spento": {
+  "revisione-tag-spento": {
     risposte: [
       { stato: 200, json: revisioneFinta() },
       { stato: 200, json: revisioneFinta({ importo: false }) },
     ],
     eventi: [
       { su: "avvia-analisi", tipo: "click" },
-      { su: "documenti", tipo: "click", cerca: { spanId: SPAN_IMPORTO } },
+      { su: "documenti", tipo: "click", cerca: { tag: TAG_IMPORTO } },
     ],
   },
   "revisione-analisi-rifiutata": {
@@ -386,11 +385,16 @@ async function eseguiRevisione() {
       );
       return {
         filename: titolo === undefined ? null : titolo.textContent,
+        // `elemento` è il nome del tag HTML disegnato (`mark` o `span`); `tag`
+        // è il tag di dominio della revisione (`[PERSONA_1]`, ...). Sono due
+        // cose diverse che condividevano il nome per un caso di vocabolario:
+        // qui restano distinte, altrimenti la seconda sovrascriverebbe la
+        // prima nell'oggetto letterale.
         segmenti: (corpo === undefined ? [] : corpo.figli).map((nodo) => ({
-          tag: nodo.nome,
+          elemento: nodo.nome,
           classe: nodo.className,
           testo: nodo.textContent,
-          span_id: nodo.dataset.spanId ?? null,
+          tag: nodo.dataset.tag ?? null,
           categoria: nodo.dataset.categoria ?? null,
           mascherato: nodo.dataset.mascherato ?? null,
         })),

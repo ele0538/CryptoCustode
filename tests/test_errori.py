@@ -1,14 +1,16 @@
-"""Tiene insieme la tabella degli errori della spec §13 e le eccezioni di
+"""Tiene insieme le tabelle degli errori delle due spec e le eccezioni di
 `cryptocustode/core/errors.py`.
 
-L'elenco atteso non è più scritto a mano qui: viene letto dalla §13, che è il
-documento che dichiara di essere l'autorità. Prima era una costante copiata, e
-il test prometteva nel nome un controllo che non faceva — una classe aggiunta
-alla spec e dimenticata nel codice passava in silenzio (issue #26).
+L'elenco atteso non è più scritto a mano qui: viene letto dalla §13 della spec
+del 2026-09-10 e dalla §12 della spec del 2026-09-14, che sono i documenti che
+dichiarano di essere l'autorità. Prima era una costante copiata, e il test
+prometteva nel nome un controllo che non faceva — una classe aggiunta alla
+spec e dimenticata nel codice passava in silenzio (issue #26).
 
 Il prezzo è una dipendenza dal formato del markdown, ed è consapevole: se un
-giorno la §13 cambia forma, `test_la_tabella_della_spec_resta_leggibile`
-fallisce per primo e dice che è cambiato il documento, non il codice.
+giorno una di quelle tabelle cambia forma,
+`test_la_tabella_della_spec_resta_leggibile` fallisce per prima e dice che è
+cambiato il documento, non il codice.
 """
 import inspect
 import re
@@ -21,12 +23,26 @@ from cryptocustode.core.errors import CryptoCustodeError
 from cryptocustode.core.ingest import config
 
 RADICE = Path(__file__).resolve().parents[1]
-SPEC = RADICE / "docs" / "superpowers" / "specs" / "2026-09-10-cryptocustode-design.md"
+SPEC_BASE = RADICE / "docs" / "superpowers" / "specs" / "2026-09-10-cryptocustode-design.md"
+SPEC_IA = RADICE / "docs" / "superpowers" / "specs" / "2026-09-14-motore-ia-esporta-importa.md"
 
-# L'intestazione che identifica la colonna delle eccezioni nella tabella della
-# §13. Si cerca per nome e non per posizione: riordinare le colonne è il modo
-# più probabile in cui quella tabella verrà toccata.
-COLONNA_ERRORE = "Errore nel core"
+# La colonna cambia nome fra le due tabelle: la §13 dice "Errore nel core", la
+# §12 dice "Errore". Si cerca per nome e non per posizione, perché riordinare
+# le colonne è il modo più probabile in cui quelle tabelle verranno toccate.
+TABELLE = ((SPEC_BASE, "13", "Errore nel core"), (SPEC_IA, "12", "Errore"))
+
+RITIRATI: set[str] = {"UnresolvedAmbiguities"}
+"""Errori ritirati dalle spec ma ancora nominati da una spec vecchia.
+
+La §12 della spec del 2026-09-14 manda in pensione `UnresolvedAmbiguities`
+insieme al sottosistema che lo generava (§5): il task 10 lo ha tolto da
+`errors.py` e da `cryptocustode/state/session.py`. La §13 della spec del
+2026-09-10, però, è un documento più vecchio e continua a nominarlo nella sua
+tabella — non viene riscritta per un errore che non genera più. Senza questa
+riga il confronto di uguaglianza più sotto fallirebbe non perché il codice sia
+sbagliato, ma perché una spec superata cita ancora una classe che non esiste
+più: è esattamente il caso che questo insieme esiste per assorbire.
+"""
 
 
 def _celle(riga: str) -> list[str]:
@@ -41,24 +57,26 @@ def _e_separatore(campi: list[str]) -> bool:
 
 
 def _nome_nudo(cella: str) -> str:
-    """Il nome della classe senza la decorazione del markdown: la §13 usa i
-    backtick per i nomi e il grassetto per gli HTTP notevoli, e niente vieta che
-    un giorno usi entrambi sulla stessa cella."""
+    """Il nome della classe senza la decorazione del markdown: le tabelle usano
+    i backtick per i nomi e il grassetto per gli HTTP notevoli, e niente vieta
+    che un giorno usino entrambi sulla stessa cella."""
     return cella.strip(" *`")
 
 
-def _errori_dichiarati_dalla_spec() -> set[str]:
-    """Le eccezioni nominate dalla tabella della §13.
+def _errori_di_tabella(percorso: Path, sezione_numero: str, colonna: str) -> set[str]:
+    """Le eccezioni nominate dalla tabella di una sezione di una spec.
 
     Legge solo le righe di tabella, quindi i paragrafi di motivazione che
-    seguono — e che citano fra backtick `VaultUnreadable`, `CryptoCustodeError`
-    e `KeyError` — non entrano nel conto. Fallisce a voce alta invece di
+    seguono — e che citano fra backtick nomi di classi che non sono nella
+    tabella — non entrano nel conto. Fallisce a voce alta invece di
     restituire un insieme vuoto: un vuoto qui farebbe fallire il confronto più
     sotto, e la diagnosi partirebbe da `errors.py`, dove il problema non è.
     """
-    testo = SPEC.read_text(encoding="utf-8")
-    sezione = re.search(r"^## 13\..*?(?=^## |\Z)", testo, re.MULTILINE | re.DOTALL)
-    assert sezione is not None, f"sezione §13 non trovata in {SPEC}"
+    testo = percorso.read_text(encoding="utf-8")
+    sezione = re.search(
+        rf"^## {sezione_numero}\..*?(?=^## |\Z)", testo, re.MULTILINE | re.DOTALL
+    )
+    assert sezione is not None, f"sezione §{sezione_numero} non trovata in {percorso}"
 
     nomi: set[str] = set()
     indice: int | None = None
@@ -71,8 +89,8 @@ def _errori_dichiarati_dalla_spec() -> set[str]:
             continue
         campi = _celle(riga)
         if indice is None:
-            if COLONNA_ERRORE in campi:
-                indice = campi.index(COLONNA_ERRORE)
+            if colonna in campi:
+                indice = campi.index(colonna)
             continue
         if _e_separatore(campi):
             nel_corpo = True
@@ -81,20 +99,41 @@ def _errori_dichiarati_dalla_spec() -> set[str]:
             nomi.add(_nome_nudo(campi[indice]))
 
     assert nomi, (
-        f"nessuna riga letta dalla tabella della §13 di {SPEC}: "
-        f"manca una tabella con la colonna {COLONNA_ERRORE!r}"
+        f"nessuna riga letta dalla tabella della §{sezione_numero} di {percorso}: "
+        f"manca una tabella con la colonna {colonna!r}"
     )
     return nomi
 
 
-NOMI_DALLA_SPEC = _errori_dichiarati_dalla_spec()
+def _errori_dichiarati_dalle_spec() -> set[str]:
+    dichiarati: set[str] = set()
+    for percorso, sezione, colonna in TABELLE:
+        dichiarati |= _errori_di_tabella(percorso, sezione, colonna)
+    return dichiarati - RITIRATI
 
 
-def test_la_tabella_della_spec_resta_leggibile():
-    """Sorveglia il lettore, non il codice: se la §13 cambia formato o se la
-    colonna letta scivola su un'altra, qui si vede subito, perché le celle delle
-    altre colonne non sono nomi di classe."""
-    assert all(nome.isidentifier() for nome in NOMI_DALLA_SPEC), NOMI_DALLA_SPEC
+NOMI_DALLA_SPEC = _errori_dichiarati_dalle_spec()
+
+
+@pytest.mark.parametrize("percorso, sezione, colonna", TABELLE)
+def test_la_tabella_della_spec_resta_leggibile(percorso, sezione, colonna):
+    """Se un giorno una di queste tabelle cambia forma, questo test fallisce
+    per primo e dice che è cambiato il documento, non il codice.
+
+    Non basta che l'insieme sia non vuoto: se la colonna scivolasse su quella
+    vicina, `_errori_di_tabella` tornerebbe comunque non vuoto — pieno di
+    prosa invece di nomi di classi — e questo test passerebbe mentre
+    `test_esistono_tutti_gli_errori_della_spec` fallirebbe al posto suo,
+    puntando chi legge su `errors.py`, dove il problema non è. Un nome che non
+    è un identificatore Python è il segnale che la colonna letta non è più
+    quella giusta.
+    """
+    nomi = _errori_di_tabella(percorso, sezione, colonna)
+    assert nomi
+    assert all(nome.isidentifier() for nome in nomi), (
+        f"la colonna {colonna!r} di {percorso} non contiene solo nomi di "
+        f"classi: {sorted(nomi)}"
+    )
 
 
 def test_esistono_tutti_gli_errori_della_spec():
