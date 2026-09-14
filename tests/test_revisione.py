@@ -735,8 +735,33 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
 
     assert "contenteditable" not in pagina
     assert "<textarea" not in pagina
-    tipi = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', pagina, flags=re.S))
-    assert tipi <= {"file"}, f"la pagina ha campi di immissione inattesi: {sorted(tipi)}"
+
+    # La configurazione ha per forza dei campi da scrivere — modello, prezzi,
+    # chiave, passphrase — e ammetterli in blocco svuoterebbe questa guardia:
+    # passerebbe anche un campo di testo aggiunto un domani nella revisione,
+    # che è esattamente la cosa che qui si vuole rendere impossibile.
+    #
+    # Quindi non si allarga l'elenco dei tipi, si guarda **dove** stanno: fuori
+    # dal pannello di configurazione gli unici campi ammessi restano quelli di
+    # prima. Il criterio regge anche quando la configurazione crescerà, e
+    # continua a far rosso se un campo scrivibile compare accanto al testo.
+    inizio = pagina.index('id="pannello-config"')
+    fine = pagina.index("</section>", inizio)
+    fuori_dal_pannello = pagina[:inizio] + pagina[fine:]
+
+    tipi = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', fuori_dal_pannello, flags=re.S))
+    assert tipi <= {"file"}, (
+        "fuori dalla configurazione la pagina ha campi di immissione inattesi: "
+        f"{sorted(tipi)}"
+    )
+
+    # E dentro il pannello: nessun campo che possa contenere il testo di un
+    # documento. `textarea` è già escluso sopra per tutta la pagina.
+    dentro = pagina[inizio:fine]
+    tipi_config = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', dentro, flags=re.S))
+    assert tipi_config <= {"text", "number", "password"}, (
+        f"la configurazione ha campi inattesi: {sorted(tipi_config)}"
+    )
 
 
 def test_lo_script_non_costruisce_nessun_elemento_modificabile():

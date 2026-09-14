@@ -76,6 +76,17 @@ globalThis.document = {
   },
 };
 
+// `window` esiste perché la pagina vera lo usa per due cose che un DOM finto
+// non ha: la conferma prima di buttare via il fascicolo, e l'aggancio con cui
+// `app.js` chiede a `config.js` di riaggiornare la spesa dopo un'analisi (sono
+// due `<script>`, non due moduli, quindi non possono importarsi a vicenda).
+//
+// `confirm` risponde **sì**: gli scenari che premono "Svuota" vogliono provare
+// cosa succede dopo la conferma. Uno scenario che volesse provare l'annullamento
+// lo rimetterebbe a `false` per sé.
+globalThis.window = globalThis;
+globalThis.confirm = () => true;
+
 globalThis.FormData = class {
   constructor() {
     this.parti = [];
@@ -96,6 +107,10 @@ const CARICATO = {
     documenti_nel_fascicolo: 1,
     massimo_documenti: 10,
     segnaposto_preesistenti: [],
+    // I totali arrivano dal server, calcolati sul fascicolo intero (#50).
+    // Prima la pagina se li sommava da sé, e quella somma non sapeva scendere:
+    // dopo uno svuotamento continuava a dichiarare documenti che non c'erano.
+    totali: { documenti: 1, massimo_documenti: 10, pagine: 1, caratteri: 61, avvisi: 0 },
   },
 };
 
@@ -164,6 +179,13 @@ const SCENARI = {
           { posizione: 4, segnaposto: "[PERSONA_1]" },
           { posizione: 20, segnaposto: "[LUOGO_2]" },
         ],
+        totali: {
+          documenti: 2,
+          massimo_documenti: 10,
+          pagine: 4,
+          caratteri: 101,
+          avvisi: 2,
+        },
       },
     },
   ],
@@ -178,7 +200,12 @@ const SCENARI = {
   "tetto-dal-payload": [
     {
       stato: 201,
-      json: { ...CARICATO.json, documenti_nel_fascicolo: 3, massimo_documenti: 7 },
+      json: {
+        ...CARICATO.json,
+        documenti_nel_fascicolo: 3,
+        massimo_documenti: 7,
+        totali: { ...CARICATO.json.totali, documenti: 3, massimo_documenti: 7 },
+      },
     },
   ],
   "avvisi-molti": [
@@ -190,6 +217,7 @@ const SCENARI = {
           posizione: indice * 10,
           segnaposto: `[PERSONA_${indice + 1}]`,
         })),
+        totali: { ...CARICATO.json.totali, avvisi: 8 },
       },
     },
   ],

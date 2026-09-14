@@ -20,6 +20,7 @@ const esiti = document.getElementById("esiti");
 const conteggio = document.getElementById("conteggio");
 const card = document.getElementById("card-caricamento");
 const fileScelti = document.getElementById("file-scelti");
+const svuota = document.getElementById("svuota-fascicolo");
 
 // Le quattro cifre grandi della scheda del fascicolo. I documenti li dice il
 // server a ogni risposta (è lui a sapere quanti sono); pagine, caratteri e
@@ -31,7 +32,11 @@ const metriche = {
   caratteri: document.getElementById("metrica-caratteri"),
   avvisi: document.getElementById("metrica-avvisi"),
 };
-const totali = { pagine: 0, caratteri: 0, avvisi: 0 };
+// Niente accumulatore qui: i totali arrivano dal server a ogni risposta.
+// Sommarli nella pagina era la metà della #50 che sopravviveva anche al
+// ridisegno — un accumulatore non scende mai, quindi dopo lo svuotamento del
+// fascicolo avrebbe continuato a dichiarare i caratteri di documenti che non
+// ci sono più.
 
 function aggiungi(classe, testo, dettaglio) {
   const riga = document.createElement("li");
@@ -89,15 +94,17 @@ function mostraAvvisi(nome, segnaposto) {
   }
 }
 
-function aggiornaMetriche(esito) {
-  totali.pagine += esito.pagine;
-  totali.caratteri += esito.caratteri;
-  totali.avvisi += esito.segnaposto_preesistenti.length;
-  metriche.documenti.textContent = String(esito.documenti_nel_fascicolo);
-  metriche.tetto.textContent = `/ ${esito.massimo_documenti}`;
+function aggiornaMetriche(totali) {
+  metriche.documenti.textContent = String(totali.documenti);
+  metriche.tetto.textContent = `/ ${totali.massimo_documenti}`;
   metriche.pagine.textContent = String(totali.pagine);
   metriche.caratteri.textContent = String(totali.caratteri);
   metriche.avvisi.textContent = String(totali.avvisi);
+  conteggio.textContent =
+    totali.documenti === 0
+      ? "Nessun documento nel fascicolo."
+      : `Documenti nel fascicolo: ${totali.documenti} di ${totali.massimo_documenti}.`;
+  svuota.hidden = totali.documenti === 0;
 }
 
 function descriviScelta(files) {
@@ -143,11 +150,7 @@ async function carica(file) {
     estrattoDi(esito.testo)
   );
   mostraAvvisi(file.name, esito.segnaposto_preesistenti);
-  aggiornaMetriche(esito);
-
-  conteggio.textContent =
-    `Documenti nel fascicolo: ${esito.documenti_nel_fascicolo} ` +
-    `di ${esito.massimo_documenti}.`;
+  aggiornaMetriche(esito.totali);
 }
 
 // La stessa strada per il modulo e per il trascinamento: un file per richiesta,
@@ -327,6 +330,13 @@ function disegna(revisione) {
 avvio.addEventListener("click", async () => {
   statoAnalisi.textContent = "Analisi in corso…";
   disegna(await chiedi(ROTTA_ANALISI));
+  // L'analisi è l'unico momento in cui si spende: il riquadro della spesa si
+  // aggiorna qui e non a intervalli, così il numero cambia quando l'utente sta
+  // guardando il motivo per cui è cambiato. `config.js` espone l'aggancio sulla
+  // finestra perché i due file sono due `<script>`, non due moduli.
+  if (typeof window.aggiornaSpesa === "function") {
+    await window.aggiornaSpesa();
+  }
 });
 
 // Un gestore solo sul contenitore, e non uno per interruttore: gli
@@ -352,3 +362,85 @@ documenti.addEventListener("click", async (evento) => {
   const attivo = evento.target.dataset.mascherato !== "1";
   disegna(await chiedi(ROTTA_TAG, { tag, attivo }));
 });
+
+
+// --- Lo stato al primo disegno e dopo il refresh (issue #50) ----------------
+//
+// La pagina nasceva sempre vuota e non aveva modo di sapere che il server
+// teneva ancora il fascicolo: da lì i tre sintomi della #50 — la scheda a zero
+// dopo un F5, il file ricaricato rifiutato come duplicato «anche se non c'era
+// più niente», e i documenti vecchi che riaffioravano in revisione al primo
+// «Analizza». Non erano tre bug, era la pagina che non chiedeva mai.
+//
+// Si chiede una volta sola, all'avvio, e poi si riusa la stessa risposta che
+// ogni rotta restituisce: la regola resta quella già scelta per i toggle — la
+// pagina disegna ciò che il server dice di avere, e non tiene una seconda
+// copia dello stato.
+
+const ROTTA_STATO = "/api/fascicolo";
+
+function ridisegnaTutto(stato) {
+  if (stato === null) {
+    return;
+  }
+  aggiornaMetriche(stato.totali);
+  // Le sezioni della revisione si disegnano solo se c'è qualcosa: un
+  // fascicolo appena svuotato deve lasciare la pagina pulita, non gli
+  // interruttori dell'analisi precedente.
+  if (stato.documenti.length === 0) {
+    categorie.replaceChildren();
+    documenti.replaceChildren();
+    statoAnalisi.textContent = "";
+    return;
+  }
+  disegnaInterruttori(stato.categorie);
+  disegnaDocumenti(stato.documenti);
+}
+
+async function leggiStato() {
+  let risposta;
+  try {
+    risposta = await fetch(ROTTA_STATO);
+  } catch (errore) {
+    // All'avvio questo non è allarmante quanto sembra: la pagina può essere
+    // aperta da un segnalibro mentre il server non c'è. Si dice, e basta.
+    statoAnalisi.textContent = "L'applicazione non risponde: è ancora avviata?";
+    return null;
+  }
+  if (!risposta.ok) {
+    return null;
+  }
+  try {
+    return await risposta.json();
+  } catch (errore) {
+    return null;
+  }
+}
+
+svuota.addEventListener("click", async () => {
+  // Una conferma, perché il gesto non si disfa: il fascicolo vive solo nella
+  // memoria del processo, quindi qui non c'è niente da recuperare dopo.
+  const quanti = metriche.documenti.textContent;
+  const messaggio =
+    `Butto via il fascicolo con ${quanti} ` +
+    `${quanti === "1" ? "documento" : "documenti"}? ` +
+    "Il testo vive solo nella memoria di questo programma: non si torna indietro.";
+  if (!window.confirm(messaggio)) {
+    return;
+  }
+  let risposta;
+  try {
+    risposta = await fetch(ROTTA_STATO, { method: "DELETE" });
+  } catch (errore) {
+    statoAnalisi.textContent = "L'applicazione non risponde: è ancora avviata?";
+    return;
+  }
+  if (!risposta.ok) {
+    return;
+  }
+  esiti.replaceChildren();
+  ridisegnaTutto(await risposta.json());
+});
+
+// `defer` non serve: lo script è in fondo al body, quindi il DOM c'è già.
+leggiStato().then(ridisegnaTutto);

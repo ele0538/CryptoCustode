@@ -143,6 +143,151 @@ h1 {
   cursor: not-allowed;
 }
 
+/* Un passo attraversato e funzionante: non e' quello corrente (niente ombra di
+   scheda) ma non e' nemmeno spento. Senza questo stato i chip avevano solo
+   "attivo" o "inattivo", e la revisione — che funziona — doveva per forza
+   mentire in una delle due direzioni. */
+.passo.fatto {
+  color: var(--inchiostro);
+  opacity: 1;
+}
+
+/* Il pulsante che butta via il fascicolo. Resta una pillola chiara e non
+   diventa rosso pieno: e' un'azione rara e distruttiva, e un bottone che urla
+   accanto a "Documenti 3" invita a premerlo per curiosita'. Il colore arriva
+   quando ci passi sopra, cioe' quando lo stai per premere davvero. */
+.pillola.pericolo {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.pillola.pericolo:hover,
+.pillola.pericolo:focus-visible {
+  border-color: var(--rifiuto, #b3261e);
+  color: var(--rifiuto, #b3261e);
+}
+
+/* --- Configurazione e spesa ------------------------------------------------
+   Questi blocchi stanno a meta' file, e non in coda, perche' la coda e'
+   dell'altra sessione che sta portando il vault: due sessioni che aggiungono
+   entrambe "in fondo" finiscono per forza sullo stesso contesto di diff. */
+
+#apri-config {
+  margin-left: auto;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+#apri-config:hover,
+#apri-config:focus-visible {
+  border-color: var(--bordo, rgba(0, 0, 0, 0.15));
+}
+
+.configurazione {
+  border-left: 3px solid var(--accento, #2b6cb0);
+}
+
+.config-testa {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+#chiudi-config {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+#chiudi-config:hover,
+#chiudi-config:focus-visible {
+  border-color: var(--bordo, rgba(0, 0, 0, 0.15));
+}
+
+.modulo-config {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-width: 46rem;
+}
+
+.modulo-config .campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.modulo-config label {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.modulo-config input {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--bordo, rgba(0, 0, 0, 0.18));
+  border-radius: 0.5rem;
+  font: inherit;
+  background: var(--carta, #fff);
+  color: inherit;
+}
+
+.modulo-config small {
+  font-size: 0.8rem;
+}
+
+.campo-riga {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
+.campo-riga .campo {
+  flex: 1 1 11rem;
+}
+
+.campo-riga .campo-stretto {
+  flex: 0 0 6rem;
+}
+
+#modulo-sblocco {
+  flex-direction: row;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Le due righe della spesa. Il costo grande, i token sotto in piccolo: il
+   numero che interessa e' quanto si e' speso, i token servono a chi vuole
+   controllare che il conto torni. */
+.spesa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 0.6rem 0 0;
+}
+
+.voce-spesa dt {
+  font-size: 0.8rem;
+  color: var(--tenue);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.voce-spesa dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.voce-spesa dd.tenue {
+  font-size: 0.8rem;
+}
+
 .didascalia {
   margin: 0.9rem 0 1.4rem;
   max-width: 62rem;
