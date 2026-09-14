@@ -18,12 +18,6 @@ class Category(str, Enum):
     CATASTO = "CATASTO"
 
 
-class Source(str, Enum):
-    RULE = "RULE"
-    NER = "NER"
-    MANUAL = "MANUAL"
-
-
 class StatoTag(str, Enum):
     """Cosa è successo a un tag nel fascicolo (spec §5 del 2026-09-14)."""
 
@@ -47,28 +41,6 @@ class State(str, Enum):
     DRAFT = "DRAFT"
     PENDING_REVIEW = "PENDING_REVIEW"
     APPROVED = "APPROVED"
-
-
-class AmbiguityKind(str, Enum):
-    SAME_NAME_NO_CF = "SAME_NAME_NO_CF"
-    HEURISTIC_MERGE_SUGGESTION = "HEURISTIC_MERGE_SUGGESTION"
-
-
-# Priorità decrescente: 1 consuma il testo prima di 2, e così via (spec §6).
-PRIORITA: dict[Category, int] = {
-    Category.CF: 1,
-    Category.IBAN: 1,
-    Category.PIVA: 1,
-    Category.EMAIL: 2,
-    Category.TELEFONO: 2,
-    Category.CATASTO: 2,
-    Category.PRATICA: 2,
-    Category.DATA: 3,
-    Category.IMPORTO: 3,
-    Category.PERSONA: 4,
-    Category.AZIENDA: 4,
-    Category.INDIRIZZO: 4,
-}
 
 
 @dataclass(frozen=True)
@@ -133,61 +105,13 @@ class Mascheratura:
     regioni: list[Regione]
 
 
-@dataclass(frozen=True)
-class Span:
-    span_id: str
-    doc_id: str
-    start: int
-    end: int
-    category: Category
-    source: Source
-    entity_id: str
-    enabled: bool = True
-
-    @property
-    def priorita(self) -> int:
-        return PRIORITA[self.category]
-
-    @property
-    def lunghezza(self) -> int:
-        return self.end - self.start
-
-
-@dataclass
-class Entity:
-    entity_id: str
-    category: Category
-    placeholder: str
-    canonical_value: str
-    variants: set[str] = field(default_factory=set)
-
-
-@dataclass
-class Ambiguity:
-    ambiguity_id: str
-    kind: AmbiguityKind
-    category: Category
-    candidate_entity_ids: list[str]
-    occurrence_span_ids: list[str]
-    resolved: bool = False
-
-    @property
-    def blocca_approvazione(self) -> bool:
-        """Solo le omonimie reali bloccano: ignorare un suggerimento significa
-        tenere le entità separate, che è il default sicuro (spec §7)."""
-        return self.kind is AmbiguityKind.SAME_NAME_NO_CF and not self.resolved
-
-
 @dataclass
 class Fascicolo:
     MAX_DOCUMENTI = 10
 
     fascicolo_id: str
     documents: list[Document] = field(default_factory=list)
-    spans: list[Span] = field(default_factory=list)
-    entities: dict[str, Entity] = field(default_factory=dict)
     category_enabled: dict[Category, bool] = field(default_factory=dict)
-    ambiguities: list[Ambiguity] = field(default_factory=list)
     state: State = State.DRAFT
     approval_hash: str | None = None
     counters: dict[Category, int] = field(default_factory=dict)

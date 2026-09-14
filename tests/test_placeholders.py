@@ -8,11 +8,25 @@ invisibile. Con il formato dichiarato in tre punti, un generatore che emettesse
 """
 import pytest
 
-from cryptocustode.core.entities import prossimo_placeholder
 from cryptocustode.core.ingest.loader import segnaposto_preesistenti
-from cryptocustode.core.models import Category, fascicolo_vuoto
+from cryptocustode.core.models import Category, Rilevazione
 from cryptocustode.core.placeholders import SEGNAPOSTO, costruisci_segnaposto
+from cryptocustode.core.tagga import assegna_tag
 from cryptocustode.core.unmask import ripristina
+
+
+def _genera_placeholder(tabella, contatori, categoria, valore):
+    """Il rimpiazzo di `prossimo_placeholder`, cancellata con `core/entities.py`.
+
+    `assegna_tag` è il generatore vero: qui gli si passa una `Rilevazione` di
+    un valore mai visto prima, cosicché produca sempre un segnaposto nuovo per
+    `categoria`, e si legge la stringa del tag dalla tabella che restituisce.
+    """
+    nuova, contati = assegna_tag(
+        [Rilevazione(valore=valore, categoria=categoria)], tabella, contatori
+    )
+    generato = next(tag.tag for tag in nuova.values() if tag.valore == valore)
+    return generato, nuova, contati
 
 
 def test_il_costruttore_produce_la_forma_canonica():
@@ -46,11 +60,13 @@ def test_la_regex_severa_rifiuta_le_forme_vicine(vicino):
 
 @pytest.mark.parametrize("categoria", list(Category))
 def test_ogni_categoria_generata_e_riconosciuta_dalla_regex_severa(categoria):
-    """Il generatore vero (`prossimo_placeholder`), non una stringa scritta a
-    mano, per tutte le categorie della spec e non solo per PERSONA."""
-    fascicolo = fascicolo_vuoto("f1")
-    for _ in range(11):
-        generato = prossimo_placeholder(fascicolo, categoria)
+    """Il generatore vero (`assegna_tag`), non una stringa scritta a mano, per
+    tutte le categorie della spec e non solo per PERSONA."""
+    tabella, contatori = {}, {}
+    for indice in range(11):
+        generato, tabella, contatori = _genera_placeholder(
+            tabella, contatori, categoria, f"valore-{indice}"
+        )
         assert SEGNAPOSTO.fullmatch(generato), (
             f"il generatore ha prodotto {generato!r}, che la regex severa non "
             "riconosce: ogni ripristino morirebbe con MalformedPlaceholder"
@@ -60,8 +76,7 @@ def test_ogni_categoria_generata_e_riconosciuta_dalla_regex_severa(categoria):
 def test_un_segnaposto_generato_attraversa_il_ripristino():
     """Il giro completo attraverso il consumatore vero: `ripristina` non deve
     mai vedere come alterato un segnaposto che abbiamo generato noi."""
-    fascicolo = fascicolo_vuoto("f1")
-    generato = prossimo_placeholder(fascicolo, Category.PERSONA)
+    generato, _, _ = _genera_placeholder({}, {}, Category.PERSONA, "Mario Rossi")
     dizionario = {generato: "Mario Rossi"}
     assert ripristina(f"Firmato da {generato}.", dizionario) == "Firmato da Mario Rossi."
 
@@ -69,8 +84,7 @@ def test_un_segnaposto_generato_attraversa_il_ripristino():
 def test_un_segnaposto_generato_viene_segnalato_nel_testo_in_ingresso():
     """L'altro lettore: l'avviso sul testo caricato (spec §12) deve riconoscere
     la stessa forma che la mascheratura produce."""
-    fascicolo = fascicolo_vuoto("f1")
-    generato = prossimo_placeholder(fascicolo, Category.IBAN)
+    generato, _, _ = _genera_placeholder({}, {}, Category.IBAN, "IT60X0000000000000000000000")
     assert segnaposto_preesistenti(f"bonifico su {generato} oggi") == [
         (12, generato)
     ]

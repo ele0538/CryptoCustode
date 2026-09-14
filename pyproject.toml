@@ -23,7 +23,6 @@ cryptocustode = ["ui/*.html", "ui/*.css", "ui/*.js"]
 testpaths = ["tests"]
 addopts = "-q --strict-markers -p no:cacheprovider"
 markers = [
-    "lento: test che caricano il modello spaCy",
     "rete: test che richiedono connettività o una API key",
 ]
 # Due deprecazioni a monte, emesse all'import di `fastapi.testclient` e non da

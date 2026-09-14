@@ -1,15 +1,30 @@
-"""I sei casi della matrice della consegna e il test anti-fuga generico (spec §14)."""
+"""I casi della matrice della consegna e il test anti-fuga generico (spec §13
+del 2026-09-14, che aggiorna la §14 del 2026-09-10).
+
+`analizza_documento` e la pipeline regole+NER non esistono più: il rilevatore
+è sempre un doppio (`tests/doppi.RilevatoreFinto`, o un doppio locale per i
+casi che devono fallire), come prescrive la spec §13 — «gli unici test che
+chiamano Gemini davvero stanno dietro il marcatore `rete`».
+"""
 
 import pytest
 
-from cryptocustode.core.entities import analizza_documento
 from cryptocustode.core.errors import (
+    AIResponseInvalid,
     ExportNotAllowed,
     ScannedDocumentRejected,
     UnknownPlaceholder,
 )
 from cryptocustode.core.ingest.loader import aggiungi_documento, costruisci_documento
-from cryptocustode.core.models import Category, State, fascicolo_vuoto
+from cryptocustode.core.models import (
+    Category,
+    Fascicolo,
+    Rilevazione,
+    State,
+    StatoTag,
+    fascicolo_vuoto,
+)
+from cryptocustode.core.tagga import assegna_tag, conta_occorrenze, dizionario_di, tagga
 from cryptocustode.core.unmask import ripristina
 from cryptocustode.state.session import (
     SessionStore,
@@ -18,14 +33,13 @@ from cryptocustode.state.session import (
     export_sanitized_text,
     registra_mutazione,
 )
+from tests.doppi import RilevatoreFinto
 from tests.pdf_di_prova import pdf_di_prova
 
 # Le parole di contesto sono scelte di proposito fra quelle *comuni nei documenti
-# veri* e non fra quelle che funzionavano prima della #32: `Codice Fiscale`
-# davanti a un numero di 11 cifre (il codice fiscale di una società ha la forma
-# della P.IVA, e nei contratti è introdotto così, non da `P. IVA`) e `Recapito
-# telefonico:` (forma flessa, coperta da `PREFISSI_CONTESTO`, non da `Cell.`).
-# Una fixture che usa sempre la forma fortunata non sorveglia niente.
+# veri*: `Codice Fiscale` davanti a un numero di 11 cifre (il codice fiscale di
+# una società ha la forma della P.IVA) e `Recapito telefonico:` sono forme che
+# compaiono per davvero nei contratti, non solo quelle "fortunate".
 TESTO_RICCO = (
     "Il contratto è firmato da Mario Rossi, codice fiscale RSSMRA85M01H501Q, "
     "per la ditta individuale con Codice Fiscale 12345678903 "
@@ -33,50 +47,89 @@ TESTO_RICCO = (
     "Recapito telefonico: 3401234567, mario.rossi@example.com."
 )
 
+# Ciò che un vero Gemini dovrebbe rilevare in TESTO_RICCO: qui è il doppio a
+# dirlo, non un motore a regole. Le sei categorie coprono quelle che la
+# matrice pianta apposta (spec §13).
+RILEVAZIONI_RICCHE = [
+    Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA),
+    Rilevazione(valore="RSSMRA85M01H501Q", categoria=Category.CF),
+    Rilevazione(valore="12345678903", categoria=Category.PIVA),
+    Rilevazione(valore="IT60X0542811101000000123456", categoria=Category.IBAN),
+    Rilevazione(valore="3401234567", categoria=Category.TELEFONO),
+    Rilevazione(valore="mario.rossi@example.com", categoria=Category.EMAIL),
+]
 
-def fascicolo_con(testo: str, nome: str = "contratto.txt", usa_ner: bool = False):
+
+class RilevatoreCheFallisce:
+    """Il doppio del caso TC-08: il modello ha risposto fuori schema.
+
+    `RilevatoreFinto` non solleva mai — risponde solo ciò che il test gli ha
+    dato — quindi "il modello risponde male" non è nella sua responsabilità:
+    serve un doppio a parte che imita `AIResponseInvalid` così come la
+    solleverebbe il client vero (spec §6).
+    """
+
+    def rileva(self, testo: str) -> list[Rilevazione]:
+        raise AIResponseInvalid("la risposta del modello non rispetta lo schema")
+
+
+def analizza(fascicolo: Fascicolo, rilevatore) -> None:
+    """Lo stesso giro della route `POST /analisi` (`routes_fascicolo.py`),
+    ripetuto qui perché quella route vive fuori dai file che questo task può
+    toccare: raccoglie tutte le rilevazioni prima di scrivere, così un
+    rilevatore che solleva lascia il fascicolo esattamente com'era (spec §6).
+    """
+    rilevazioni: list[Rilevazione] = []
+    for documento in fascicolo.documents:
+        rilevazioni.extend(rilevatore.rileva(documento.text))
+    tabella, contatori = assegna_tag(rilevazioni, fascicolo.tags, fascicolo.counters)
+    mascherature = [tagga(d.text, tabella) for d in fascicolo.documents]
+    fascicolo.tags = conta_occorrenze(tabella, mascherature)
+    fascicolo.counters = contatori
+    fascicolo.analizzati.update(d.doc_id for d in fascicolo.documents)
+
+
+def fascicolo_con(testo: str, rilevatore, nome: str = "contratto.txt") -> Fascicolo:
     fascicolo = fascicolo_vuoto("f1")
     documento = costruisci_documento(nome, testo.encode("utf-8"))
     aggiungi_documento(fascicolo, documento)
-    analizza_documento(fascicolo, documento, usa_ner=usa_ner)
+    analizza(fascicolo, rilevatore)
     analisi_completata(fascicolo)
     return fascicolo
 
 
-def store_con(fascicolo):
+def store_con(fascicolo: Fascicolo) -> SessionStore:
     store = SessionStore()
     store.salva(fascicolo)
     return store
 
 
-@pytest.mark.lento
 def test_anti_fuga_nessun_valore_del_dizionario_compare_nell_esportato():
     """Il test più importante della suite, e i suoi limiti onesti.
 
-    Prova che ogni valore effettivamente rilevato è assente dal testo
-    esportato, e che le categorie che questa fixture pianta deliberatamente
-    (CF, IBAN, P. IVA, email, telefono, persona) sono state davvero rilevate
-    — non solo che il dizionario, qualunque cosa contenga, non fuga. Non può
-    provare l'assenza di valori che il motore non ha mai rilevato: se una
-    categoria futura sfugge al rilevamento, questo test non se ne accorge.
-    Per questo gira con `usa_ner=True`: senza la gamba statistica, PERSONA
-    non verrebbe mai prodotta e la sua assenza non entrerebbe mai in
-    dizionario, restando indimostrata invece che verificata.
+    Prova che ogni valore che il rilevatore ha davvero applicato è assente dal
+    testo esportato, e che le categorie che questa fixture pianta
+    deliberatamente (CF, IBAN, P. IVA, email, telefono, persona) risultano
+    tutte applicate — non solo che la tabella, qualunque cosa contenga, non
+    fuga. Il rilevatore è un doppio (spec §13): non può provare che Gemini
+    *riconoscerebbe* questi valori in un testo mai visto, solo che, una volta
+    rilevati, la mascheratura e l'esportazione non li lasciano trapelare. La
+    misura del richiamo su un documento vero, con un client vero, è compito
+    del test marcato `rete` promesso da una fase successiva, non di questo.
 
     Percorso coperto: `approva` -> `export_sanitized_text`, cioè il gate di
-    stato e il controllo di integrità — ciò che la spec §14 chiede alla
-    lettera, «non compare nel testo *esportato*». La gemella sulla catena di
-    mascheratura, che aggiunge la misura del richiamo su tutte e dodici le
-    categorie, è `test_documenti_di_verifica.py::
-    test_nessun_valore_del_dizionario_sopravvive`; le due convivono perché
-    coprono percorsi diversi, e il confronto per esteso è scritto là.
+    stato e il controllo di integrità — ciò che la spec §13 chiede alla
+    lettera, «non compare nel testo *esportato*».
     """
-    fascicolo = fascicolo_con(TESTO_RICCO, usa_ner=True)
+    fascicolo = fascicolo_con(TESTO_RICCO, RilevatoreFinto(sempre=RILEVAZIONI_RICCHE))
     approva(fascicolo)
     esportato = export_sanitized_text("f1", store_con(fascicolo))
     testo_esportato = "\n".join(esportato.values())
-    assert fascicolo.entities, "il fascicolo deve avere almeno un'entità, altrimenti il test non prova nulla"
-    categorie_rilevate = {entita.category for entita in fascicolo.entities.values()}
+
+    applicati = [tag for tag in fascicolo.tags.values() if tag.stato is StatoTag.APPLICATO]
+    assert applicati, "il fascicolo deve avere almeno un tag applicato, altrimenti il test non prova nulla"
+
+    categorie_rilevate = {tag.categoria for tag in applicati}
     categorie_pianificate = {
         Category.CF,
         Category.IBAN,
@@ -87,14 +140,12 @@ def test_anti_fuga_nessun_valore_del_dizionario_compare_nell_esportato():
     }
     mancanti = categorie_pianificate - categorie_rilevate
     assert not mancanti, (
-        "la fixture pianta queste categorie apposta per essere rilevate; se "
+        "la fixture pianta queste categorie apposta per essere applicate; se "
         f"mancano ({mancanti}) il ciclo sottostante quantifica su meno di "
         "quanto promesso e il test non proverebbe più nulla per loro"
     )
-    for entita in fascicolo.entities.values():
-        assert entita.canonical_value not in testo_esportato
-        for variante in entita.variants:
-            assert variante not in testo_esportato
+    for tag in applicati:
+        assert tag.valore not in testo_esportato
 
 
 def test_TC_01_pdf_con_una_pagina_scansionata_su_cinque_viene_rifiutato():
@@ -103,41 +154,15 @@ def test_TC_01_pdf_con_una_pagina_scansionata_su_cinque_viene_rifiutato():
         costruisci_documento("scansione.pdf", contenuto)
 
 
-@pytest.mark.lento
-def test_TC_02_cf_con_cin_errato_non_diventa_un_codice_fiscale():
-    # RSSMRA85M01H501A ha il CIN sbagliato: la regola lo scarta. Può restare
-    # un'entità NER se il modello lo interpreta come nome, ma non un CF.
-    fascicolo = fascicolo_con(
-        "Il codice fiscale è RSSMRA85M01H501A.", usa_ner=True
-    )
-    categorie = {entita.category for entita in fascicolo.entities.values()}
-    assert Category.CF not in categorie
-
-
-@pytest.mark.lento
-def test_TC_03_due_documenti_con_lo_stesso_nome_e_nessun_cf_bloccano_l_approvazione():
-    fascicolo = fascicolo_vuoto("f1")
-    for indice, testo in enumerate(
-        ["Il conduttore Mario Rossi firma.", "Il garante Mario Rossi firma."]
-    ):
-        documento = costruisci_documento(f"doc{indice}.txt", testo.encode("utf-8"))
-        aggiungi_documento(fascicolo, documento)
-        analizza_documento(fascicolo, documento, usa_ner=True)
-    analisi_completata(fascicolo)
-    assert any(a.blocca_approvazione for a in fascicolo.ambiguities)
-
-
 def test_il_segnaposto_generato_si_ripristina_con_il_valore_canonico():
-    # Chiude il cerchio generatore -> matcher -> dizionario: se un giorno
-    # `prossimo_placeholder` cambiasse formato, questo test lo direbbe
-    # (il ripristino solleverebbe MalformedPlaceholder o UnknownPlaceholder),
-    # e oggi nessun test in tutta la suite lo farebbe.
-    fascicolo = fascicolo_con(TESTO_RICCO)
-    entita = next(iter(fascicolo.entities.values()))
-    frase = f"Confermo {entita.placeholder} per conoscenza."
-    atteso = f"Confermo {entita.canonical_value} per conoscenza."
-    dizionario = {e.placeholder: e.canonical_value for e in fascicolo.entities.values()}
-    assert ripristina(frase, dizionario) == atteso
+    # Chiude il cerchio generatore -> matcher -> dizionario: se un giorno il
+    # formato del segnaposto cambiasse, questo test lo direbbe (il ripristino
+    # solleverebbe MalformedPlaceholder o UnknownPlaceholder).
+    fascicolo = fascicolo_con(TESTO_RICCO, RilevatoreFinto(sempre=RILEVAZIONI_RICCHE))
+    tag = next(iter(fascicolo.tags.values()))
+    frase = f"Confermo {tag.tag} per conoscenza."
+    atteso = f"Confermo {tag.valore} per conoscenza."
+    assert ripristina(frase, dizionario_di(fascicolo.tags)) == atteso
 
 
 def test_TC_04_export_in_stato_draft_e_negato():
@@ -147,18 +172,52 @@ def test_TC_04_export_in_stato_draft_e_negato():
         export_sanitized_text("f1", store_con(fascicolo))
 
 
-def test_TC_05_risposta_con_un_segnaposto_inesistente_interrompe_il_ripristino():
-    fascicolo = fascicolo_con(TESTO_RICCO)
-    dizionario = {e.placeholder: e.canonical_value for e in fascicolo.entities.values()}
+def test_TC_05_un_segnaposto_sconosciuto_interrompe_il_ripristino():
+    fascicolo = fascicolo_con(TESTO_RICCO, RilevatoreFinto(sempre=RILEVAZIONI_RICCHE))
+    dizionario = dizionario_di(fascicolo.tags)
     with pytest.raises(UnknownPlaceholder, match=r"\[PERSONA_99\]"):
         ripristina("Rispondo a [PERSONA_99].", dizionario)
 
 
 def test_TC_06_una_mutazione_dopo_l_approvazione_riporta_in_pending_e_nega_l_export():
-    fascicolo = fascicolo_con(TESTO_RICCO)
+    fascicolo = fascicolo_con(TESTO_RICCO, RilevatoreFinto(sempre=RILEVAZIONI_RICCHE))
     approva(fascicolo)
     assert fascicolo.state is State.APPROVED
     registra_mutazione(fascicolo)
     assert fascicolo.state is State.PENDING_REVIEW
     with pytest.raises(ExportNotAllowed):
         export_sanitized_text("f1", store_con(fascicolo))
+
+
+def test_TC_07_un_valore_che_il_testo_non_contiene_resta_non_trovato():
+    """Il modello ha nominato un valore normalizzato che nel documento non
+    compare alla lettera: la riga resta in tabella come NON_TROVATO, il testo
+    non cambia, e non si solleva nessun errore (spec §7)."""
+    rilevatore = RilevatoreFinto(
+        sempre=[Rilevazione(valore="Rossi Mario", categoria=Category.PERSONA)]
+    )
+    fascicolo = fascicolo_con(TESTO_RICCO, rilevatore)
+
+    [tag] = list(fascicolo.tags.values())
+    assert tag.stato is StatoTag.NON_TROVATO
+    assert tag.occorrenze == 0
+
+    documento = fascicolo.documents[0]
+    assert tagga(documento.text, fascicolo.tags).mascherato == documento.text
+
+
+def test_TC_08_una_risposta_fuori_schema_lascia_il_fascicolo_intatto():
+    """Se il rilevatore solleva `AIResponseInvalid`, il fascicolo non deve
+    cambiare affatto: niente tag scritti a metà, nessun contatore avanzato
+    (spec §6)."""
+    fascicolo = fascicolo_vuoto("f1")
+    documento = costruisci_documento("contratto.txt", TESTO_RICCO.encode("utf-8"))
+    aggiungi_documento(fascicolo, documento)
+
+    with pytest.raises(AIResponseInvalid):
+        analizza(fascicolo, RilevatoreCheFallisce())
+
+    assert fascicolo.tags == {}
+    assert fascicolo.counters == {categoria: 0 for categoria in Category}
+    assert fascicolo.analizzati == set()
+    assert fascicolo.state is State.DRAFT

@@ -2,19 +2,5 @@ fastapi==0.137.1
 uvicorn[standard]==0.49.0
 pymupdf==1.28.0
 cryptography==48.0.0
-spacy==3.8.16
 python-multipart==0.0.20
 google-genai==2.23.0
-
-# Modello NER italiano, obbligatorio per il riconoscimento statistico (spec §3).
-# Non è un pacchetto PyPI, quindi non può stare fra le righe qui sopra: dopo
-# `pip install -r requirements.txt` va installato a parte, con
-#
-#     python -m spacy download it_core_news_lg
-#
-# Senza di lui i test marcati `lento` non passano e `carica_modello` solleva un
-# errore esplicito che ripete questo comando.
-#
-# Il modello occupa circa 550 MB di RAM e `carica_modello` lo tiene in cache per
-# processo: la suite non va eseguita in parallelo da più worktree dello stesso
-# repo, perché ogni processo ne carica una copia propria.
