@@ -135,7 +135,14 @@ def test_l_analisi_usa_il_rilevatore_iniettato(client_con_rilevatore):
     segmenti = revisione["documenti"][0]["segmenti"]
     assert [s["testo"] for s in segmenti] == ["Mario Rossi", " paga."]
     assert segmenti[0]["tag"] == "[PERSONA_1]"
-    assert segmenti[0]["mascherato"] is True
+    assert segmenti[0]["mascherato"] is False, "nessuna categoria parte accesa"
+
+    # Il rilevatore ha fatto il suo lavoro anche con la categoria spenta: il
+    # dato è stato trovato e ha il suo segnaposto, solo non verrà sostituito
+    # finché l'utente non accende l'interruttore. È la distinzione fra
+    # *riconoscere* e *mascherare*, e il default nuovo la rende osservabile.
+    acceso = client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": True})
+    assert acceso.json()["documenti"][0]["segmenti"][0]["mascherato"] is True
 
 
 def test_un_documento_gia_analizzato_non_ripaga_una_chiamata(client_con_rilevatore):
@@ -283,11 +290,12 @@ def test_i_segmenti_serviti_ricompongono_esattamente_il_testo_originale(
     assert categorie == {"PERSONA", "IMPORTO"}, categorie
     assert all(s["tag"] for s in evidenziati)
     # Il default dell'emendamento alla decisione 4 arriva fino al payload che
-    # la pagina disegna: chi identifica una persona parte mascherato, il
-    # contesto parte in chiaro. Asserito per categoria e non in blocco,
-    # altrimenti il test passerebbe con qualunque default.
+    # la pagina disegna: nessuna categoria parte accesa, quindi ogni segmento
+    # è evidenziato — l'utente vede cosa è stato trovato — ma nessuno è ancora
+    # mascherato. Asserito per categoria e non con un `any()`, così il giorno
+    # in cui una categoria tornasse accesa il test dice quale.
     acceso = {s["categoria"]: s["mascherato"] for s in evidenziati}
-    assert acceso == {"PERSONA": True, "IMPORTO": False}, acceso
+    assert acceso == {"PERSONA": False, "IMPORTO": False}, acceso
 
 
 # --- Criterio 2, metà server: gli interruttori cambiano il fascicolo -------
@@ -343,6 +351,10 @@ def test_lo_spegnimento_di_un_tag_non_tocca_gli_altri_tag_della_stessa_categoria
     )
     carica(client, "uno.txt", "Mario Rossi e Luigi Bianchi firmano.")
     client.post(ROTTA_ANALISI)
+    # La categoria va accesa: spegnere un singolo tag dentro una categoria già
+    # spenta non distinguerebbe i due interruttori, che è tutto ciò che questo
+    # test esiste per distinguere.
+    client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": True})
 
     risposta = client.post(ROTTA_TAG, json={"tag": "[PERSONA_1]", "attivo": False})
 

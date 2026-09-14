@@ -33,7 +33,7 @@ from cryptocustode.state.session import (
     export_sanitized_text,
     registra_mutazione,
 )
-from tests.doppi import RilevatoreFinto
+from tests.doppi import RilevatoreFinto, accendi
 from tests.pdf_di_prova import pdf_di_prova
 
 # Le parole di contesto sono scelte di proposito fra quelle *comuni nei documenti
@@ -122,6 +122,11 @@ def test_anti_fuga_nessun_valore_del_dizionario_compare_nell_esportato():
     lettera, «non compare nel testo *esportato*».
     """
     fascicolo = fascicolo_con(TESTO_RICCO, RilevatoreFinto(sempre=RILEVAZIONI_RICCHE))
+    # Un fascicolo nuovo non maschera niente (spec §2, emendamento alla
+    # decisione 4). Questo test parla di cosa succede quando la mascheratura è
+    # accesa: acceso tutto, così l'anti-fuga copre ogni categoria piantata e
+    # non solo quelle che un default avrebbe scelto per noi.
+    accendi(fascicolo)
     approva(fascicolo)
     esportato = export_sanitized_text("f1", store_con(fascicolo))
     testo_esportato = "\n".join(esportato.values())

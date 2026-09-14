@@ -41,6 +41,10 @@ def fascicolo_popolato():
     )
     fascicolo.analizzati.add("d1")
     fascicolo.counters[Category.PERSONA] = 1
+    # Entrambi scritti a mano, e non lasciati al default: il round trip deve
+    # conservare uno stato **misto**, e uno stato che coincide col default non
+    # proverebbe che sia stato conservato invece che ricostruito da zero.
+    fascicolo.category_enabled[Category.PERSONA] = True
     fascicolo.category_enabled[Category.DATA] = False
     fascicolo.state = State.PENDING_REVIEW
     return fascicolo

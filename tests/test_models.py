@@ -32,33 +32,16 @@ def test_fascicolo_vuoto_parte_in_draft_mascherando_chi_identifica():
     assert all(v == 0 for v in f.counters.values())
 
 
-def test_di_default_si_maschera_chi_identifica_una_persona():
-    """Nomi, recapiti, codici: da soli bastano a dire *di chi* si parla."""
-    attive = fascicolo_vuoto("f1").category_enabled
-    for categoria in (
-        Category.PERSONA,
-        Category.AZIENDA,
-        Category.INDIRIZZO,
-        Category.EMAIL,
-        Category.TELEFONO,
-        Category.CF,
-        Category.PIVA,
-        Category.IBAN,
-    ):
-        assert attive[categoria] is True, categoria
+def test_di_default_non_si_maschera_niente():
+    """Si parte da zero e si accende ciò che serve (spec §2, emendamento alla
+    decisione 4).
 
-
-def test_di_default_non_si_maschera_il_contesto():
-    """Date, importi e riferimenti restano in chiaro perché senza di loro il
-    testo consegnato all'IA non basta più a ragionare sul documento, e da soli
-    non dicono di chi si tratti (spec §2, emendamento alla decisione 4)."""
+    Asserito su ogni categoria e non con un `any()`, perché il giorno in cui
+    qualcuno riaccendesse una singola categoria "per sicurezza" questo test
+    deve dire **quale**, non limitarsi a diventare rosso.
+    """
     attive = fascicolo_vuoto("f1").category_enabled
-    for categoria in (
-        Category.DATA,
-        Category.IMPORTO,
-        Category.PRATICA,
-        Category.CATASTO,
-    ):
+    for categoria in Category:
         assert attive[categoria] is False, categoria
 
 

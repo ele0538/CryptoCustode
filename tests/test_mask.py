@@ -6,6 +6,8 @@ from cryptocustode.core.mask import hash_approvazione, maschera_documento, tabel
 from cryptocustode.core.models import Category, Document, Rilevazione, StatoTag, fascicolo_vuoto
 from cryptocustode.core.tagga import assegna_tag
 
+from tests.doppi import accendi
+
 
 def _documento(doc_id: str, filename: str, testo: str) -> Document:
     return Document(
@@ -20,6 +22,9 @@ def _fascicolo(testo="Il sig. Mario Rossi paga.", valori=(("Mario Rossi", Catego
     fascicolo.tags, fascicolo.counters = assegna_tag(
         rilevazioni, fascicolo.tags, fascicolo.counters
     )
+    # Un fascicolo nuovo non maschera niente: questi test parlano di cosa fa
+    # la mascheratura quando è accesa, quindi la accendono.
+    accendi(fascicolo)
     return fascicolo
 
 

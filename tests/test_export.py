@@ -18,6 +18,8 @@ from cryptocustode.core.models import (
     fascicolo_vuoto,
 )
 from cryptocustode.core.tagga import assegna_tag
+
+from tests.doppi import accendi
 from cryptocustode.state.session import (
     SessionStore,
     analisi_completata,
@@ -41,6 +43,10 @@ def fascicolo_approvato():
     fascicolo.tags, fascicolo.counters = assegna_tag(
         rilevazioni, fascicolo.tags, fascicolo.counters
     )
+    # Un fascicolo nuovo non maschera niente: senza questa riga si approverebbe
+    # ed esporterebbe il testo in chiaro, che è un caso legittimo ma non quello
+    # che questi test verificano.
+    accendi(fascicolo, Category.PERSONA)
     analisi_completata(fascicolo)
     approva(fascicolo)
     return fascicolo

@@ -56,6 +56,23 @@ class RilevatoreCheFallisceSuAlcuniTesti:
         return list(self._per_testo[testo])
 
 
+def accendi(fascicolo, *categorie: Category) -> None:
+    """Accende il mascheramento delle categorie indicate, o di tutte se non ne
+    indichi nessuna.
+
+    Dal 2026-09-14 un fascicolo nuovo non maschera niente (spec §2,
+    emendamento alla decisione 4): si parte da zero e si accende ciò che
+    serve. Prima il mascheramento era il default, quindi un test che voleva
+    vedere del testo mascherato non doveva dire nulla; adesso deve dirlo, e
+    questo helper glielo fa dire in una riga invece che in tre.
+
+    Non è una scorciatoia per aggirare il default: è la traduzione, dentro un
+    test, del clic che l'utente fa sull'interruttore.
+    """
+    for categoria in categorie or tuple(Category):
+        fascicolo.category_enabled[categoria] = True
+
+
 def _genera_placeholder(tabella, contatori, categoria: Category, valore: str):
     """Il rimpiazzo di `prossimo_placeholder`, cancellata con `core/entities.py`.
 
