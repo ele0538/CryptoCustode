@@ -158,3 +158,33 @@ def test_la_legenda_usa_le_classi_vere_degli_span():
     assert 'class="evidenza cat-' in corpo, "la legenda non usa le classi vere"
     assert "spenta" in corpo, "la legenda non mostra lo stato «in chiaro»"
     assert "in chiaro" in corpo.lower(), "la legenda non nomina lo stato in parole"
+
+
+def test_i_file_serviti_alla_pagina_sono_testo_pulito():
+    """Nessun carattere di controllo nei file che il browser riceve.
+
+    Non e' teoria: scrivendo il glifo dello span in chiaro come sequenza di
+    escape CSS da uno script, in `style.css` e' finito un **byte NUL**. Il file
+    restava servibile, il browser lo digeriva, e git lo classificava come
+    binario — cioe' da quel momento nessun diff sarebbe stato leggibile. I test
+    di allora guardavano la presenza di «dashed» e «wavy» e non si sono accorti
+    di niente.
+
+    Tab e a capo sono legittimi; tutto il resto sotto lo spazio non lo e'.
+    """
+    for percorso in sorted(UI.iterdir()):
+        if percorso.suffix not in {".css", ".js", ".html"}:
+            continue
+        grezzo = percorso.read_bytes()
+
+        assert b"\x00" not in grezzo, f"{percorso.name} contiene un byte NUL"
+        testo = grezzo.decode("utf-8")  # un errore qui e' gia' il fallimento
+        sospetti = {
+            carattere
+            for carattere in testo
+            if carattere < " " and carattere not in "\t\n\r"
+        }
+        assert not sospetti, (
+            f"{percorso.name} contiene caratteri di controllo: "
+            f"{sorted(hex(ord(c)) for c in sospetti)}"
+        )
