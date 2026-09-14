@@ -34,6 +34,9 @@ from starlette.formparsers import MultiPartParser
 
 from cryptocustode.api.routes_fascicolo import crea_router
 from cryptocustode.core.errors import (
+    AIKeyMissing,
+    AIResponseInvalid,
+    AIUnavailable,
     CryptoCustodeError,
     DuplicateFilename,
     ExportNotAllowed,
@@ -46,6 +49,7 @@ from cryptocustode.core.errors import (
     UnknownPlaceholder,
     UnresolvedAmbiguities,
     UploadTooLarge,
+    VaultNotFound,
     VaultUnreadable,
     VaultVersionNotSupported,
 )
@@ -151,6 +155,10 @@ STATO_HTTP: dict[type[CryptoCustodeError], int] = {
     VaultUnreadable: 422,
     VaultVersionNotSupported: 422,
     UploadTooLarge: 413,
+    AIKeyMissing: 503,
+    AIUnavailable: 503,
+    AIResponseInvalid: 502,
+    VaultNotFound: 404,
 }
 """La tabella della spec §13, trascritta una volta sola.
 
