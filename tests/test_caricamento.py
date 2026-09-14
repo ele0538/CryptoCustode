@@ -27,6 +27,9 @@ from fastapi.testclient import TestClient
 from cryptocustode.api.app import STATO_HTTP, UI, crea_app, stato_http_di
 from cryptocustode.api.routes_fascicolo import ID_FASCICOLO_ATTIVO, crea_router
 from cryptocustode.core.errors import (
+    AIKeyMissing,
+    AIResponseInvalid,
+    AIUnavailable,
     DuplicateFilename,
     ExportNotAllowed,
     FascicoloFull,
@@ -38,6 +41,7 @@ from cryptocustode.core.errors import (
     UnknownPlaceholder,
     UnresolvedAmbiguities,
     UploadTooLarge,
+    VaultNotFound,
     VaultUnreadable,
     VaultVersionNotSupported,
 )
@@ -284,8 +288,9 @@ def test_ogni_errore_di_dominio_ha_uno_stato_http_dichiarato():
 
 
 def test_la_tabella_degli_stati_trascrive_la_spec():
-    """`STATO_HTTP` non è una scelta dell'API: è la trascrizione della
-    tabella della spec §13, che è l'autorità.
+    """`STATO_HTTP` non è una scelta dell'API: è la trascrizione delle
+    tabelle della §13 della spec del 2026-09-10 e della §12 della spec del
+    2026-09-14, che sono l'autorità.
 
     Il confronto con un letterale scritto a mano è un rilevatore di
     cambiamenti, e qui è esattamente quello che serve: sei di queste righe
@@ -308,6 +313,10 @@ def test_la_tabella_degli_stati_trascrive_la_spec():
         VaultUnreadable: 422,
         VaultVersionNotSupported: 422,
         UploadTooLarge: 413,
+        AIKeyMissing: 503,
+        AIUnavailable: 503,
+        AIResponseInvalid: 502,
+        VaultNotFound: 404,
     }
 
 
