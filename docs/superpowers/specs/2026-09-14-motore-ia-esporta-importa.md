@@ -60,6 +60,23 @@ il file esportato è ora esplicitamente fatto per essere riscritto dall'utente, 
 documento che rientra non è più il documento che è uscito. La §11 dice cosa succede
 quando quella riscrittura tocca i tag.
 
+**La decisione 4 («tutte le categorie mascherate di default, incluse date e importi»)
+è emendata.** Un fascicolo nuovo parte mascherando le otto categorie che da sole
+dicono **di chi** parla il documento — `PERSONA`, `AZIENDA`, `INDIRIZZO`, `EMAIL`,
+`TELEFONO`, `CF`, `PIVA`, `IBAN` — e lascia in chiaro le quattro che dicono *cosa* è
+successo: `DATA`, `IMPORTO`, `PRATICA`, `CATASTO`. Tutte e dodici restano accendibili
+e spegnibili una per una: cambia il punto di partenza, non il controllo.
+
+La ragione è emersa alla prima prova su un documento vero, il 2026-09-14. Con tutto
+mascherato, un contratto di locazione perde il canone, la decorrenza e la scadenza:
+il testo che l'utente consegna all'IA non dice più quanto si paga né quando, e
+l'IA non può più rispondergli nulla di utile. La prudenza integrale non proteggeva
+di più — produceva un mascheramento che nessuno userebbe, e uno strumento che non
+viene usato non protegge nessuno. Il rischio residuo è dichiarato: una data di
+nascita o un importo insolito possono contribuire a identificare qualcuno se
+incrociati con altro, e chi lavora su documenti dove quel rischio è concreto accende
+le quattro categorie con un clic.
+
 **L'invariante 4 della §4 («il dizionario non appare in nessuna risposta HTTP») è
 emendato.** La tabella di revisione di D7 mostra all'utente, per ogni tag, il valore
 reale che sostituisce: senza quella colonna non c'è niente da rivedere. Il dizionario

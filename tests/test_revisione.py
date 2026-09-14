@@ -282,7 +282,12 @@ def test_i_segmenti_serviti_ricompongono_esattamente_il_testo_originale(
     categorie = {s["categoria"] for s in evidenziati}
     assert categorie == {"PERSONA", "IMPORTO"}, categorie
     assert all(s["tag"] for s in evidenziati)
-    assert all(s["mascherato"] for s in evidenziati), "spec §2 decisione 4: tutto acceso"
+    # Il default dell'emendamento alla decisione 4 arriva fino al payload che
+    # la pagina disegna: chi identifica una persona parte mascherato, il
+    # contesto parte in chiaro. Asserito per categoria e non in blocco,
+    # altrimenti il test passerebbe con qualunque default.
+    acceso = {s["categoria"]: s["mascherato"] for s in evidenziati}
+    assert acceso == {"PERSONA": True, "IMPORTO": False}, acceso
 
 
 # --- Criterio 2, metà server: gli interruttori cambiano il fascicolo -------
@@ -305,6 +310,11 @@ def test_il_toggle_di_categoria_spegne_il_mascheramento_di_quella_categoria(
     )
     carica(client, "uno.txt", UNO)
     client.post(ROTTA_ANALISI)
+    # `IMPORTO` parte spento (spec §2, emendamento alla decisione 4): lo
+    # accendiamo prima, così l'asserzione più sotto prova davvero che il
+    # toggle tocca solo la categoria richiesta. Su una categoria già al suo
+    # valore predefinito non proverebbe nulla.
+    client.post(ROTTA_CATEGORIA, json={"categoria": "IMPORTO", "attiva": True})
 
     risposta = client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": False})
 

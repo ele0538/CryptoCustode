@@ -131,10 +131,43 @@ class Fascicolo:
     """
 
 
+IDENTIFICANO_UNA_PERSONA: frozenset[Category] = frozenset({
+    Category.PERSONA,
+    Category.AZIENDA,
+    Category.INDIRIZZO,
+    Category.EMAIL,
+    Category.TELEFONO,
+    Category.CF,
+    Category.PIVA,
+    Category.IBAN,
+})
+"""Le categorie che un fascicolo nuovo maschera senza che nessuno glielo chieda.
+
+Sono quelle che da sole bastano a dire **di chi** parla il documento: un nome,
+un recapito, un codice. Le altre — data, importo, pratica, catasto — dicono
+*cosa* è successo, e senza il resto non identificano nessuno.
+
+La divisione è l'emendamento alla decisione 4 della spec del 2026-09-10, che
+mascherava tutto per prudenza. Il costo di quella prudenza si vedeva alla
+prima prova vera: un contratto con date e cifre sostituite da segnaposto non
+dice più quanto si paga né quando scade, e l'IA a cui lo consegni non può più
+risponderti niente di utile. Un mascheramento che rende il testo inservibile
+non viene usato, e un prodotto che non viene usato non protegge nessuno.
+
+Restano tutte e dodici accendibili e spegnibili una per una: questo è il
+punto di partenza, non un vincolo.
+"""
+
+
 def fascicolo_vuoto(fascicolo_id: str) -> Fascicolo:
-    """Un fascicolo nuovo: tutte le categorie mascherate, contatori a zero (spec §5)."""
+    """Un fascicolo nuovo: mascherato chi identifica, contatori a zero (spec §5).
+
+    Ogni categoria ha comunque il suo interruttore, anche quelle che partono
+    spente: `category_enabled` le elenca tutte e dodici, così la UI può
+    mostrarle e `mask.tabella_attiva` non deve indovinare un valore mancante.
+    """
     return Fascicolo(
         fascicolo_id=fascicolo_id,
-        category_enabled={c: True for c in Category},
+        category_enabled={c: c in IDENTIFICANO_UNA_PERSONA for c in Category},
         counters={c: 0 for c in Category},
     )

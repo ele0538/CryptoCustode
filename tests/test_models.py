@@ -22,15 +22,44 @@ def test_document_e_immutabile():
         doc.text = "altro"
 
 
-def test_fascicolo_vuoto_parte_in_draft_con_tutte_le_categorie_attive():
+def test_fascicolo_vuoto_parte_in_draft_mascherando_chi_identifica():
     f = fascicolo_vuoto("f1")
     assert f.fascicolo_id == "f1"
     assert f.state is State.DRAFT
     assert f.approval_hash is None
     assert f.documents == []
-    assert set(f.category_enabled) == set(Category)
-    assert all(f.category_enabled.values()), "di default tutto è mascherato"
+    assert set(f.category_enabled) == set(Category), "ogni categoria ha il suo interruttore"
     assert all(v == 0 for v in f.counters.values())
+
+
+def test_di_default_si_maschera_chi_identifica_una_persona():
+    """Nomi, recapiti, codici: da soli bastano a dire *di chi* si parla."""
+    attive = fascicolo_vuoto("f1").category_enabled
+    for categoria in (
+        Category.PERSONA,
+        Category.AZIENDA,
+        Category.INDIRIZZO,
+        Category.EMAIL,
+        Category.TELEFONO,
+        Category.CF,
+        Category.PIVA,
+        Category.IBAN,
+    ):
+        assert attive[categoria] is True, categoria
+
+
+def test_di_default_non_si_maschera_il_contesto():
+    """Date, importi e riferimenti restano in chiaro perché senza di loro il
+    testo consegnato all'IA non basta più a ragionare sul documento, e da soli
+    non dicono di chi si tratti (spec §2, emendamento alla decisione 4)."""
+    attive = fascicolo_vuoto("f1").category_enabled
+    for categoria in (
+        Category.DATA,
+        Category.IMPORTO,
+        Category.PRATICA,
+        Category.CATASTO,
+    ):
+        assert attive[categoria] is False, categoria
 
 
 def test_il_modello_dichiara_il_tetto_di_dieci_documenti():
