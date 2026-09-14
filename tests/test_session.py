@@ -1,18 +1,8 @@
 import pytest
 
-from cryptocustode.core.entities import aggiungi_span_manuale
-from cryptocustode.core.errors import FascicoloNotFound, UnresolvedAmbiguities
-from cryptocustode.core.models import (
-    Ambiguity,
-    AmbiguityKind,
-    Category,
-    Document,
-    Entity,
-    Source,
-    Span,
-    State,
-    fascicolo_vuoto,
-)
+from cryptocustode.core.errors import FascicoloNotFound
+from cryptocustode.core.models import Category, Document, Rilevazione, State, fascicolo_vuoto
+from cryptocustode.core.tagga import assegna_tag
 from cryptocustode.state.session import (
     SessionStore,
     analisi_completata,
@@ -23,7 +13,7 @@ from cryptocustode.state.session import (
 
 
 def fascicolo_analizzato():
-    """Un fascicolo con un documento, uno span e la sua entità, pronto da approvare."""
+    """Un fascicolo con un documento e un tag, pronto da approvare."""
     fascicolo = fascicolo_vuoto("f1")
     fascicolo.documents.append(
         Document(
@@ -34,45 +24,12 @@ def fascicolo_analizzato():
             sha256="a" * 64,
         )
     )
-    fascicolo.spans.append(
-        Span(
-            span_id="s1",
-            doc_id="d1",
-            start=0,
-            end=11,
-            category=Category.PERSONA,
-            source=Source.NER,
-            entity_id="e1",
-        )
-    )
-    fascicolo.entities["e1"] = Entity(
-        entity_id="e1",
-        category=Category.PERSONA,
-        placeholder="[PERSONA_1]",
-        canonical_value="Mario Rossi",
+    rilevazioni = [Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+    fascicolo.tags, fascicolo.counters = assegna_tag(
+        rilevazioni, fascicolo.tags, fascicolo.counters
     )
     analisi_completata(fascicolo)
     return fascicolo
-
-
-def ambiguita_bloccante():
-    return Ambiguity(
-        ambiguity_id="a1",
-        kind=AmbiguityKind.SAME_NAME_NO_CF,
-        category=Category.PERSONA,
-        candidate_entity_ids=["e1", "e2"],
-        occurrence_span_ids=["s1"],
-    )
-
-
-def ambiguita_non_bloccante():
-    return Ambiguity(
-        ambiguity_id="a2",
-        kind=AmbiguityKind.HEURISTIC_MERGE_SUGGESTION,
-        category=Category.PERSONA,
-        candidate_entity_ids=["e1", "e2"],
-        occurrence_span_ids=["s1"],
-    )
 
 
 def test_un_fascicolo_nuovo_e_in_draft():
@@ -115,36 +72,14 @@ def test_l_approvazione_e_deterministica():
     assert primo.approval_hash == secondo.approval_hash
 
 
-def test_un_ambiguita_bloccante_impedisce_l_approvazione():
+def test_approva_senza_ambiguita_da_controllare():
+    """La coda delle ambiguità non esiste più: con il contratto B due
+    occorrenze della stessa stringa sono lo stesso tag per costruzione, quindi
+    non c'è più un momento in cui due entità distinte esistano (spec §5)."""
     fascicolo = fascicolo_analizzato()
-    fascicolo.ambiguities.append(ambiguita_bloccante())
-    with pytest.raises(UnresolvedAmbiguities, match="a1"):
-        approva(fascicolo)
-
-
-def test_il_rifiuto_lascia_lo_stato_invariato():
-    fascicolo = fascicolo_analizzato()
-    fascicolo.ambiguities.append(ambiguita_bloccante())
-    with pytest.raises(UnresolvedAmbiguities):
-        approva(fascicolo)
-    assert fascicolo.state is State.PENDING_REVIEW
-    assert fascicolo.approval_hash is None
-
-
-def test_un_ambiguita_bloccante_risolta_non_impedisce_l_approvazione():
-    fascicolo = fascicolo_analizzato()
-    ambiguita = ambiguita_bloccante()
-    ambiguita.resolved = True
-    fascicolo.ambiguities.append(ambiguita)
     approva(fascicolo)
     assert fascicolo.state is State.APPROVED
-
-
-def test_un_suggerimento_euristico_non_impedisce_l_approvazione():
-    fascicolo = fascicolo_analizzato()
-    fascicolo.ambiguities.append(ambiguita_non_bloccante())
-    approva(fascicolo)
-    assert fascicolo.state is State.APPROVED
+    assert fascicolo.approval_hash is not None
 
 
 def test_una_mutazione_dopo_l_approvazione_riporta_in_pending_review():
@@ -172,54 +107,6 @@ def test_una_mutazione_in_draft_non_cambia_nulla():
     fascicolo = fascicolo_vuoto("f1")
     registra_mutazione(fascicolo)
     assert fascicolo.state is State.DRAFT
-
-
-def test_l_analisi_popola_la_coda_delle_omonimie():
-    # Senza le due chiamate dentro analisi_completata questa coda resterebbe
-    # vuota per sempre e `approva` non avrebbe mai nulla da bloccare.
-    fascicolo = fascicolo_vuoto("f1")
-    for indice, testo in enumerate(["Il conduttore Mario Rossi.", "Il garante Mario Rossi."]):
-        documento = Document(
-            doc_id=f"d{indice}",
-            filename=f"doc{indice}.txt",
-            text=testo,
-            page_offsets=[0],
-            sha256=f"{indice}" * 64,
-        )
-        fascicolo.documents.append(documento)
-        aggiungi_span_manuale(
-            fascicolo, documento, testo.index("Mario Rossi"),
-            testo.index("Mario Rossi") + 11, Category.PERSONA,
-        )
-    analisi_completata(fascicolo)
-    assert any(a.blocca_approvazione for a in fascicolo.ambiguities)
-
-
-def test_l_analisi_popola_anche_i_suggerimenti_euristici():
-    fascicolo = fascicolo_vuoto("f1")
-    for indice, (testo, nome) in enumerate(
-        [("Il conduttore M. Rossi.", "M. Rossi"), ("Il garante Mario Rossi.", "Mario Rossi")]
-    ):
-        documento = Document(
-            doc_id=f"d{indice}",
-            filename=f"doc{indice}.txt",
-            text=testo,
-            page_offsets=[0],
-            sha256=f"{indice}" * 64,
-        )
-        fascicolo.documents.append(documento)
-        aggiungi_span_manuale(
-            fascicolo, documento, testo.index(nome),
-            testo.index(nome) + len(nome), Category.PERSONA,
-        )
-    analisi_completata(fascicolo)
-    suggerimenti = [
-        a
-        for a in fascicolo.ambiguities
-        if a.kind is AmbiguityKind.HEURISTIC_MERGE_SUGGESTION
-    ]
-    assert len(suggerimenti) == 1
-    assert suggerimenti[0].blocca_approvazione is False
 
 
 def test_il_fascicolo_inesistente_lo_dice_in_italiano_e_cita_l_id():
@@ -265,4 +152,3 @@ def test_lo_store_dice_di_avere_il_fascicolo_che_ha_salvato():
     store = SessionStore()
     store.salva(fascicolo_vuoto("f1"))
     assert store.contiene("f1") is True
-

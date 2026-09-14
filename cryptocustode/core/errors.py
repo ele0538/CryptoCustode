@@ -51,10 +51,6 @@ class IntegrityError(CryptoCustodeError):
     """Il testo mascherato è cambiato dopo l'approvazione."""
 
 
-class UnresolvedAmbiguities(CryptoCustodeError):
-    """Approvazione richiesta con ambiguità bloccanti ancora aperte."""
-
-
 class UnknownPlaceholder(CryptoCustodeError):
     """Segnaposto ben formato ma estraneo al dizionario del fascicolo."""
 

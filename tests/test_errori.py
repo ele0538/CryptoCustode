@@ -31,17 +31,17 @@ SPEC_IA = RADICE / "docs" / "superpowers" / "specs" / "2026-09-14-motore-ia-espo
 # le colonne è il modo più probabile in cui quelle tabelle verranno toccate.
 TABELLE = ((SPEC_BASE, "13", "Errore nel core"), (SPEC_IA, "12", "Errore"))
 
-RITIRATI: set[str] = set()
-"""Errori ritirati dalle spec ma ancora presenti nel codice.
+RITIRATI: set[str] = {"UnresolvedAmbiguities"}
+"""Errori ritirati dalle spec ma ancora nominati da una spec vecchia.
 
-Resta vuoto di proposito. La §12 della spec del 2026-09-14 manda in pensione
-`UnresolvedAmbiguities` insieme al sottosistema che lo generava (§5), ma
-quella classe è ancora definita in `errors.py` e ancora usata da
-`cryptocustode/state/session.py` — è territorio del task 10, non di questo.
-Se la togliessimo di qui, la toglieremmo dall'insieme atteso mentre il codice
-la ha ancora, e il confronto di uguaglianza più sotto fallirebbe subito per un
-motivo sbagliato. `UnresolvedAmbiguities` entrerà qui quando il task 10 la
-rimuoverà davvero dal codice.
+La §12 della spec del 2026-09-14 manda in pensione `UnresolvedAmbiguities`
+insieme al sottosistema che lo generava (§5): il task 10 lo ha tolto da
+`errors.py` e da `cryptocustode/state/session.py`. La §13 della spec del
+2026-09-10, però, è un documento più vecchio e continua a nominarlo nella sua
+tabella — non viene riscritta per un errore che non genera più. Senza questa
+riga il confronto di uguaglianza più sotto fallirebbe non perché il codice sia
+sbagliato, ma perché una spec superata cita ancora una classe che non esiste
+più: è esattamente il caso che questo insieme esiste per assorbire.
 """
 
 

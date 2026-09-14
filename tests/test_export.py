@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from cryptocustode.core.errors import (
@@ -10,12 +12,12 @@ from cryptocustode.core.ingest.loader import aggiungi_documento, costruisci_docu
 from cryptocustode.core.models import (
     Category,
     Document,
-    Entity,
-    Source,
-    Span,
+    Rilevazione,
     State,
+    StatoTag,
     fascicolo_vuoto,
 )
+from cryptocustode.core.tagga import assegna_tag
 from cryptocustode.state.session import (
     SessionStore,
     analisi_completata,
@@ -35,22 +37,9 @@ def fascicolo_approvato():
             sha256="a" * 64,
         )
     )
-    fascicolo.spans.append(
-        Span(
-            span_id="s1",
-            doc_id="d1",
-            start=0,
-            end=11,
-            category=Category.PERSONA,
-            source=Source.NER,
-            entity_id="e1",
-        )
-    )
-    fascicolo.entities["e1"] = Entity(
-        entity_id="e1",
-        category=Category.PERSONA,
-        placeholder="[PERSONA_1]",
-        canonical_value="Mario Rossi",
+    rilevazioni = [Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)]
+    fascicolo.tags, fascicolo.counters = assegna_tag(
+        rilevazioni, fascicolo.tags, fascicolo.counters
     )
     analisi_completata(fascicolo)
     approva(fascicolo)
@@ -97,7 +86,11 @@ def test_testo_cambiato_dopo_l_approvazione_solleva_integrity_error():
     fascicolo = fascicolo_approvato()
     # Lo stato resta APPROVED perché nessuno ha chiamato registra_mutazione:
     # è precisamente il caso che il secondo controllo esiste per intercettare.
-    fascicolo.entities["e1"].placeholder = "[PERSONA_2]"
+    # Spegnere il tag a mano, senza passare da registra_mutazione, cambia il
+    # testo mascherato esattamente come lo faceva mutare `entities["e1"]`.
+    fascicolo.tags["[PERSONA_1]"] = replace(
+        fascicolo.tags["[PERSONA_1]"], stato=StatoTag.DISATTIVATO
+    )
     with pytest.raises(IntegrityError):
         export_sanitized_text("f1", store_con(fascicolo))
 

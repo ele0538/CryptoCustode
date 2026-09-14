@@ -8,66 +8,33 @@ diventerebbe rumore invece di una difesa (spec §4, invariante 2).
 
 import hashlib
 
-from cryptocustode.core.models import Document, Entity, Fascicolo, Span
+from cryptocustode.core.models import Document, Fascicolo, StatoTag, Tag
+from cryptocustode.core.tagga import tagga
 
 
-def span_attivo(span: Span, fascicolo: Fascicolo) -> bool:
-    """Uno span viene mascherato solo se sono chiusi entrambi gli interruttori:
-    quello sul singolo span e quello sulla categoria (spec §5)."""
-    return span.enabled and fascicolo.category_enabled.get(span.category, True)
+def tabella_attiva(fascicolo: Fascicolo) -> dict[str, Tag]:
+    """I tag che verranno davvero sostituiti.
 
+    Due interruttori indipendenti, letti in `and`: lo stato del singolo tag e
+    quello della sua categoria (spec §5 del 2026-09-10). Tenerli distinti dà
+    una risposta ovvia alla domanda "spengo la categoria e poi la riaccendo:
+    che fine fanno i tag che avevo spento a mano?" — restano spenti.
 
-def maschera(testo: str, spans: list[Span], entities: dict[str, Entity]) -> str:
-    """Sostituisce gli span con i segnaposto delle rispettive entità.
-
-    Procede da destra a sinistra: così ogni sostituzione lascia validi gli
-    offset di quelle ancora da applicare (spec §9).
-
-    Solleva `ValueError` in due casi, entrambi a difesa chiusa:
-
-    - uno span punta a un `entity_id` assente da `entities`, quindi il valore
-      originale sopravviverebbe senza che nessuno se ne accorga;
-    - due span si sovrappongono. La sostituzione da destra a sinistra è valida
-      solo su span disgiunti: su due span sovrapposti produce un segnaposto
-      malformato ("[PERSONA_1]ONA_2]"), che il ripristino (spec §11)
-      rifiuterebbe come `MalformedPlaceholder` — cioè un testo corrotto in
-      silenzio. Gli span *adiacenti* (fine dell'uno uguale all'inizio
-      dell'altro) sono legittimi e non sollevano nulla.
+    È l'erede di `span_attivo`, e vive qui per la stessa ragione per cui
+    viveva qui quello: chiunque debba sapere se un dato esce in chiaro deve
+    leggerlo da un posto solo, altrimenti la UI mostra acceso ciò che
+    l'esportazione lascia spento.
     """
-    ordinati = sorted(spans, key=lambda s: s.start, reverse=True)
-    # Il controllo di sovrapposizione sta su una passata a parte, prima di
-    # toccare il testo: un rifiuto non deve lasciare a metà il lavoro.
-    # Confronta gli offset e non `spans.si_sovrappongono`, perché qui gli
-    # offset si applicano tutti a *un* testo: due span sovrapposti lo
-    # corrompono anche se dichiarano documenti diversi.
-    for successivo, precedente in zip(ordinati, ordinati[1:]):
-        if precedente.end > successivo.start:
-            raise ValueError(
-                f"gli span {precedente.span_id!r} "
-                f"[{precedente.start}:{precedente.end}] e "
-                f"{successivo.span_id!r} [{successivo.start}:{successivo.end}] "
-                "si sovrappongono: la mascheratura produrrebbe un segnaposto "
-                "malformato e un testo corrotto"
-            )
-    risultato = testo
-    for span in ordinati:
-        entita = entities.get(span.entity_id)
-        if entita is None:
-            raise ValueError(
-                f"span {span.span_id!r} fa riferimento all'entità "
-                f"{span.entity_id!r}, assente dal fascicolo: mascheratura "
-                "impossibile, dati personali a rischio di fuga"
-            )
-        risultato = risultato[:span.start] + entita.placeholder + risultato[span.end:]
-    return risultato
+    return {
+        chiave: tag
+        for chiave, tag in fascicolo.tags.items()
+        if tag.stato is not StatoTag.DISATTIVATO
+        and fascicolo.category_enabled.get(tag.categoria, True)
+    }
 
 
 def maschera_documento(fascicolo: Fascicolo, documento: Document) -> str:
-    attivi = [
-        s for s in fascicolo.spans
-        if s.doc_id == documento.doc_id and span_attivo(s, fascicolo)
-    ]
-    return maschera(documento.text, attivi, fascicolo.entities)
+    return tagga(documento.text, tabella_attiva(fascicolo)).mascherato
 
 
 def hash_approvazione(fascicolo: Fascicolo) -> str:
@@ -76,7 +43,7 @@ def hash_approvazione(fascicolo: Fascicolo) -> str:
     I documenti sono ordinati per nome file e ciascuno emette
     `filename\\n<lunghezza>\\n<testo>`. La lunghezza esplicita rende la
     concatenazione non ambigua, così due fascicoli diversi non possono
-    produrre lo stesso digest (spec §8).
+    produrre lo stesso digest (spec §8 del 2026-09-10).
     """
     digest = hashlib.sha256()
     for documento in sorted(fascicolo.documents, key=lambda d: (d.filename, d.doc_id)):
