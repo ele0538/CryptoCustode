@@ -124,8 +124,21 @@ const TAG_PERSONA = "[PERSONA_1]";
 const TAG_IMPORTO = "[IMPORTO_1]";
 
 function revisioneFinta({ persona = true, importo = true } = {}) {
+  // `esposizione` segue gli stessi due interruttori dei segmenti: uno scenario
+  // in cui i segmenti dicono «in chiaro» e il riquadro dice «tutto mascherato»
+  // proverebbe una pagina che non esiste. Un dato per categoria, quindi il
+  // conteggio e' la somma degli interruttori spenti (issue #53).
+  const inChiaro = [];
+  if (!persona) inChiaro.push({ categoria: "PERSONA", quanti: 1 });
+  if (!importo) inChiaro.push({ categoria: "IMPORTO", quanti: 1 });
+
   return {
     stato: "PENDING_REVIEW",
+    esposizione: {
+      in_chiaro: inChiaro.length,
+      mascherati: 2 - inChiaro.length,
+      categorie: inChiaro,
+    },
     categorie: [
       { categoria: "PERSONA", attiva: persona, quanti: 1 },
       { categoria: "IMPORTO", attiva: importo, quanti: 1 },
@@ -225,6 +238,17 @@ const SCENARI = {
 
   "revisione-analisi": {
     risposte: [{ stato: 200, json: revisioneFinta() }],
+    eventi: [{ su: "avvia-analisi", tipo: "click" }],
+  },
+  // Il dopo-analisi come lo serve davvero la rotta: un fascicolo nuovo non
+  // maschera niente (`33521f7`), quindi subito dopo «Analizza» tutto e' in
+  // chiaro. Lo scenario qui sopra descrive il default precedente — tutto
+  // mascherato — e i test che lo usano provano il disegno dello span
+  // mascherato, che resta una cosa da provare; questo serve al confronto di
+  // forma col payload vero, che senza un dato in chiaro non avrebbe la parte
+  // `esposizione.categorie` popolata (issue #53).
+  "revisione-analisi-in-chiaro": {
+    risposte: [{ stato: 200, json: revisioneFinta({ persona: false, importo: false }) }],
     eventi: [{ su: "avvia-analisi", tipo: "click" }],
   },
   "revisione-categoria-spenta": {
@@ -402,6 +426,15 @@ async function eseguiRevisione() {
     // che la rotta vera manda. Senza quel confronto uno scenario invecchiato
     // eserciterebbe la UI contro una forma immaginaria restando verde.
     payload_servito: programmate.at(-1).json ?? null,
+    // Il riquadro dell'esposizione (#53): la classe dice se sta allarmando o
+    // no, il testo dice quanto. Riportati grezzi, perche' sia un test Python a
+    // decidere cosa devono contenere invece di questo file.
+    esposizione: {
+      classe: document.getElementById("esposizione").className,
+      testo: [...discendenti(document.getElementById("esposizione"))]
+        .map((nodo) => nodo.textContent ?? "")
+        .join(" "),
+    },
     interruttori: [...discendenti(document.getElementById("categorie"))]
       .filter((nodo) => nodo.dataset.categoria !== undefined)
       .map((nodo) => ({ categoria: nodo.dataset.categoria, acceso: nodo.checked })),

@@ -216,6 +216,7 @@ const avvio = document.getElementById("avvia-analisi");
 const statoAnalisi = document.getElementById("stato-analisi");
 const categorie = document.getElementById("categorie");
 const documenti = document.getElementById("documenti");
+const riquadroEsposizione = document.getElementById("esposizione");
 
 // Le tre richieste della revisione hanno lo stesso corpo di errore del
 // caricamento — `errore` della tabella §13, `detail` di FastAPI, o niente —
@@ -324,6 +325,57 @@ function disegnaDocumenti(elenco) {
 // di ritoccare il nodo che è stato cliccato. Ritoccarlo significherebbe tenere
 // nella pagina una seconda copia dello stato del fascicolo, e quella che
 // l'utente vede sarebbe la copia che non decide che cosa viene mascherato.
+// Quanti dati usciranno in chiaro, scritto sopra i bottoni di esportazione
+// (issue #53). Il numero arriva dal server dentro il payload della revisione,
+// non contato qui: contarlo nel JavaScript significherebbe tenere una seconda
+// definizione di «esce in chiaro» accanto a `tabella_attiva`, e sarebbe quella
+// sbagliata a essere mostrata il giorno in cui le due divergono.
+//
+// La riga e' neutra quando non c'e' niente da segnalare. Un riquadro che grida
+// sempre si smette di leggerlo, e il giorno che grida per davvero non lo guarda
+// piu' nessuno.
+function disegnaEsposizione(esposizione) {
+  if (esposizione === undefined) {
+    return;
+  }
+  const { in_chiaro: inChiaro, mascherati, categorie } = esposizione;
+
+  if (inChiaro === 0 && mascherati === 0) {
+    riquadroEsposizione.className = "esposizione pulita";
+    riquadroEsposizione.textContent = "";
+    return;
+  }
+  if (inChiaro === 0) {
+    riquadroEsposizione.className = "esposizione pulita";
+    riquadroEsposizione.textContent =
+      `Tutti i ${mascherati} dati trovati verranno sostituiti con un segnaposto.`;
+    return;
+  }
+
+  riquadroEsposizione.className = "esposizione espone";
+  riquadroEsposizione.replaceChildren();
+
+  // «dato» / «dati», e l'avvertenza al plurale solo quando serve: un messaggio
+  // che sbaglia il numero si legge come un messaggio automatico, e un messaggio
+  // automatico si ignora.
+  const titolo = document.createElement("span");
+  titolo.textContent =
+    inChiaro === 1
+      ? "1 dato uscirà in chiaro nel testo esportato."
+      : `${inChiaro} dati usciranno in chiaro nel testo esportato.`;
+  riquadroEsposizione.appendChild(titolo);
+
+  const dettaglio = document.createElement("span");
+  dettaglio.className = "dettaglio";
+  const elenco = categorie
+    .map((voce) => `${voce.categoria} (${voce.quanti})`)
+    .join(", ");
+  dettaglio.textContent =
+    `${elenco}. Accendi gli interruttori qui sopra per mascherarli, ` +
+    "oppure esporta cosi' se e' quello che vuoi.";
+  riquadroEsposizione.appendChild(dettaglio);
+}
+
 function disegna(revisione) {
   if (revisione === null) {
     return;
@@ -331,6 +383,7 @@ function disegna(revisione) {
   statoAnalisi.textContent = `Stato del fascicolo: ${revisione.stato}.`;
   disegnaInterruttori(revisione.categorie);
   disegnaDocumenti(revisione.documenti);
+  disegnaEsposizione(revisione.esposizione);
 }
 
 avvio.addEventListener("click", async () => {

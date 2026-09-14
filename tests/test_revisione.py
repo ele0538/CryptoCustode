@@ -712,7 +712,12 @@ def test_il_payload_dello_scenario_ha_la_forma_di_quello_che_la_rotta_serve(
     carica(client, "uno.txt", UNO)
     vero = client.post(ROTTA_ANALISI).json()
 
-    finto_payload = esito_della_ui("revisione-analisi")["payload_servito"]
+    # Lo scenario col fascicolo in chiaro, non l'altro: la rotta qui sopra
+    # risponde su un fascicolo appena analizzato, che non maschera niente
+    # (`33521f7`), e il confronto di forma vuole due payload dello stesso
+    # stato. `revisione-analisi` descrive il default precedente e resta a
+    # provare il disegno dello span mascherato.
+    finto_payload = esito_della_ui("revisione-analisi-in-chiaro")["payload_servito"]
 
     assert percorsi_di(finto_payload) == percorsi_di(vero)
 

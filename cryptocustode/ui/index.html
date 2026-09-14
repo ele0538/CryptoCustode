@@ -228,6 +228,18 @@
             </p>
             <button type="button" id="avvia-analisi" class="pillola scura">Analizza i documenti</button>
             <p id="stato-analisi" class="tenue" aria-live="polite"></p>
+            <!--
+              La legenda della issue #53. I due stati usano le stesse classi
+              degli span veri, non una copia dello stile: se un domani cambia il
+              modo di disegnare «in chiaro», la legenda cambia con lui invece di
+              restare a descrivere un aspetto che la pagina non ha piu'.
+            -->
+            <p class="legenda-stati">
+              <mark class="evidenza cat-PERSONA">Mario Rossi</mark>
+              <span class="tenue">verr&agrave; sostituito con un segnaposto</span>
+              <mark class="evidenza cat-PERSONA spenta">Mario Rossi</mark>
+              <span class="tenue">uscir&agrave; <strong>in chiaro</strong></span>
+            </p>
             <div id="categorie" class="categorie"></div>
             <div id="documenti" class="documenti"></div>
           </section>
@@ -241,6 +253,12 @@
               esattamente quello che hai approvato. Esce solo il testo con i
               segnaposto &mdash; mai l'originale, mai la tabella dei tag.
             </p>
+            <!--
+              Quanti dati usciranno in chiaro, detto **prima** del clic (#53).
+              Sta sopra i bottoni e non sotto: sotto sarebbe un resoconto di una
+              cosa gia' fatta, e il testo esportato e' gia' negli appunti.
+            -->
+            <p id="esposizione" class="esposizione" role="status"></p>
             <div class="comandi">
               <button type="button" id="approva" class="pillola scura">Approva il fascicolo</button>
               <button type="button" id="copia" class="pillola chiara" disabled>Copia il testo mascherato</button>

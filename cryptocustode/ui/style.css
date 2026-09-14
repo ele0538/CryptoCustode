@@ -23,6 +23,10 @@
   --carta: #ffffff;
   --bordo: #d9d6ce;
   --accento: #2b2b2b;
+  /* Il settimo token del telaio, ed e' l'unico che grida: segna cio' che
+     uscira' in chiaro (#53). Sta coi neutri e non coi dodici colori di
+     categoria perche' non nomina un tipo di dato, nomina un rischio. */
+  --allarme: #b3261e;
   --evidenza: #e8ff3d;
   --pagina: #d8d8d6;
   --telaio: #3a3a39;
@@ -742,9 +746,21 @@ p.testo-originale {
 }
 
 /* `mark` porta di suo un fondo giallo del browser: qui il fondo lo decide la
-   categoria, e il giallo di default confonderebbe due categorie diverse. */
-mark.evidenza {
+   categoria, e il giallo di default confonderebbe due categorie diverse.
+
+   La neutralizzazione sta sul selettore **nudo** e non su `mark.evidenza`, ed
+   e' una correzione, non uno stile: `mark.evidenza` vale (0,1,1) e batteva
+   `.cat-PERSONA`, che vale (0,1,0), **qualunque** fosse l'ordine nel file. Il
+   risultato era che il fondo di categoria non si applicava mai agli span della
+   revisione — le pastiglie della legenda si coloravano, il testo no — quindi
+   «verra' mascherato» si vedeva come testo normale. Su `mark` la regola vale
+   (0,0,1) e ogni `.cat-*` la batte, che e' cio' che il commento qui sopra ha
+   sempre dichiarato di voler fare (issue #53). */
+mark {
   background: transparent;
+}
+
+mark.evidenza {
   color: inherit;
   border-radius: 3px;
   padding: 0.05rem 0.15rem;
@@ -753,15 +769,34 @@ mark.evidenza {
   -webkit-box-decoration-break: clone;
 }
 
-/* Uno span spento resta riconoscibile ma smette di sembrare mascherato: il
-   colore se ne va e resta il contorno tratteggiato. Senza questa regola
-   l'unica differenza fra «verrà mascherato» e «resterà in chiaro» sarebbe
-   invisibile, che è esattamente la decisione che l'utente deve poter vedere. */
+/* Uno span spento esce **in chiaro**, e deve leggersi cosi'.
+
+   Il barrato di prima diceva il contrario di quello che succede: una parola
+   barrata si legge «tolta», cioe' esattamente come ci si aspetta che appaia un
+   dato mascherato — e infatti era il segno che il dato *resta*. L'inversione
+   costava poco finche' non esisteva un bottone Esporta; dalla #53 costa un
+   documento consegnato in chiaro per distrazione.
+
+   Adesso: nessun fondo pieno (il fondo pieno e' «coperto»), contorno di
+   allarme, e una sottolineatura ondulata che e' il segno che i correttori
+   ortografici hanno reso universale per «guarda qui». Il colore non porta il
+   messaggio da solo — contorno e ondulazione restano visibili a chi non lo
+   distingue — e il testo resta leggibile, perche' e' un dato vero che l'utente
+   deve poter rileggere prima di decidere. */
 mark.evidenza.spenta {
   background: transparent;
-  color: var(--tenue);
-  outline: 1px dashed var(--tenue);
-  text-decoration: line-through;
+  color: inherit;
+  outline: 2px dashed var(--allarme);
+  outline-offset: 1px;
+  text-decoration: underline wavy var(--allarme);
+  text-underline-offset: 0.2em;
+}
+
+/* Il segno non-colore che accompagna il contorno: chi stampa in bianco e nero,
+   o non distingue i colori, legge comunque che quello span e' diverso. */
+mark.evidenza.spenta::after {
+  content: " a0a0";
+  font-size: 0.8em;
 }
 
 /* Un colore per categoria: sono le classi che `app.js` scrive come
@@ -953,4 +988,50 @@ mark.evidenza.spenta {
 #stato-fusioni {
   margin-top: 0.6rem;
   min-height: 1.2em;
+}
+
+/* --------------------------------------------------------------------------
+   Esposizione: quanto uscira' in chiaro (issue #53).
+   -------------------------------------------------------------------------- */
+
+/* La legenda dei due stati, in cima alla revisione. Usa le classi vere degli
+   span, quindi non puo' descrivere un aspetto che la pagina non ha piu'. */
+.legenda-stati {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.7rem;
+  margin: 0.8rem 0 0.2rem;
+  font-size: 0.85rem;
+}
+
+/* La riga sopra i bottoni di esportazione. Neutra quando non c'e' niente da
+   segnalare: un riquadro che grida sempre si smette di leggerlo, e il giorno
+   che grida per davvero non lo guarda piu' nessuno. */
+.esposizione {
+  margin: 0.8rem 0 0;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+}
+
+.esposizione.pulita {
+  color: var(--tenue);
+}
+
+.esposizione.espone {
+  padding: 0.6rem 0.8rem;
+  color: var(--inchiostro);
+  background: var(--carta);
+  border: 1px solid var(--allarme);
+  border-left: 3px solid var(--allarme);
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.esposizione .dettaglio {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--tenue);
 }
