@@ -32,6 +32,7 @@ from cryptocustode.core.ingest.loader import (
     costruisci_documento,
     segnaposto_preesistenti,
 )
+from cryptocustode.core.esposizione import esposizione
 from cryptocustode.core.mask import tabella_attiva
 from cryptocustode.core.models import Category, Document, Fascicolo, StatoTag, fascicolo_vuoto
 from cryptocustode.core.rilevatore import Rilevatore
@@ -188,6 +189,11 @@ def revisione(fascicolo: Fascicolo) -> dict:
         quanti[tag.categoria] = quanti.get(tag.categoria, 0) + 1
     return {
         "stato": fascicolo.state.value,
+        # Quanto uscira' in chiaro viaggia con ogni ridisegno e non su una rotta
+        # sua: e' una proprieta' del fascicolo che l'utente sta guardando, e una
+        # seconda richiesta potrebbe rispondere su uno stato diverso da quello
+        # appena disegnato — cioe' proprio l'incoerenza che la #53 denuncia.
+        "esposizione": esposizione(fascicolo),
         "categorie": [
             {
                 "categoria": categoria.value,

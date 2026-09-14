@@ -216,7 +216,7 @@ const avvio = document.getElementById("avvia-analisi");
 const statoAnalisi = document.getElementById("stato-analisi");
 const categorie = document.getElementById("categorie");
 const documenti = document.getElementById("documenti");
-const bilancio = document.getElementById("bilancio");
+const riquadroEsposizione = document.getElementById("esposizione");
 
 // Le tre richieste della revisione hanno lo stesso corpo di errore del
 // caricamento — `errore` della tabella §13, `detail` di FastAPI, o niente —
@@ -257,37 +257,16 @@ async function chiedi(rotta, corpo, metodo = "POST") {
 // le caselle sono il riflesso dello stato, non lo stato.
 let categorieAccese = 0;
 
-// Il bilancio di cosa uscira'. Un numero e' piu' difficile da ignorare di un
-// colore, e copre il caso che la sola conferma non copriva: due categorie
-// accese su sei, con l'utente convinto di averle accese tutte (issue #53).
-function disegnaBilancio(elenco) {
-  const mascherati = elenco
-    .filter((voce) => voce.attiva)
-    .reduce((somma, voce) => somma + voce.quanti, 0);
-  const inChiaro = elenco
-    .filter((voce) => !voce.attiva)
-    .reduce((somma, voce) => somma + voce.quanti, 0);
-
-  if (elenco.length === 0) {
-    bilancio.textContent = "";
-    bilancio.className = "bilancio";
-    return;
-  }
-  if (inChiaro === 0) {
-    bilancio.textContent = `Usciranno mascherati tutti i ${mascherati} dati trovati.`;
-    bilancio.className = "bilancio sereno";
-    return;
-  }
-  bilancio.textContent =
-    `Attenzione: di ${mascherati + inChiaro} dati personali trovati, ` +
-    `${mascherati} usciranno mascherati e ${inChiaro} usciranno IN CHIARO. ` +
-    "Sono quelli sottolineati in rosso qui sotto.";
-  bilancio.className = "bilancio allarme";
-}
+// Il bilancio viveva qui, calcolato dalle categorie del payload, e ora arriva
+// gia' fatto dal server dentro `revisione.esposizione`: vedi
+// `disegnaEsposizione`. Le due versioni contavano cose diverse — le categorie
+// accese l'una, le occorrenze vere l'altra — e la differenza non e' cosmetica:
+// una categoria con sei occorrenze e una con una sola pesano uguale se si
+// contano le categorie. Il conteggio del server passa da `tabella_attiva`, che
+// e' la stessa cosa che decide davvero cosa esce.
 
 function disegnaInterruttori(elenco) {
   categorieAccese = elenco.filter((voce) => voce.attiva).length;
-  disegnaBilancio(elenco);
   categorie.replaceChildren();
   for (const voce of elenco) {
     const etichetta = document.createElement("label");
@@ -372,6 +351,62 @@ function disegnaDocumenti(elenco) {
 // di ritoccare il nodo che è stato cliccato. Ritoccarlo significherebbe tenere
 // nella pagina una seconda copia dello stato del fascicolo, e quella che
 // l'utente vede sarebbe la copia che non decide che cosa viene mascherato.
+// Quanti dati usciranno in chiaro, scritto sopra i bottoni di esportazione
+// (issue #53). Il numero arriva dal server dentro il payload della revisione,
+// non contato qui: contarlo nel JavaScript significherebbe tenere una seconda
+// definizione di «esce in chiaro» accanto a `tabella_attiva`, e sarebbe quella
+// sbagliata a essere mostrata il giorno in cui le due divergono.
+//
+// La riga e' neutra quando non c'e' niente da segnalare. Un riquadro che grida
+// sempre si smette di leggerlo, e il giorno che grida per davvero non lo guarda
+// piu' nessuno.
+function disegnaEsposizione(esposizione) {
+  if (esposizione === undefined) {
+    return;
+  }
+  const { in_chiaro: inChiaro, mascherati, categorie } = esposizione;
+
+  if (inChiaro === 0 && mascherati === 0) {
+    riquadroEsposizione.className = "esposizione pulita";
+    riquadroEsposizione.textContent = "";
+    return;
+  }
+  if (inChiaro === 0) {
+    riquadroEsposizione.className = "esposizione pulita";
+    riquadroEsposizione.textContent =
+      `Tutti i ${mascherati} dati trovati verranno sostituiti con un segnaposto.`;
+    return;
+  }
+
+  riquadroEsposizione.className = "esposizione espone";
+  riquadroEsposizione.replaceChildren();
+
+  // «dato» / «dati», e l'avvertenza al plurale solo quando serve: un messaggio
+  // che sbaglia il numero si legge come un messaggio automatico, e un messaggio
+  // automatico si ignora.
+  // La frase dice **tutte e due** le metà, e viene dall'altra corsia: «di 14
+  // trovati, 3 mascherati e 11 in chiaro» si legge come un bilancio, mentre il
+  // solo numero degli esposti si legge come un dettaglio. Chi ha acceso due
+  // interruttori su sei ha bisogno di vedere la proporzione, non il resto.
+  const titolo = document.createElement("span");
+  titolo.textContent =
+    `Di ${mascherati + inChiaro} dati personali trovati, ${mascherati} ` +
+    `usciranno mascherati e ${inChiaro} ` +
+    (inChiaro === 1 ? "uscirà in chiaro." : "usciranno in chiaro.");
+  riquadroEsposizione.appendChild(titolo);
+
+  const dettaglio = document.createElement("span");
+  dettaglio.className = "dettaglio";
+  const elenco = categorie
+    .map((voce) => `${voce.categoria} (${voce.quanti})`)
+    .join(", ");
+  dettaglio.textContent =
+    `In chiaro: ${elenco}. Sono quelli sottolineati in rosso qui sopra. ` +
+    "Accendi i loro interruttori per mascherarli, oppure esporta così se è " +
+    "quello che vuoi.";
+  riquadroEsposizione.appendChild(dettaglio);
+}
+
 function disegna(revisione) {
   if (revisione === null) {
     return;
@@ -379,6 +414,7 @@ function disegna(revisione) {
   statoAnalisi.textContent = `Stato del fascicolo: ${revisione.stato}.`;
   disegnaInterruttori(revisione.categorie);
   disegnaDocumenti(revisione.documenti);
+  disegnaEsposizione(revisione.esposizione);
 }
 
 avvio.addEventListener("click", async () => {
@@ -466,7 +502,10 @@ function ridisegnaTutto(stato) {
     categorie.replaceChildren();
     documenti.replaceChildren();
     statoAnalisi.textContent = "";
-    disegnaBilancio([]);
+    // Il fascicolo e' vuoto: `esposizione` non arriva da nessun payload, quindi
+    // il riquadro va spento a mano o resterebbe a dichiarare l'esposizione del
+    // fascicolo appena buttato via.
+    disegnaEsposizione({ in_chiaro: 0, mascherati: 0, categorie: [] });
     return;
   }
   disegnaInterruttori(stato.categorie);
