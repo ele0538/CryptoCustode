@@ -59,6 +59,10 @@ class Configurazione:
     def pronta(self) -> bool:
         return self.impostazioni.pronta
 
+    @property
+    def piano_attestato(self) -> bool:
+        return self.impostazioni.piano_attestato
+
     # --- scrittura ----------------------------------------------------------
 
     def registra(self, token_input: int, token_output: int) -> None:
@@ -83,6 +87,7 @@ class Configurazione:
         prezzo_input: float,
         prezzo_output: float,
         valuta: str,
+        piano_attestato: bool = False,
         chiave: str | None = None,
         passphrase: str | None = None,
     ) -> None:
@@ -97,6 +102,7 @@ class Configurazione:
             prezzo_input=prezzo_input,
             prezzo_output=prezzo_output,
             valuta=valuta,
+            piano_attestato=piano_attestato,
         )
         if chiave:
             if not passphrase:

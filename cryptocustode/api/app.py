@@ -322,6 +322,25 @@ def crea_app(
                     ),
                 )
         return await chiama(richiesta)
+    @app.middleware("http")
+    async def non_conservare_gli_statici(richiesta: Request, chiama):
+        """Gli statici non si mettono in cache.
+
+        Un'applicazione locale si aggiorna sostituendo i file sul posto, e il
+        browser non ha modo di accorgersene: dopo un aggiornamento la pagina
+        continua a usare il CSS e il JavaScript vecchi, e l'utente vede un
+        difetto gia' corretto — o peggio, uno script nuovo contro un foglio di
+        stile vecchio. E' successo qui durante lo sviluppo, con una regola
+        `[hidden]` nuova ignorata per un quarto d'ora.
+
+        Non costa niente: i file arrivano da questo stesso computer, e il
+        risparmio di banda che la cache offre non esiste sul loopback.
+        """
+        risposta = await chiama(richiesta)
+        if richiesta.url.path.startswith("/static/"):
+            risposta.headers["Cache-Control"] = "no-store"
+        return risposta
+
     app.mount("/static", StaticFiles(directory=UI), name="static")
     app.include_router(crea_router(store, rilevatore))
     # Il vault ha un router suo perche' ha un file suo: le sue due rotte non
@@ -410,9 +429,16 @@ def verifica_configurazione_ia(
     # perche' la variabile d'ambiente non c'e' impedirebbe di **arrivare** alla
     # pagina in cui la chiave si scrive, cioe' renderebbe la configurazione
     # raggiungibile solo a chi e' gia' configurato.
-    if configurazione is not None and (
-        configurazione.pronta or configurazione.impostazioni.chiave_cifrata is not None
-    ):
+    # Con una configurazione, l'avvio non si blocca **mai**: chiave e
+    # attestazione si raccolgono nella pagina, e il rifiuto vive dove serve
+    # davvero, in `RilevatoreGemini.rileva`, subito prima che un documento
+    # parta. Bloccare qui rendeva irraggiungibile proprio la pagina in cui si
+    # configura — cioe' impediva di rimediare all'unica condizione che il
+    # blocco denunciava.
+    #
+    # Senza configurazione il comportamento resta quello di prima, ed e' il
+    # contratto che i test di questo modulo verificano.
+    if configurazione is not None:
         return
     if not ambiente.get(VARIABILE_CHIAVE):
         raise SystemExit(

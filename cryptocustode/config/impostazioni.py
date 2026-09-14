@@ -95,6 +95,16 @@ class Impostazioni:
     prezzo_input: float = 0.0
     prezzo_output: float = 0.0
     valuta: str = "USD"
+    piano_attestato: bool = False
+    """L'utente dichiara che la chiave e' di un progetto con fatturazione attiva.
+
+    Sta qui e non solo nell'ambiente perche' e' una dichiarazione dell'utente,
+    e l'utente ora parla con la pagina. Resta una dichiarazione e non una
+    verifica: l'API non espone il piano di fatturazione, quindi l'applicazione
+    non ha modo di controllarlo. Serve comunque — obbliga a leggere perche' il
+    piano gratuito non va bene — e ora e' il **rilevatore** a pretenderla,
+    cioe' il punto immediatamente prima che un documento parta davvero.
+    """
     chiave: str | None = None
     """La chiave API in chiaro, **solo in memoria**: su disco va il blob cifrato."""
     chiave_cifrata: bytes | None = None
@@ -185,6 +195,7 @@ def leggi(percorso_file: Path | None = None) -> Impostazioni:
             prezzo_input=float(dati.get("prezzo_input", 0.0)),
             prezzo_output=float(dati.get("prezzo_output", 0.0)),
             valuta=dati.get("valuta", "USD"),
+            piano_attestato=bool(dati.get("piano_attestato", False)),
             chiave_cifrata=base64.b64decode(cifrata) if cifrata else None,
             totale=Consumo(
                 token_input=int(totale.get("token_input", 0)),
@@ -212,6 +223,7 @@ def scrivi(impostazioni: Impostazioni, percorso_file: Path | None = None) -> Non
         "prezzo_input": impostazioni.prezzo_input,
         "prezzo_output": impostazioni.prezzo_output,
         "valuta": impostazioni.valuta,
+        "piano_attestato": impostazioni.piano_attestato,
         "totale": {
             "token_input": impostazioni.totale.token_input,
             "token_output": impostazioni.totale.token_output,

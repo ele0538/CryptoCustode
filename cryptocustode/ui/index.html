@@ -62,7 +62,7 @@
               </svg>
               Ripristino
             </span>
-            <span class="passo inattivo" aria-disabled="true" title="Non ancora collegato alla pagina">
+            <span class="passo fatto">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                 <rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" />
               </svg>
@@ -72,9 +72,11 @@
         </header>
 
         <p class="didascalia">
-          Carica i documenti e rivedili: queste due parti funzionano. Approvazione,
-          esportazione, ripristino e vault hanno le rotte ma non ancora un comando
-          in questa pagina, ed &egrave; per questo che restano spenti.
+          Carica i documenti, rivedili, cerca le somiglianze fra i nomi e chiudi
+          il fascicolo in un vault cifrato: queste parti funzionano.
+          Approvazione, esportazione e ripristino restano spenti perch&eacute;
+          non hanno ancora una rotta &mdash; non &egrave; la pagina a mancare,
+          &egrave; il comando che non esiste ancora.
           L'analisi manda il testo a Gemini: non &egrave; un'elaborazione locale.
         </p>
 
@@ -128,6 +130,16 @@
                 <input type="password" id="config-passphrase" autocomplete="new-password" />
                 <small class="tenue">Serve solo se stai inserendo una chiave nuova. Non si puo' recuperare: se la perdi, riscrivi la chiave.</small>
               </div>
+              <label class="campo-spunta" for="config-piano">
+                <input type="checkbox" id="config-piano" />
+                <span>
+                  Dichiaro che questa chiave appartiene a un progetto Google con
+                  fatturazione attiva. Sul piano gratuito i termini di Gemini
+                  dicono di non inviare dati personali, e Google usa i contenuti
+                  per sviluppare i propri prodotti: qui non si manda altro che
+                  documenti con dati personali dentro.
+                </span>
+              </label>
               <button type="submit" class="pillola scura">Salva</button>
             </form>
 

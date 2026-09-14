@@ -749,7 +749,7 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
     # regge quando le zone crescono, e continua a far rosso se un campo
     # scrivibile compare dove si legge il testo.
     ZONE_CHE_SCRIVONO = {
-        'id="pannello-config"': {"text", "number", "password"},
+        'id="pannello-config"': {"text", "number", "password", "checkbox"},
         'id="card-vault"': {"file", "password"},
     }
 

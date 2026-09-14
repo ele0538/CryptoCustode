@@ -210,6 +210,17 @@ h1 {
   border-color: var(--bordo, rgba(0, 0, 0, 0.15));
 }
 
+/* Deve stare **prima** delle regole che danno un `display` agli elementi
+   nascondibili, e vincere su di esse. L'attributo `hidden` vale
+   `display: none` solo finche' nessuno assegna un display esplicito: qui
+   `.modulo-config { display: flex }` lo batteva, e il riquadro della
+   passphrase restava in pagina anche senza nessuna chiave salvata da aprire.
+   Si vedeva solo guardando la pagina: la logica che decide `hidden` era, ed e',
+   giusta. */
+[hidden] {
+  display: none !important;
+}
+
 .modulo-config {
   display: flex;
   flex-direction: column;
