@@ -151,6 +151,20 @@ class RilevatoreGemini:
                 "piano gratuito i termini di Gemini vietano l'invio di dati "
                 "personali."
             )
+        # L'attestazione del piano si pretende **qui**, non all'avvio: e' il
+        # punto immediatamente prima che il documento parta, cioe' l'unico in
+        # cui rifiutare protegge davvero qualcosa. All'avvio proteggeva meno e
+        # costava di piu' — rendeva irraggiungibile la pagina in cui la
+        # dichiarazione si fa.
+        if self._configurazione is not None and not self._configurazione.piano_attestato:
+            raise AIKeyMissing(
+                "prima di mandare documenti a Gemini devi dichiarare, nella "
+                "configurazione, che la chiave appartiene a un progetto con "
+                "fatturazione attiva. Sul piano gratuito i termini di Gemini "
+                "dicono di non inviare dati personali, e Google usa i contenuti "
+                "per sviluppare i propri prodotti: CryptoCustode non manda "
+                "altro che documenti con dati personali dentro."
+            )
         try:
             risposta = self._chiama(
                 self._modello_corrente,

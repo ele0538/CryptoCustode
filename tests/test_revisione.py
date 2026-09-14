@@ -759,7 +759,7 @@ def test_la_pagina_non_offre_nessun_campo_in_cui_modificare_il_testo():
     # documento. `textarea` è già escluso sopra per tutta la pagina.
     dentro = pagina[inizio:fine]
     tipi_config = set(re.findall(r'<input\b[^>]*?\btype="([^"]+)"', dentro, flags=re.S))
-    assert tipi_config <= {"text", "number", "password"}, (
+    assert tipi_config <= {"text", "number", "password", "checkbox"}, (
         f"la configurazione ha campi inattesi: {sorted(tipi_config)}"
     )
 

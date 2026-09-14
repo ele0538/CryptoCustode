@@ -399,9 +399,16 @@ def verifica_configurazione_ia(
     # perche' la variabile d'ambiente non c'e' impedirebbe di **arrivare** alla
     # pagina in cui la chiave si scrive, cioe' renderebbe la configurazione
     # raggiungibile solo a chi e' gia' configurato.
-    if configurazione is not None and (
-        configurazione.pronta or configurazione.impostazioni.chiave_cifrata is not None
-    ):
+    # Con una configurazione, l'avvio non si blocca **mai**: chiave e
+    # attestazione si raccolgono nella pagina, e il rifiuto vive dove serve
+    # davvero, in `RilevatoreGemini.rileva`, subito prima che un documento
+    # parta. Bloccare qui rendeva irraggiungibile proprio la pagina in cui si
+    # configura — cioe' impediva di rimediare all'unica condizione che il
+    # blocco denunciava.
+    #
+    # Senza configurazione il comportamento resta quello di prima, ed e' il
+    # contratto che i test di questo modulo verificano.
+    if configurazione is not None:
         return
     if not ambiente.get(VARIABILE_CHIAVE):
         raise SystemExit(

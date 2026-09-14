@@ -32,6 +32,7 @@ class ImpostazioniInEntrata(BaseModel):
     prezzo_input: float = 0.0
     prezzo_output: float = 0.0
     valuta: str = "USD"
+    piano_attestato: bool = False
     chiave: str | None = None
     passphrase: str | None = None
 
@@ -47,6 +48,7 @@ def riassunto(configurazione: Configurazione) -> dict:
         "prezzo_input": impostazioni.prezzo_input,
         "prezzo_output": impostazioni.prezzo_output,
         "valuta": impostazioni.valuta,
+        "piano_attestato": impostazioni.piano_attestato,
         # Due booleani e non uno: «c'è una chiave salvata sul disco» e «la
         # chiave è utilizzabile adesso» sono stati diversi, ed è la differenza
         # fra chiedere la passphrase e chiedere la chiave. Riassumerli in uno
@@ -81,6 +83,7 @@ def crea_router_config(configurazione: Configurazione) -> APIRouter:
                 prezzo_input=nuove.prezzo_input,
                 prezzo_output=nuove.prezzo_output,
                 valuta=nuove.valuta,
+                piano_attestato=nuove.piano_attestato,
                 chiave=nuove.chiave,
                 passphrase=nuove.passphrase,
             )

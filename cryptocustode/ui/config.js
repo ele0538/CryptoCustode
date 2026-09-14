@@ -31,6 +31,7 @@ const campo = {
   chiave: document.getElementById("config-chiave"),
   passphrase: document.getElementById("config-passphrase"),
   sblocco: document.getElementById("config-sblocco"),
+  piano: document.getElementById("config-piano"),
 };
 
 // Quattro cifre decimali: una chiamata singola su un documento breve costa
@@ -93,6 +94,7 @@ function disegnaConfig(stato) {
   campo.prezzoInput.value = stato.prezzo_input;
   campo.prezzoOutput.value = stato.prezzo_output;
   campo.valuta.value = stato.valuta;
+  campo.piano.checked = stato.piano_attestato;
   campo.chiave.value = "";
   campo.passphrase.value = "";
 
@@ -105,6 +107,10 @@ function disegnaConfig(stato) {
       "La tua chiave è salvata cifrata su questo computer. " +
       "Scrivi la passphrase per aprirla: serve a ogni avvio, ed è il prezzo " +
       "di non tenerla in chiaro sul disco.";
+  } else if (stato.pronta && !stato.piano_attestato) {
+    spiegaConfig.textContent =
+      "Chiave attiva, ma manca la dichiarazione sul piano: senza, l'analisi " +
+      "si rifiuta di partire. È l'ultima casella qui sotto.";
   } else if (stato.pronta) {
     spiegaConfig.textContent =
       "Chiave attiva. Puoi cambiare modello e prezzi senza riscriverla: " +
@@ -120,7 +126,7 @@ function disegnaConfig(stato) {
   // Il pannello si apre da sé finché non c'è una chiave utilizzabile: senza,
   // il resto della pagina non può fare niente, e lasciarlo esplorare
   // significherebbe farlo arrivare a un errore che si poteva prevenire.
-  pannello.hidden = stato.pronta;
+  pannello.hidden = stato.pronta && stato.piano_attestato;
   apriConfig.hidden = false;
 }
 
@@ -172,6 +178,7 @@ moduloConfig.addEventListener("submit", async (evento) => {
     prezzo_input: Number(campo.prezzoInput.value) || 0,
     prezzo_output: Number(campo.prezzoOutput.value) || 0,
     valuta: campo.valuta.value.trim() || "USD",
+    piano_attestato: campo.piano.checked,
     chiave: chiave || null,
     passphrase: passphrase || null,
   });

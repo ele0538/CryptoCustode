@@ -177,7 +177,9 @@ class TestIlConteggioDeiToken:
         from cryptocustode.config.stato import Configurazione
 
         return Configurazione(
-            impostazioni=Impostazioni(prezzo_input=1.0, prezzo_output=2.0),
+            impostazioni=Impostazioni(
+                prezzo_input=1.0, prezzo_output=2.0, piano_attestato=True
+            ),
             percorso_file=tmp_path / "config.json",
         )
 
@@ -232,7 +234,9 @@ class TestIlConteggioDeiToken:
         from cryptocustode.config.stato import Configurazione
 
         impostazioni = con_chiave_nuova(
-            Impostazioni(modello="gemini-3.8-pro"), "CHIAVE-DA-CONFIG", "frase"
+            Impostazioni(modello="gemini-3.8-pro", piano_attestato=True),
+            "CHIAVE-DA-CONFIG",
+            "frase",
         )
         configurazione = Configurazione(
             impostazioni=impostazioni, percorso_file=tmp_path / "config.json"
@@ -252,3 +256,34 @@ class TestIlConteggioDeiToken:
 
         assert visti["modello"] == "gemini-3.8-pro"
         assert visti["chiave"] == "CHIAVE-DA-CONFIG"
+
+
+def test_senza_dichiarazione_sul_piano_non_parte_niente(tmp_path):
+    """D8 si fa valere qui e non piu' all'avvio.
+
+    All'avvio proteggeva meno e costava di piu': impediva di **raggiungere** la
+    pagina in cui la dichiarazione si fa, cioe' di rimediare all'unica
+    condizione che stava denunciando. Qui invece il rifiuto arriva
+    nell'istante prima che il documento parta, che e' l'unico in cui rifiutare
+    protegge davvero qualcosa.
+    """
+    from cryptocustode.config.impostazioni import Impostazioni, con_chiave_nuova
+    from cryptocustode.config.stato import Configurazione
+
+    partito = []
+
+    def chiama(modello, istruzioni, testo, schema, chiave):
+        partito.append(testo)
+        return Risposta(testo="[]")
+
+    configurazione = Configurazione(
+        impostazioni=con_chiave_nuova(
+            Impostazioni(piano_attestato=False), "K", "frase"
+        ),
+        percorso_file=tmp_path / "config.json",
+    )
+    with pytest.raises(AIKeyMissing) as errore:
+        RilevatoreGemini(chiama=chiama, configurazione=configurazione).rileva("Mario")
+
+    assert "fatturazione attiva" in str(errore.value)
+    assert partito == [], "il documento non deve partire: il rifiuto precede la rete"
