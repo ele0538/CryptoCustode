@@ -8,9 +8,14 @@ from cryptocustode.core.models import (
     Document,
     Entity,
     Fascicolo,
+    Mascheratura,
+    Regione,
+    Rilevazione,
     Source,
     Span,
     State,
+    StatoTag,
+    Tag,
     fascicolo_vuoto,
 )
 
@@ -79,3 +84,54 @@ def test_il_modello_dichiara_il_tetto_di_dieci_documenti():
     `test_l_undicesimo_documento_viene_rifiutato` in `tests/test_loader.py` a
     provare il rifiuto."""
     assert Fascicolo.MAX_DOCUMENTI == 10
+
+
+class TestITipiDelTagging:
+    """I tipi della spec §5 del 2026-09-14. Solo dati: nessun comportamento."""
+
+    def test_la_rilevazione_tiene_valore_e_categoria(self):
+        r = Rilevazione(valore="Mario Rossi", categoria=Category.PERSONA)
+        assert r.valore == "Mario Rossi"
+        assert r.categoria is Category.PERSONA
+
+    def test_il_tag_nasce_non_trovato_e_a_zero_occorrenze(self):
+        """`assegna_tag` crea i tag prima di sapere se il testo li contiene:
+        lo stato vero lo decide `conta_occorrenze` (task 5)."""
+        t = Tag(
+            tag="[PERSONA_1]",
+            categoria=Category.PERSONA,
+            valore="Mario Rossi",
+            occorrenze=0,
+            stato=StatoTag.NON_TROVATO,
+        )
+        assert t.tag == "[PERSONA_1]"
+        assert t.occorrenze == 0
+        assert t.stato is StatoTag.NON_TROVATO
+
+    def test_la_regione_si_riferisce_al_testo_originale(self):
+        regione = Regione(start=8, end=19, tag="[PERSONA_1]")
+        assert "Il sig. Mario Rossi paga."[regione.start:regione.end] == "Mario Rossi"
+
+    def test_la_mascheratura_tiene_testo_tag_e_regioni(self):
+        m = Mascheratura(mascherato="ciao", tags=[], regioni=[])
+        assert m.mascherato == "ciao"
+        assert m.tags == []
+        assert m.regioni == []
+
+    def test_il_fascicolo_vuoto_ha_la_tabella_dei_tag_vuota(self):
+        fascicolo = fascicolo_vuoto("f1")
+        assert fascicolo.tags == {}
+
+    def test_i_tipi_del_tagging_sono_congelati(self):
+        """Congelati come `Span` lo era: la tabella dei tag attraversa
+        `hash_approvazione`, e un tipo mutabile permetterebbe di cambiare un
+        valore dopo l'approvazione senza passare da `registra_mutazione`."""
+        t = Tag(
+            tag="[CF_1]",
+            categoria=Category.CF,
+            valore="RSSMRA80A01H501U",
+            occorrenze=1,
+            stato=StatoTag.APPLICATO,
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            t.valore = "altro"
