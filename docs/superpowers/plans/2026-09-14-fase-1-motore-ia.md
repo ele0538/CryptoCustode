@@ -1590,10 +1590,10 @@ def _traduci(grezza: str) -> list[Rilevazione]:
 In `requirements.txt`, aggiungi sotto `python-multipart`:
 
 ```
-google-genai==1.52.0
+google-genai==2.23.0
 ```
 
-(Verifica la versione disponibile con `pip index versions google-genai` e pinna quella, come fa il resto del file.)
+Verificata disponibile il 2026-09-14 con `python -m pip index versions google-genai`. Pinnata come tutto il resto del file. Se l'installazione fallisce su Python 3.14, controlla prima che esista una wheel compatibile: è la stessa verifica che la §3 della spec del 2026-09-10 ha fatto per lo stack di spaCy.
 
 - [ ] **Step 4: Esegui i test e verifica che passino**
 
