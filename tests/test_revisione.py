@@ -139,14 +139,15 @@ def test_l_analisi_usa_il_rilevatore_iniettato(client_con_rilevatore):
     segmenti = revisione["documenti"][0]["segmenti"]
     assert [s["testo"] for s in segmenti] == ["Mario Rossi", " paga."]
     assert segmenti[0]["tag"] == "[PERSONA_1]"
-    assert segmenti[0]["mascherato"] is False, "nessuna categoria parte accesa"
+    assert segmenti[0]["mascherato"] is True, "tutte le categorie partono accese"
 
-    # Il rilevatore ha fatto il suo lavoro anche con la categoria spenta: il
-    # dato è stato trovato e ha il suo segnaposto, solo non verrà sostituito
-    # finché l'utente non accende l'interruttore. È la distinzione fra
-    # *riconoscere* e *mascherare*, e il default nuovo la rende osservabile.
-    acceso = client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": True})
-    assert acceso.json()["documenti"][0]["segmenti"][0]["mascherato"] is True
+    # La distinzione fra *riconoscere* e *mascherare* resta osservabile, ma dal
+    # verso opposto: spegnendo l'interruttore il dato resta trovato — ha ancora
+    # il suo segnaposto — e semplicemente non verrà più sostituito.
+    spento = client.post(ROTTA_CATEGORIA, json={"categoria": "PERSONA", "attiva": False})
+    segmento = spento.json()["documenti"][0]["segmenti"][0]
+    assert segmento["mascherato"] is False
+    assert segmento["tag"] == "[PERSONA_1]", "spento non vuol dire non riconosciuto"
 
 
 def test_un_documento_gia_analizzato_non_ripaga_una_chiamata(client_con_rilevatore):
@@ -293,13 +294,13 @@ def test_i_segmenti_serviti_ricompongono_esattamente_il_testo_originale(
     categorie = {s["categoria"] for s in evidenziati}
     assert categorie == {"PERSONA", "IMPORTO"}, categorie
     assert all(s["tag"] for s in evidenziati)
-    # Il default dell'emendamento alla decisione 4 arriva fino al payload che
-    # la pagina disegna: nessuna categoria parte accesa, quindi ogni segmento
-    # è evidenziato — l'utente vede cosa è stato trovato — ma nessuno è ancora
-    # mascherato. Asserito per categoria e non con un `any()`, così il giorno
-    # in cui una categoria tornasse accesa il test dice quale.
+    # Il default arriva fino al payload che la pagina disegna: tutte le
+    # categorie partono accese, quindi ogni dato trovato è già destinato al
+    # segnaposto e l'utente spegne cio' che vuole lasciare in chiaro. Asserito
+    # per categoria e non con un `any()`, così il giorno in cui una categoria
+    # tornasse spenta il test dice quale.
     acceso = {s["categoria"]: s["mascherato"] for s in evidenziati}
-    assert acceso == {"PERSONA": False, "IMPORTO": False}, acceso
+    assert acceso == {"PERSONA": True, "IMPORTO": True}, acceso
 
 
 # --- Criterio 2, metà server: gli interruttori cambiano il fascicolo -------
@@ -716,12 +717,13 @@ def test_il_payload_dello_scenario_ha_la_forma_di_quello_che_la_rotta_serve(
     carica(client, "uno.txt", UNO)
     vero = client.post(ROTTA_ANALISI).json()
 
-    # Lo scenario col fascicolo in chiaro, non l'altro: la rotta qui sopra
-    # risponde su un fascicolo appena analizzato, che non maschera niente
-    # (`33521f7`), e il confronto di forma vuole due payload dello stesso
-    # stato. `revisione-analisi` descrive il default precedente e resta a
-    # provare il disegno dello span mascherato.
-    finto_payload = esito_della_ui("revisione-analisi-in-chiaro")["payload_servito"]
+    # Lo scenario col fascicolo mascherato: la rotta qui sopra risponde su un
+    # fascicolo appena analizzato, che dal 2026-09-14 maschera **tutto** — il
+    # default e' stato girato di nuovo — e il confronto di forma vuole due
+    # payload dello stesso stato. `revisione-analisi-in-chiaro` resta a provare
+    # il disegno dello span lasciato in chiaro, che ora e' la scelta deliberata
+    # dell'utente invece dello stato iniziale.
+    finto_payload = esito_della_ui("revisione-analisi")["payload_servito"]
 
     assert percorsi_di(finto_payload) == percorsi_di(vero)
 

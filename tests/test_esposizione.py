@@ -32,11 +32,19 @@ def tag(segnaposto: str, categoria: Category, occorrenze: int, stato=StatoTag.AP
 
 
 def fascicolo_con(*tags: Tag, accese: tuple[Category, ...] = ()):
+    """Un fascicolo con `accese` accese ed esattamente le altre spente.
+
+    Le categorie vengono spente esplicitamente invece di affidarsi allo stato
+    iniziale di `fascicolo_vuoto`: questi test provano il calcolo
+    dell'esposizione, non quale sia il default, e legarli al default li faceva
+    diventare rossi il giorno che il default e' cambiato — dicendo "il calcolo
+    e' rotto" quando il calcolo non era stato toccato.
+    """
     fascicolo = fascicolo_vuoto("f1")
     for t in tags:
         fascicolo.tags[t.tag] = t
-    for categoria in accese:
-        fascicolo.category_enabled[categoria] = True
+    for categoria in Category:
+        fascicolo.category_enabled[categoria] = categoria in accese
     return fascicolo
 
 

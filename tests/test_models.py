@@ -32,17 +32,21 @@ def test_fascicolo_vuoto_parte_in_draft_mascherando_chi_identifica():
     assert all(v == 0 for v in f.counters.values())
 
 
-def test_di_default_non_si_maschera_niente():
-    """Si parte da zero e si accende ciò che serve (spec §2, emendamento alla
-    decisione 4).
+def test_di_default_si_maschera_tutto():
+    """Si parte protetti e si spegne cio' che serve lasciare in chiaro.
 
-    Asserito su ogni categoria e non con un `any()`, perché il giorno in cui
-    qualcuno riaccendesse una singola categoria "per sicurezza" questo test
-    deve dire **quale**, non limitarsi a diventare rosso.
+    Asserito su ogni categoria e non con un `all()`, perche' il giorno in cui
+    qualcuno spegnesse una singola categoria "tanto quella non e' sensibile"
+    questo test deve dire **quale**, non limitarsi a diventare rosso.
+
+    La riga e' stata girata due volte: la docstring di `fascicolo_vuoto` porta
+    la ragione per cui e' tornata qui, e non va tolta se qualcuno la gira una
+    terza volta — la storia di una decisione ribaltata due volte e' l'unica
+    difesa contro la quarta.
     """
     attive = fascicolo_vuoto("f1").category_enabled
     for categoria in Category:
-        assert attive[categoria] is False, categoria
+        assert attive[categoria] is True, categoria
 
 
 def test_il_modello_dichiara_il_tetto_di_dieci_documenti():

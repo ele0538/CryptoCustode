@@ -826,9 +826,20 @@ mark.evidenza {
    **solo fondo colorato**, cioe' dall'unico canale che chi non distingue i
    colori non ha: lo stato in chiaro avrebbe tre segni non cromatici e quello
    mascherato nessuno. Il barrato glielo da'. */
+/* Acceso = **verra' tolto**, ed e' il rosso a dirlo: il segno del tratto di
+   redazione, quello che su un documento cartaceo copre cio' che non deve
+   uscire. Scelta del proprietario del prodotto, 2026-09-14, e con tutte le
+   categorie accese di default e' coerente: il rosso marca la regola — quasi
+   tutto viene tolto — e il testo lasciato nudo e' l'eccezione deliberata.
+
+   Vince su `.cat-*` per specificita' (0,2,1 contro 0,1,0) senza `!important`:
+   i colori per categoria restano sulle pastiglie della legenda, dove servono a
+   distinguere le categorie, e non sul testo, dove ora serve distinguere una
+   cosa sola — se esce o non esce. */
 mark.evidenza:not(.spenta) {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
+  background: var(--rifiuto);
+  color: #fff;
+  text-decoration: none;
 }
 
 /* Uno span spento esce **in chiaro**, e deve leggersi cosi'.
@@ -848,14 +859,17 @@ mark.evidenza:not(.spenta) {
    messaggio da solo — contorno, ondulazione e glifo restano visibili a chi
    non lo distingue — e il testo resta leggibile, perche' e' un dato vero
    che va riletto prima di decidere. */
+/* Spento = resta in chiaro. Niente sottolineatura ondulata: era sgradevole da
+   leggere su un documento intero, ed e' stata tolta su richiesta. Resta il
+   contorno tratteggiato, che distingue senza decorare il testo — e con il
+   default che maschera tutto, questo stato compare solo dove qualcuno ha
+   spento un interruttore apposta. */
 mark.evidenza.spenta {
   background: transparent;
   color: inherit;
-  outline: 2px dashed var(--rifiuto);
+  outline: 1px dashed var(--tenue);
   outline-offset: 1px;
-  text-decoration: underline wavy var(--rifiuto);
-  text-underline-offset: 0.22em;
-  text-decoration-thickness: 1.5px;
+  text-decoration: none;
 }
 
 /* Il quarto segnale, e l'unico che sopravvive a una stampa in bianco e nero:
@@ -865,6 +879,7 @@ mark.evidenza.spenta {
 mark.evidenza.spenta::after {
   content: " ⚠";
   font-size: 0.8em;
+  color: var(--rifiuto);
 }
 
 /* Un colore per categoria: sono le classi che `app.js` scrive come

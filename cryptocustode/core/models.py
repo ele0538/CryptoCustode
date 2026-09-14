@@ -177,26 +177,38 @@ class Fascicolo:
 
 
 def fascicolo_vuoto(fascicolo_id: str) -> Fascicolo:
-    """Un fascicolo nuovo: nessuna categoria mascherata, contatori a zero (spec §5).
+    """Un fascicolo nuovo: **tutte** le categorie mascherate, contatori a zero.
 
-    Si parte da zero e si accende ciò che serve. È l'opposto della decisione 4
-    della spec del 2026-09-10, che mascherava tutto per prudenza, ed è una
-    scelta del proprietario del prodotto presa dopo aver visto il default
-    prudente all'opera: chi conosce il documento decide cosa nascondere, invece
-    di trovarsi un testo già svuotato da riaprire pezzo per pezzo.
+    Si parte protetti e si spegne ciò che serve lasciare in chiaro.
 
-    **Il rischio è reale e va detto qui, perché è qui che si decide.** Chi
-    carica un documento, non tocca nessun interruttore e preme Esporta,
-    esporta il documento in chiaro. L'analisi mostra comunque tutto ciò che ha
-    trovato, evidenziato e con il suo segnaposto accanto, quindi il dato non è
-    nascosto all'utente — ma spento resta, finché non lo accende lui.
+    **Questa riga è stata girata due volte, e vale la pena sapere perché.** La
+    spec del 2026-09-10 (decisione 4) mascherava tutto per prudenza; un
+    emendamento del 2026-09-14 lo ribaltò — chi conosce il documento decide
+    cosa nascondere, invece di trovarsi un testo già svuotato da riaprire pezzo
+    per pezzo. Il 2026-09-14, messo il default spento davanti a un utente con
+    un contratto vero, il proprietario del prodotto è tornato sulla decisione:
+    la pagina mostrava ogni dato personale evidenziato, e quell'evidenziazione
+    veniva letta come «l'ho nascosto» invece che «l'ho trovato». Caricare,
+    approvare ed esportare senza toccare un interruttore consegnava il
+    documento in chiaro in tre clic (issue #53).
 
-    `category_enabled` elenca comunque tutte e dodici le categorie, anche se
-    partono tutte a `False`: la UI le deve poter mostrare, e
-    `mask.tabella_attiva` non deve indovinare un valore mancante.
+    L'argomento che ha deciso non è «prudenza» in astratto: è che i due errori
+    non si equivalgono. Dimenticare acceso un interruttore costa un dato
+    oscurato di troppo, che si vede subito e si rimedia riaccendendolo;
+    dimenticarlo spento costa un dato personale consegnato a un fornitore
+    esterno, che non si vede e non si rimedia affatto. A parità di distrazione,
+    il default deve sbagliare dalla parte che si può correggere.
+
+    Il costo della scelta resta quello che l'emendamento denunciava, e non va
+    nascosto: chi vuole un testo poco oscurato deve spegnere a mano, e su un
+    documento con dodici categorie è lavoro.
+
+    `category_enabled` elenca tutte le categorie esplicitamente, invece di
+    affidarsi a un valore predefinito: la UI le deve poter mostrare, e
+    `mask.tabella_attiva` non deve indovinare una chiave mancante.
     """
     return Fascicolo(
         fascicolo_id=fascicolo_id,
-        category_enabled={c: False for c in Category},
+        category_enabled={c: True for c in Category},
         counters={c: 0 for c in Category},
     )
